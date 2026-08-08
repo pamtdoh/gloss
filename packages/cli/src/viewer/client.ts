@@ -13,7 +13,10 @@ let snapshot = 0;
 let snapshots: number[] = [];
 let facts: Fact[] = [];
 let idx = 0;
-let pending: { type: SidecarItem["type"]; anchor?: { quote: string } } | null = null;
+let pending:
+  | { type: SidecarItem["type"]; anchor?: { quote: string } }
+  | { replyTo: string }
+  | null = null;
 const undoStack: { path: string; id: string }[] = [];
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -123,7 +126,13 @@ function renderPanel(): void {
       p.textContent = item.text;
       div.appendChild(p);
     }
-    if (item.type !== "question") {
+    if (item.type === "question") {
+      const reply = document.createElement("button");
+      reply.className = "item-reply";
+      reply.textContent = "Reply";
+      reply.addEventListener("click", () => beginReply(item.id));
+      div.appendChild(reply);
+    } else {
       const remove = document.createElement("button");
       remove.className = "item-remove";
       remove.setAttribute("aria-label", `Remove ${item.id}`);
@@ -210,6 +219,15 @@ function beginItem(type: SidecarItem["type"]): void {
   input.focus();
 }
 
+function beginReply(id: string): void {
+  pending = { replyTo: id };
+  $("item-form-label").textContent = `reply — ${id}`;
+  ($("item-form") as HTMLFormElement).hidden = false;
+  const input = $("item-input") as HTMLTextAreaElement;
+  input.value = "";
+  input.focus();
+}
+
 function cancelForm(): void {
   pending = null;
   ($("item-form") as HTMLFormElement).hidden = true;
@@ -220,6 +238,16 @@ function commitItem(): void {
   const input = $("item-input") as HTMLTextAreaElement;
   const text = input.value.trim();
   if (!f || !pending || !text) return cancelForm();
+  if ("replyTo" in pending) {
+    const item = f.sidecar?.items?.find((i) => i.id === (pending as { replyTo: string }).replyTo);
+    if (item) {
+      (item.thread ??= []).push({ who: "human", text });
+      void putSidecar(f);
+    }
+    cancelForm();
+    renderAll();
+    return;
+  }
   const sidecar: Sidecar = f.sidecar ?? {};
   const items = (sidecar.items ??= []);
   const id = nextId(items, pending.type[0]!);
@@ -327,5 +355,31 @@ $("btn-approve").addEventListener("click", () => void approve());
 ($("snapshot-select") as HTMLSelectElement).addEventListener("change", (event) => {
   void load(Number((event.target as HTMLSelectElement).value));
 });
+
+// Live reload: agents answer questions by editing sidecars on disk while
+// the session runs; poll and re-render only when something changed.
+async function refresh(): Promise<void> {
+  if (!($("overlay") as HTMLElement).hidden) return;
+  try {
+    const res = await fetch(`/api/review?snapshot=${snapshot}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (
+      JSON.stringify(data.facts) === JSON.stringify(facts) &&
+      JSON.stringify(data.snapshots) === JSON.stringify(snapshots)
+    ) {
+      return;
+    }
+    const selectedPath = fact()?.path;
+    snapshots = data.snapshots;
+    facts = data.facts;
+    const found = facts.findIndex((f) => f.path === selectedPath);
+    idx = found === -1 ? Math.min(idx, Math.max(0, facts.length - 1)) : found;
+    renderAll();
+  } catch {
+    // session is ending; the overlay will take over
+  }
+}
+setInterval(() => void refresh(), 2000);
 
 void load();

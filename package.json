@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "build": "cd packages/cli && bun run build",
-    "e2e": "bun e2e/run.ts"
+    "e2e": "bun e2e/run.ts && bun e2e/loop.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1"

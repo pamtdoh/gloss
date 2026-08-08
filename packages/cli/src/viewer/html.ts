@@ -68,6 +68,11 @@ export const VIEWER_HTML = `<!doctype html>
     color: #9aa0a6; padding: 2px 6px; border-radius: 4px;
   }
   .item-remove:hover { background: #f0f2f4; color: #1a1d21; }
+  .item-reply {
+    margin-top: 8px; border: 1px solid #c8ccd0; background: #fff;
+    border-radius: 6px; padding: 2px 10px; font-size: 12px; color: #44484c;
+  }
+  .item-reply:hover { background: #f0f2f4; }
   #item-form { border: 1px solid #c8ccd0; border-radius: 8px; padding: 12px; margin-top: 12px; }
   #item-form-label { font-size: 12px; color: #6b7075; margin-bottom: 8px; white-space: pre-wrap; }
   #item-input { width: 100%; min-height: 72px; font: inherit; padding: 8px; border: 1px solid #c8ccd0; border-radius: 6px; resize: vertical; }

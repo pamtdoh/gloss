@@ -53,14 +53,76 @@ ask, or state the scope you inferred when you present the review.
    - **Snapshot 1 is facts only.** Sidecar files (`*.review.json`) are the
      human's review state, written during review — never at generation.
 
-5. **Hand it to the human in the terminal.** Print the tree of
-   `.reviewkit/<review>/1/` and offer to print the facts themselves (they
-   are ordinary Markdown, readable with `cat`). Reading the files and
-   replying in conversation is a fully supported review path.
+5. **Hand it to the human.** Show the tree of `.reviewkit/<review>/1/`,
+   then run the session (below) — or, for terminal-only review, print the
+   facts themselves and take decisions in conversation.
 
-## After generation (later milestones)
+## Run the session and wait
 
-The blocking viewer session (`reviewkit session`), sidecar-driven
-iteration, and promotion to `approved/` arrive in milestones 2–3 and are
-not available yet. Until then: the human reads the facts in the terminal
-and tells you their decisions in conversation.
+Run as a background task:
+
+```
+reviewkit session <review> --events
+```
+
+It serves the viewer on loopback, prints a one-time URL on stderr (share
+it with the human if their browser didn't open), and blocks until the
+human clicks **Finish review** or approves. The command exiting is your
+notification; the last stdout line is a JSON summary (decision counts,
+annotations, open questions, approval status). With `--events`, stdout is
+JSONL: `session.started`, `decision.changed`, `question.asked`,
+`session.finished`.
+
+## Answer questions live, while the session runs
+
+When a `question.asked` event arrives (or whenever you check the session's
+output), answer without waiting for the review to finish:
+
+1. Read the fact's `<fact>.review.json`, find the question item by `id`.
+2. Append `{ "who": "agent", "text": "…" }` to its `thread` and write the
+   file back. `text` may use Markdown.
+3. The viewer picks the answer up within a few seconds; the human can
+   reply in the same thread.
+
+Never delete items while a session is live — deletion means *resolved*,
+and resolution happens during iteration.
+
+## Iterate
+
+When the session finishes with sidecars present:
+
+1. Read every `*.review.json` in the snapshot wholesale, then propose next
+   steps to the human before rewriting anything they'd rather discuss.
+2. Copy the snapshot: `cp -r .reviewkit/<review>/<n> .reviewkit/<review>/<n+1>`.
+   Snapshots are standalone copies — no links, no shared state.
+3. In the new snapshot, resolve what was raised: rewrite, amend, split, or
+   delete facts per the decisions and annotations; answer or settle
+   questions. When you judge an item resolved, delete it from the sidecar;
+   delete a decision once it is addressed; delete the sidecar file when
+   nothing remains. Carry unresolved items forward untouched.
+4. Run another session on the new snapshot. A snapshot with no sidecars is
+   one where everything the human raised has been addressed — silence is
+   agreement.
+
+## Approval
+
+Approval is one act, at the end: the accepted snapshot copied to
+`.reviewkit/<review>/approved/`. The viewer's Approve button does this
+itself; if the human instead approves in conversation, copy it yourself:
+
+```
+cp -r .reviewkit/<review>/<n> .reviewkit/<review>/approved
+```
+
+The directory existing *is* the approval — no metadata, no ceremony. The
+`reviewkit-implement` skill starts from `approved/` and refuses to run
+without it.
+
+## Terminal-only review
+
+No browser is required at any step. The facts are ordinary Markdown: print
+them, let the human give decisions, annotations, and questions in
+conversation, and either write sidecars yourself to keep the same record —
+you own the files as much as the viewer does — or skip sidecars and
+iterate directly on what they said. Approval is the same `cp -r` either
+way.

@@ -9,7 +9,7 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -203,6 +203,35 @@ test("an anchored question writes a human thread and emits question.asked", asyn
       ),
     )
     .toMatchObject({ id: "q1", text: "Why ten? Is that enough at scale?" });
+});
+
+test("an agent answer written to the sidecar appears live, mid-session", async () => {
+  // The agent answers by editing the file directly — no API, no reload.
+  const path = snapshotPath("slugs/collision-retry.review.json");
+  const sidecar = JSON.parse(readFileSync(path, "utf8"));
+  sidecar.items[0].thread.push({
+    who: "agent",
+    text: "At 62^6 slugs, ten retries only fail past ~50M links.",
+  });
+  writeFileSync(path, JSON.stringify(sidecar, null, 2) + "\n");
+
+  const thread = page.locator(".item-question .who");
+  await expect(thread.nth(1)).toHaveText("agent", { timeout: 10_000 });
+  await expect(page.locator(".item-question")).toContainText("ten retries only fail");
+});
+
+test("the human replies in the same thread", async () => {
+  await page.locator(".item-question .item-reply").click();
+  await page.locator("#item-input").fill("Good enough — keeping it.");
+  await page.locator("#item-save").click();
+
+  await expect
+    .poll(() =>
+      JSON.parse(
+        readFileSync(snapshotPath("slugs/collision-retry.review.json"), "utf8"),
+      ).items[0].thread.map((t: { who: string }) => t.who),
+    )
+    .toEqual(["human", "agent", "human"]);
 });
 
 test("undo removes the last comment; empty sidecar is deleted", async () => {

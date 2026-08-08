@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runSession, type SessionOptions } from "./session.js";
+import { installSkills, isSkillAgent } from "./skills.js";
 
 const USAGE = `reviewkit — files-first design review
 
@@ -9,6 +10,8 @@ Usage:
   reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
                           Serve the viewer, block until the review is
                           finished, then print a JSON summary
+  reviewkit skill install --agent claude|codex
+                          Install the ReviewKit skills into this repo
   reviewkit help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
@@ -62,6 +65,18 @@ switch (command) {
   case "session":
     runSession(process.cwd(), parseSessionArgs(rest));
     break;
+  case "skill": {
+    const usage = "usage: reviewkit skill install --agent claude|codex";
+    if (rest[0] !== "install") fail(usage);
+    let agent = "";
+    for (let i = 1; i < rest.length; i++) {
+      if (rest[i] === "--agent") agent = rest[++i] ?? "";
+      else fail(usage);
+    }
+    if (!isSkillAgent(agent)) fail(usage);
+    emit({ ok: true, agent, installed: installSkills(process.cwd(), agent) });
+    break;
+  }
   case undefined:
   case "help":
   case "--help":
