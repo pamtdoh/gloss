@@ -1,0 +1,10 @@
+{
+  "name": "linkbox",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "Tiny self-hosted URL shortener",
+  "scripts": {
+    "serve": "node src/server.js",
+    "cli": "node src/cli.js"
+  }
+}
