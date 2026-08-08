@@ -79,6 +79,7 @@ export const VIEWER_HTML = `<!doctype html>
     position: fixed; inset: 0; display: grid; place-items: center;
     background: #f6f7f8; font-size: 18px; text-align: center; padding: 24px;
   }
+  #overlay[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
