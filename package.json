@@ -1,0 +1,11 @@
+{
+  "name": "reviewkit-workspace",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "cd packages/cli && bun run build",
+    "e2e": "bun e2e/run.ts"
+  }
+}
