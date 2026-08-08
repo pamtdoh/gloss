@@ -1,10 +1,14 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { runSession, type SessionOptions } from "./session.js";
 
 const USAGE = `reviewkit — files-first design review
 
 Usage:
   reviewkit init          Scaffold .reviewkit/ in the current directory
+  reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
+                          Serve the viewer, block until the review is
+                          finished, then print a JSON summary
   reviewkit help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
@@ -31,11 +35,32 @@ function init(cwd: string): void {
   emit({ ok: true, path: root, created });
 }
 
+function parseSessionArgs(args: string[]): SessionOptions {
+  const opts: SessionOptions = { review: "", events: false, noBrowser: false };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--events") opts.events = true;
+    else if (arg === "--no-browser") opts.noBrowser = true;
+    else if (arg === "--snapshot") {
+      const value = Number(args[++i]);
+      if (!Number.isInteger(value)) fail("--snapshot expects a number");
+      opts.snapshot = value;
+    } else if (arg.startsWith("-")) fail(`unknown flag: ${arg}`);
+    else if (opts.review) fail("session takes one review name");
+    else opts.review = arg;
+  }
+  if (!opts.review) fail("usage: reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]");
+  return opts;
+}
+
 const [command, ...rest] = process.argv.slice(2);
 switch (command) {
   case "init":
     if (rest.length > 0) fail("init takes no arguments");
     init(process.cwd());
+    break;
+  case "session":
+    runSession(process.cwd(), parseSessionArgs(rest));
     break;
   case undefined:
   case "help":
