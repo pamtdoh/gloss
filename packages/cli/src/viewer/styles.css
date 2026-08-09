@@ -11,16 +11,17 @@
    animate interaction, never data; exits ride --ease-in, faster than
    their enters; hover changes paint only. */
 :root {
-  /* Ink & Amber — ReviewKit's own palette (owner pick, round 3): warm
-     near-monochrome ink neutrals, one burnt-amber accent, squarer corners. */
+  /* Ink & Moss — ReviewKit's own palette (owner picks, rounds 3-4): warm
+     near-monochrome ink neutrals, one muted Everforest-green accent,
+     squarer corners. Amber survives as the "changed/stale" semantic. */
   --bg: #fafaf9;
   --panel: #ffffff;
   --panel-2: #f0efed;
   --line: #dcdad6;
   --text: #1c1917;
   --muted: #57534e;
-  --accent: #9a5b00;
-  --amber: #9a5b00;
+  --accent: #4e7837;
+  --amber: #8a6a1f;
   --red: #b91c1c;
   --blue: #1d4ed8;
   --on-accent: #ffffff;
@@ -45,9 +46,9 @@
   --line-raised: var(--line);
 
   /* anchor highlight tints (viewer-specific) */
-  --anno-tint: color-mix(in srgb, var(--accent) 20%, transparent);
+  --anno-tint: color-mix(in srgb, var(--accent) 16%, transparent);
   --question-tint: color-mix(in srgb, var(--blue) 14%, transparent);
-  --focus-tint: color-mix(in srgb, var(--accent) 30%, transparent);
+  --focus-tint: color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .dark {
@@ -57,11 +58,11 @@
   --line: #33302c;
   --text: #e7e5e4;
   --muted: #a8a29e;
-  --accent: #f5b04c;
-  --amber: #f5b04c;
+  --accent: #a7c080;
+  --amber: #d4b36a;
   --red: #f87171;
   --blue: #93b4f8;
-  --on-accent: #1c1917;
+  --on-accent: #121110;
 
   --elev-1: inset 0 1px 0 rgba(231, 229, 228, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.4);
   --elev-2: inset 0 1px 0 rgba(231, 229, 228, 0.06), 0 10px 24px -8px rgba(0, 0, 0, 0.5);

@@ -352,9 +352,11 @@ usable release, not a fast-follow.
   `comment` and `question`; a comment may carry an anchor or cover the
   whole fact. Legacy `annotation` items render as comments. The presets
   are "Quick Comment".
-- **Ink & Amber theme** (same round): ReviewKit's own palette — warm ink
-  neutrals, burnt-amber accent, squarer radii — replacing the borrowed
-  leetcoach values; token architecture unchanged.
+- **Ink & Moss theme** (rounds 3-4): ReviewKit's own palette — warm ink
+  neutrals with a muted Everforest-green accent (the owner asked for
+  something more neutral than the first amber pick, inspired by terminal
+  schemes), squarer radii. Amber survives as the changed/stale semantic.
+  Token architecture unchanged.
 - **Anchor triple** (viewer redesign, 2026-08-09): `anchor.quote` is the
   verbatim selection; optional `prefix`/`suffix` disambiguate (W3C
   TextQuoteSelector). Quote-widening is retired.
