@@ -26,6 +26,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "palette", keys: ["$mod+KeyK"], shown: "⌘K or /", section: "Everywhere", label: "Search & commands", raw: true },
   { id: "paletteSlash", keys: ["/"], shown: "/", section: "Everywhere", label: "Search & commands" },
   { id: "filter", keys: ["f"], shown: "f", section: "Navigate", label: "Filter the fact tree" },
+  { id: "scope", keys: ["d"], shown: "d", section: "Navigate", label: "Cycle scope: all / changed / raised" },
   { id: "help", keys: ["Shift+?"], shown: "?", section: "Everywhere", label: "Keyboard help" },
   { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection", raw: true },
   { id: "notNeeded", keys: ["1"], shown: "1", section: "Decide", label: "Quick comment: not needed" },

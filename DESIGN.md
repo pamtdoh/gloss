@@ -275,6 +275,13 @@ progress, no agent access to its API):
 - Facts that differ from the previous snapshot carry a "changed" badge,
   computed by plain text comparison of the two standalone copies — no
   stored fingerprints.
+- A three-way tree scope — All | Changed | Raised — in a pinned header
+  under the tree filter. Changed shows what moved since the previous
+  snapshot, including facts the agent deleted (read-only "ghost" rows
+  resurrected from the previous snapshot's copy); Raised shows facts
+  carrying comments or questions. The scope drives the tree and the
+  directory table together, composes with the text filter, and resets
+  on snapshot switch.
 
 Modern frontend tooling and libraries are fine where they pull their
 weight; the page must remain self-contained, served entirely by the
@@ -365,6 +372,11 @@ usable release, not a fast-follow.
 - **Seen state is viewer-local** (same): progress tracking lives in the
   browser, never in `.reviewkit/` — keyed by fact content, so it survives
   snapshot iteration and clears exactly where a fact changed.
+- **Three-way tree scope with deletion ghosts** (owner picked in-thread,
+  2026-08-09, from the GitHub/GitLab file-filtering research): All |
+  Changed | Raised, with deleted facts visible in Changed as read-only
+  ghosts. Filtering hides and drives both panes (GitHub's post-2025
+  direction); no persistence across snapshot switches.
 - **Viewer stack** (round-2 audit, 2026-08-09): React 19 with the
   owner-proven component layer from leetcoach — its design tokens
   (light + dark), radix-ui primitives, cmdk palette, lucide icons,

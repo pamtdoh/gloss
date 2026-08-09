@@ -15,6 +15,9 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Search,
+  SquareDot,
+  SquareMinus,
+  SquarePlus,
   Sun,
   X,
 } from "lucide-react";
@@ -78,6 +81,7 @@ import {
   SelectValue,
 } from "./ui/select.js";
 import { Textarea } from "./ui/textarea.js";
+import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group.js";
 
 // theme: light | dark | system -> .dark class (utilities target it).
 // Applied once at module load so the first paint is already correct.
@@ -116,6 +120,13 @@ interface ToastState {
 }
 
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
+
+// Tree scope, GitHub/GitLab-style but sharper: "changed" is what moved
+// since the previous snapshot (including facts the agent deleted, shown as
+// read-only ghosts); "raised" is what the human commented or asked on.
+type Scope = "all" | "changed" | "raised";
+const SCOPES: Scope[] = ["all", "changed", "raised"];
+const SCOPE_LABEL: Record<Scope, string> = { all: "All", changed: "Changed", raised: "Raised" };
 
 // Coarse pointers get the fixed bottom action bar (iOS owns the selection
 // callout and collapses the selection on any tap — floating popovers near
@@ -212,6 +223,7 @@ function App(): React.JSX.Element {
   };
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [scope, setScope] = useState<Scope>("all");
   const [theme, setTheme] = useState<ThemeMode>(storedTheme);
   // OS scheme changes re-render so the header icon tracks the effective theme
   const [sysDark, setSysDark] = useState(darkQuery.matches);
@@ -282,6 +294,7 @@ function App(): React.JSX.Element {
     setSelection(new Set());
     setComposer(null);
     setFilter("");
+    setScope("all"); // like the text filter: a new snapshot starts unscoped
     autoMarked.current.clear();
   }
   useEffect(() => {
@@ -472,12 +485,42 @@ function App(): React.JSX.Element {
   }, [pendingSel]);
 
   // ---------- derived ----------
-  const filteredFacts = useMemo(() => {
+  // facts deleted since the previous snapshot, resurrected read-only from
+  // the previous snapshot's copy (prev already holds their content)
+  const ghosts = useMemo(() => {
+    if (!prev || !data) return [];
+    const live = new Set(data.facts.map((f) => f.path));
+    return [...prev.entries()]
+      .filter(([path]) => !live.has(path))
+      .map(([path, content]): Fact => ({ path, content, sidecar: null }))
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }, [prev, data]);
+  const ghostPaths = useMemo(() => new Set(ghosts.map((g) => g.path)), [ghosts]);
+
+  const scopeCounts = useMemo(() => {
     const facts = data?.facts ?? [];
+    return {
+      all: facts.length,
+      changed: facts.filter((f) => changeStatus(prev, f) !== undefined).length + ghosts.length,
+      raised: facts.filter((f) => (f.sidecar?.items?.length ?? 0) > 0).length,
+    };
+  }, [data, prev, ghosts]);
+
+  const scopedFacts = useMemo(() => {
+    const facts = data?.facts ?? [];
+    if (scope === "changed") {
+      const changed = facts.filter((f) => changeStatus(prev, f) !== undefined);
+      return [...changed, ...ghosts].sort((a, b) => a.path.localeCompare(b.path));
+    }
+    if (scope === "raised") return facts.filter((f) => (f.sidecar?.items?.length ?? 0) > 0);
+    return facts;
+  }, [data, scope, prev, ghosts]);
+
+  const filteredFacts = useMemo(() => {
     const query = filter.trim().toLowerCase();
-    if (!query) return facts;
+    if (!query) return scopedFacts;
     const words = query.split(/\s+/);
-    return facts.filter((fact) => {
+    return scopedFacts.filter((fact) => {
       const items = fact.sidecar?.items ?? [];
       const itemText = items
         .map((i) => `${i.text ?? ""} ${(i.thread ?? []).map((t) => t.text).join(" ")}`)
@@ -485,11 +528,12 @@ function App(): React.JSX.Element {
       const text = `${fact.path} ${fact.content} ${itemText}`.toLowerCase();
       return words.every((word) => text.includes(word));
     });
-  }, [data, filter]);
+  }, [scopedFacts, filter]);
   const filtering = filter.trim().length > 0;
+  const narrowing = filtering || scope !== "all";
   const rows = useMemo(
-    () => buildRows(filteredFacts, (dir) => (filtering ? true : !collapsed.has(dir))),
-    [filteredFacts, collapsed, filtering],
+    () => buildRows(filteredFacts, (dir) => (narrowing ? true : !collapsed.has(dir))),
+    [filteredFacts, collapsed, narrowing],
   );
   const effectiveCursor: Row | null = cursor ?? rows[0] ?? null;
   const cursorIndex = rows.findIndex(
@@ -499,10 +543,16 @@ function App(): React.JSX.Element {
   const targetFact: Fact | null = useMemo(() => {
     if (!data || !effectiveCursor) return null;
     if (effectiveCursor.kind === "fact") {
-      return data.facts.find((f) => f.path === effectiveCursor.path) ?? null;
+      return (
+        data.facts.find((f) => f.path === effectiveCursor.path) ??
+        ghosts.find((g) => g.path === effectiveCursor.path) ??
+        null
+      );
     }
     return indexFactOf(data.facts, effectiveCursor.path);
-  }, [data, effectiveCursor]);
+  }, [data, effectiveCursor, ghosts]);
+  // a ghost is readable but not actionable: no comments, no seen, no select
+  const targetIsGhost = targetFact !== null && ghostPaths.has(targetFact.path);
 
   const openQuestions = useMemo(() => {
     let total = 0;
@@ -565,7 +615,7 @@ function App(): React.JSX.Element {
   // iOS drop an in-progress selection.
   useEffect(() => {
     const fact = targetFact;
-    if (!fact || !data || !userMoved.current) return;
+    if (!fact || !data || !userMoved.current || targetIsGhost) return;
     if (seen.has(fact.path) || autoMarked.current.has(fact.path)) return;
     let timer: ReturnType<typeof setTimeout>;
     const fire = (): void => {
@@ -618,7 +668,9 @@ function App(): React.JSX.Element {
   function applyQuickComment(note: QuickComment, paths?: string[]): void {
     if (!data) return;
     const bulk = !paths && selection.size > 0;
-    const targets = paths ?? (bulk ? [...selection] : targetFact ? [targetFact.path] : []);
+    const targets = (
+      paths ?? (bulk ? [...selection] : targetFact && !targetIsGhost ? [targetFact.path] : [])
+    ).filter((p) => !ghostPaths.has(p));
     if (!targets.length) return;
     const created: { path: string; id: string }[] = [];
     for (const path of targets) {
@@ -648,7 +700,7 @@ function App(): React.JSX.Element {
   }
 
   function beginItem(type: SidecarItem["type"]): void {
-    if (!targetFact) return;
+    if (!targetFact || targetIsGhost) return;
     // both comments and questions anchor when text is selected;
     // live selection first, then the pending (survives iOS collapse)
     let anchor: Anchor | undefined;
@@ -774,7 +826,7 @@ function App(): React.JSX.Element {
   }
 
   function toggleSeen(advance: boolean): void {
-    if (!targetFact) return;
+    if (!targetFact || targetIsGhost) return;
     if (seen.has(targetFact.path) && !advance) unmarkSeen(targetFact.path);
     else markSeen(targetFact);
     if (advance) moveCursorWhere((f) => !seen.has(f.path) && f.path !== targetFact.path, 1);
@@ -782,7 +834,7 @@ function App(): React.JSX.Element {
 
   function toggleSelect(path?: string): void {
     const target = path ?? (effectiveCursor?.kind === "fact" ? effectiveCursor.path : null);
-    if (!target) return;
+    if (!target || ghostPaths.has(target)) return;
     setSelection((current) => {
       const next = new Set(current);
       if (next.has(target)) next.delete(target);
@@ -857,6 +909,11 @@ function App(): React.JSX.Element {
     palette: () => setOverlay((o) => (o === "palette" ? null : "palette")),
     paletteSlash: () => setOverlay("palette"),
     filter: () => document.getElementById("tree-filter")?.focus(),
+    scope: () =>
+      setScope((s) => {
+        const order = SCOPES.filter((x) => x !== "changed" || prev !== null);
+        return order[(order.indexOf(s) + 1) % order.length] ?? "all";
+      }),
     close: () => {
       if (composer) setComposer(null);
       else if (overlay) setOverlay(null);
@@ -900,11 +957,15 @@ function App(): React.JSX.Element {
 
   const factHtml = useMemo(() => {
     if (!renderedFact || !data) return "";
+    // a ghost's images live in the snapshot it was deleted from
+    const snapshot = ghostPaths.has(renderedFact.path)
+      ? (data.snapshots.filter((s) => s < data.snapshot).pop() ?? data.snapshot)
+      : data.snapshot;
     return renderMarkdown(renderedFact.content, {
-      assetBase: `/asset/${data.snapshot}/`,
+      assetBase: `/asset/${snapshot}/`,
       factDir: dirOf(renderedFact.path),
     });
-  }, [renderedFact, data]);
+  }, [renderedFact, data, ghostPaths]);
 
   const anchorStates = useMemo(() => {
     const states = new Map<string, "exact" | "drifted" | "detached">();
@@ -1020,6 +1081,7 @@ function App(): React.JSX.Element {
 
   const yourTurn = openQuestions.answered;
   const latestSnapshot = Math.max(...data.snapshots);
+  const prevSnapshot = data.snapshots.filter((s) => s < data.snapshot).pop() ?? null;
   const raisedFacts = data.facts.filter((f) => f.sidecar?.items?.length);
 
   return (
@@ -1151,45 +1213,83 @@ function App(): React.JSX.Element {
       <div className="cols">
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
         <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
-          <div className="tree-filter">
-            <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
-            <Input
-              id="tree-filter"
-              className="h-8 pl-8"
-              placeholder="Filter facts (f)"
-              aria-label="Filter facts"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  setFilter("");
-                  e.currentTarget.blur();
-                }
-              }}
-            />
-            <button
-              className="filter-clear"
-              data-show={filter ? "" : undefined}
-              aria-label="Clear filter"
-              tabIndex={filter ? 0 : -1}
-              onClick={() => setFilter("")}
-            >
-              <X className="lucide size-3.5" size={14} />
-            </button>
+          <div className="tree-head">
+            <div className="tree-filter">
+              <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
+              <Input
+                id="tree-filter"
+                className="h-8 pl-8"
+                placeholder="Filter facts (f)"
+                aria-label="Filter facts"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    setFilter("");
+                    e.currentTarget.blur();
+                  }
+                }}
+              />
+              <button
+                className="filter-clear"
+                data-show={filter ? "" : undefined}
+                aria-label="Clear filter"
+                tabIndex={filter ? 0 : -1}
+                onClick={() => setFilter("")}
+              >
+                <X className="lucide size-3.5" size={14} />
+              </button>
+            </div>
+            <div className="scope-row">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                value={scope}
+                aria-label="Tree scope"
+                onValueChange={(v) => v && setScope(v as Scope)}
+              >
+                {SCOPES.map((s) => (
+                  <ToggleGroupItem
+                    key={s}
+                    value={s}
+                    id={`scope-${s}`}
+                    disabled={s === "changed" && !prev}
+                    title={s === "changed" && !prev ? "No previous snapshot to compare" : undefined}
+                    className="h-7 gap-1.5 px-2.5 text-[12px]"
+                  >
+                    {SCOPE_LABEL[s]}
+                    <span className="scope-count">{scopeCounts[s]}</span>
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
           </div>
           <div className="drawer-tools">
             <span className="stat text-muted-foreground flex-1 self-center text-[13px]">
               {progress.seen} / {progress.total} reviewed
             </span>
           </div>
-          {filtering && (
+          {narrowing && (
             <div className="filter-count" aria-live="polite">
-              {filteredFacts.length} match{filteredFacts.length === 1 ? "" : "es"}
+              {filtering
+                ? `${filteredFacts.length} match${filteredFacts.length === 1 ? "" : "es"}${
+                    scope !== "all" ? ` in ${SCOPE_LABEL[scope].toLowerCase()}` : ""
+                  }`
+                : scope === "changed"
+                  ? `${scopeCounts.changed} changed since snapshot ${prevSnapshot ?? "—"}`
+                  : `${scopeCounts.raised} with notes or questions`}
             </div>
           )}
           {rows.length === 0 ? (
-            <div className="tree-empty">Nothing matches “{filter.trim()}”.</div>
+            <div className="tree-empty">
+              {filtering
+                ? `Nothing matches “${filter.trim()}”.`
+                : scope === "changed"
+                  ? "Nothing changed in this snapshot."
+                  : "No facts with notes or questions."}
+            </div>
           ) : (
             <ul
               className="tree"
@@ -1208,6 +1308,7 @@ function App(): React.JSX.Element {
                   row={row}
                   data={data}
                   prev={prev}
+                  ghost={row.kind === "fact" ? ghosts.find((g) => g.path === row.path) : undefined}
                   seen={seen}
                   selection={selection}
                   collapsed={collapsed}
@@ -1235,6 +1336,8 @@ function App(): React.JSX.Element {
               <DirView
                 dir={effectiveCursor.path}
                 data={data}
+                facts={filteredFacts}
+                ghostPaths={ghostPaths}
                 prev={prev}
                 seen={seen}
                 selection={selection}
@@ -1259,11 +1362,19 @@ function App(): React.JSX.Element {
               <>
                 <div className="crumb">
                   <span>{renderedFact.path}</span>
-                  <ChangeBadge status={changeStatus(prev, renderedFact)} />
-                  {seen.has(renderedFact.path) && (
+                  <ChangeBadge
+                    status={targetIsGhost ? "removed" : changeStatus(prev, renderedFact)}
+                  />
+                  {!targetIsGhost && seen.has(renderedFact.path) && (
                     <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                   )}
                 </div>
+                {targetIsGhost && (
+                  <div className="ghost-banner" id="ghost-banner" role="status">
+                    Removed in snapshot {data.snapshot} — shown as it was in snapshot{" "}
+                    {prevSnapshot}. Read-only.
+                  </div>
+                )}
                 <article
                   className="fact-body"
                   id="fact-content"
@@ -1337,7 +1448,8 @@ function App(): React.JSX.Element {
         {panelOpen ? (
           <aside className="panel-col panel" aria-label="Review panel">
             <Panel
-              fact={targetFact}
+              fact={targetIsGhost ? null : targetFact}
+              ghost={targetIsGhost}
               anchorStates={anchorStates}
               composer={composer}
               onQuickComment={(note) => applyQuickComment(note)}
@@ -1477,6 +1589,10 @@ function App(): React.JSX.Element {
               label: `Theme: ${mode}`,
               run: () => setTheme(mode),
             })),
+          ...SCOPES.filter((s) => s !== scope && (s !== "changed" || prev !== null)).map((s) => ({
+            label: `Scope: ${s === "all" ? "all facts" : `${s} only`}`,
+            run: () => setScope(s),
+          })),
           ...data.snapshots
             .filter((s) => s !== data.snapshot)
             .map((s) => ({ label: `Switch to snapshot ${s}`, run: () => void load(s) })),
@@ -1534,15 +1650,31 @@ function rowLabel(row: Row): string {
   return row.kind === "dir" ? `${nameOf(row.path)}/` : nameOf(row.path);
 }
 
-function ChangeBadge({ status }: { status: "new" | "changed" | undefined }): React.JSX.Element | null {
+type BadgeStatus = "new" | "changed" | "removed" | undefined;
+
+function ChangeBadge({ status }: { status: BadgeStatus }): React.JSX.Element | null {
   if (!status) return null;
   return <span className={`chip ${status}`}>{status}</span>;
+}
+
+// tree rows use 14px glyphs instead of word chips — the words cost ~45px
+// of name width in a 300px column (GitHub/GitLab both glyph here)
+const GLYPHS = { changed: SquareDot, new: SquarePlus, removed: SquareMinus } as const;
+function ChangeGlyph({ status }: { status: BadgeStatus }): React.JSX.Element | null {
+  if (!status) return null;
+  const Icon = GLYPHS[status];
+  return (
+    <span className={`gbadge ${status}`} title={status} aria-label={status}>
+      <Icon className="lucide size-3.5" size={14} aria-hidden="true" />
+    </span>
+  );
 }
 
 function TreeRow(props: {
   row: Row;
   data: ReviewData;
   prev: Map<string, string> | null;
+  ghost: Fact | undefined;
   seen: Set<string>;
   selection: Set<string>;
   collapsed: Set<string>;
@@ -1593,14 +1725,16 @@ function TreeRow(props: {
       </li>
     );
   }
-  const fact = data.facts.find((f) => f.path === row.path);
+  const fact = props.ghost ?? data.facts.find((f) => f.path === row.path);
   if (!fact) return <li />;
   const stats = factStats(fact);
-  const status = changeStatus(props.prev, fact);
+  const status: BadgeStatus = props.ghost ? "removed" : changeStatus(props.prev, fact);
   return (
     <li
       id={rowId}
-      className={`row fact ${props.isCursor ? "cursor" : ""} ${!props.seen.has(fact.path) ? "unseen" : ""}`}
+      className={`row fact ${props.isCursor ? "cursor" : ""} ${
+        props.ghost ? "ghost" : !props.seen.has(fact.path) ? "unseen" : ""
+      }`}
       style={{ paddingLeft: pad }}
       data-path={row.path}
       data-kind="fact"
@@ -1619,12 +1753,12 @@ function TreeRow(props: {
       )}
       <span className="name">{nameOf(fact.path)}</span>
       <span className="badges">
-        <ChangeBadge status={status} />
+        <ChangeGlyph status={status} />
         {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
         {stats.items - stats.questions > 0 && (
           <span className="chip count">{stats.items - stats.questions}</span>
         )}
-        {props.seen.has(fact.path) && (
+        {!props.ghost && props.seen.has(fact.path) && (
           <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
         )}
       </span>
@@ -1635,6 +1769,9 @@ function TreeRow(props: {
 function DirView(props: {
   dir: string;
   data: ReviewData;
+  /** the scoped + filtered display set — the table always mirrors the tree */
+  facts: Fact[];
+  ghostPaths: Set<string>;
   prev: Map<string, string> | null;
   seen: Set<string>;
   selection: Set<string>;
@@ -1646,10 +1783,12 @@ function DirView(props: {
   onSelectAll: (paths: string[], on: boolean) => void;
   onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
-  const children = childFactsOf(props.data.facts, props.dir);
-  const subdirs = childDirsOf(props.data.facts, props.dir);
-  const stats = dirStats(props.data.facts, props.dir);
-  const allSelected = children.length > 0 && children.every((f) => props.selection.has(f.path));
+  const children = childFactsOf(props.facts, props.dir);
+  const subdirs = childDirsOf(props.facts, props.dir);
+  const stats = dirStats(props.facts, props.dir);
+  const selectable = children.filter((f) => !props.ghostPaths.has(f.path));
+  const allSelected =
+    selectable.length > 0 && selectable.every((f) => props.selection.has(f.path));
   return (
     <div className="dirview" id="dir-view">
       <div className="crumb">
@@ -1679,7 +1818,7 @@ function DirView(props: {
               checked={allSelected}
               onCheckedChange={(on) =>
                 props.onSelectAll(
-                  children.map((f) => f.path),
+                  selectable.map((f) => f.path),
                   on === true,
                 )
               }
@@ -1698,49 +1837,56 @@ function DirView(props: {
             <span className="title dirname">
               {nameOf(dir)}/{" "}
               <span className="text-muted-foreground">
-                ({dirStats(props.data.facts, dir).facts} facts)
+                ({dirStats(props.facts, dir).facts} facts)
               </span>
             </span>
           </div>
         ))}
         {children.map((fact) => {
           const stats = factStats(fact);
+          const ghost = props.ghostPaths.has(fact.path);
           return (
             <div
               key={fact.path}
-              className={`trow ${!props.seen.has(fact.path) ? "unseen" : ""}`}
+              className={`trow ${ghost ? "ghost" : !props.seen.has(fact.path) ? "unseen" : ""}`}
               data-path={fact.path}
               onClick={() => props.onOpen({ kind: "fact", path: fact.path, depth: 0 })}
             >
-              <Checkbox
-                aria-label={`Select ${fact.path}`}
-                checked={props.selection.has(fact.path)}
-                onCheckedChange={() => props.onToggleSelect(fact.path)}
-                onClick={(e) => e.stopPropagation()}
-              />
+              {ghost ? (
+                <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
+              ) : (
+                <Checkbox
+                  aria-label={`Select ${fact.path}`}
+                  checked={props.selection.has(fact.path)}
+                  onCheckedChange={() => props.onToggleSelect(fact.path)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
               <span className="title">{titleOf(fact)}</span>
               <span className="badges">
-                <ChangeBadge status={changeStatus(props.prev, fact)} />
+                <ChangeBadge status={ghost ? "removed" : changeStatus(props.prev, fact)} />
                 {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
                 {stats.items - stats.questions > 0 && (
                   <span className="chip count">{stats.items - stats.questions}</span>
                 )}
-                {props.seen.has(fact.path) && (
+                {!ghost && props.seen.has(fact.path) && (
                   <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                 )}
               </span>
-              <span className="decide" onClick={(e) => e.stopPropagation()}>
-                {QUICK_COMMENTS.map((note) => (
-                  <Button
-                    key={note.key}
-                    variant="outline"
-                    size="xs"
-                    onClick={() => props.onQuickComment(fact.path, note)}
-                  >
-                    {note.label}
-                  </Button>
-                ))}
-              </span>
+              {!ghost && (
+                <span className="decide" onClick={(e) => e.stopPropagation()}>
+                  {QUICK_COMMENTS.map((note) => (
+                    <Button
+                      key={note.key}
+                      variant="outline"
+                      size="xs"
+                      onClick={() => props.onQuickComment(fact.path, note)}
+                    >
+                      {note.label}
+                    </Button>
+                  ))}
+                </span>
+              )}
             </div>
           );
         })}
@@ -1751,6 +1897,7 @@ function DirView(props: {
 
 function Panel(props: {
   fact: Fact | null;
+  ghost: boolean;
   anchorStates: Map<string, "exact" | "drifted" | "detached">;
   composer: Composer | null;
   onQuickComment: (note: QuickComment) => void;
@@ -1885,7 +2032,9 @@ function Panel(props: {
         )}
         {!fact && (
           <p className="text-muted-foreground text-[13px]">
-            This directory has no _index.md — select a fact to review it.
+            {props.ghost
+              ? "This fact was removed — read-only, nothing to note."
+              : "This directory has no _index.md — select a fact to review it."}
           </p>
         )}
       </div>

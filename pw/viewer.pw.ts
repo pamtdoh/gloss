@@ -92,6 +92,11 @@ test.beforeAll(async ({ browser }) => {
     "A write-through cache was considered and rejected for v1.\n",
   );
   writeFileSync(snap2("architecture.md"), RICH_FACT);
+  // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
+  writeFileSync(
+    join(tmp, ".reviewkit/design-review/1/slugs/legacy-dedupe.md"),
+    "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in snapshot 2.\n",
+  );
 
   proc = spawn("node", [cli, "session", "design-review", "--events", "--no-browser"], {
     cwd: tmp,
@@ -131,13 +136,13 @@ test("initial render: nested tree, directory view for the first row", async () =
   await expect(page.locator(".tree .row").first()).toHaveAttribute("data-kind", "dir");
   await expect(page.locator("#dir-view")).toBeVisible();
   await expect(page.locator("#fact-table .trow")).toHaveCount(1);
-  // interdiff badges from snapshot 1 -> 2
+  // interdiff badges from snapshot 1 -> 2 (14px glyphs in the tree)
   await expect(
-    page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .chip.changed'),
-  ).toHaveText("changed");
+    page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .gbadge.changed'),
+  ).toBeVisible();
   await expect(
-    page.locator('.tree .row[data-path="architecture.md"] .chip.new'),
-  ).toHaveText("new");
+    page.locator('.tree .row[data-path="architecture.md"] .gbadge.new'),
+  ).toBeVisible();
   await expect(page).toHaveScreenshot("viewer-initial.png");
 });
 
@@ -379,6 +384,39 @@ test("tree filter narrows the tree; palette search jumps", async () => {
   await expect(page.locator("#help-sheet")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("#help-sheet")).toHaveCount(0);
+});
+
+test("scope: changed shows changed/new plus a read-only ghost; raised shows noted facts", async () => {
+  await page.locator("#scope-changed").click();
+  // changed: storage/whole-file-writes; new: architecture; removed ghost: slugs/legacy-dedupe
+  await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
+  await expect(page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]')).toHaveClass(
+    /ghost/,
+  );
+
+  // the ghost opens read-only: banner shown, no composer, no seen mark
+  await page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]').click();
+  await expect(page.locator("#ghost-banner")).toContainText("Removed in snapshot 2");
+  await expect(page.locator("#fact-content h1")).toHaveText(
+    "Slugs are deduplicated by a nightly job",
+  );
+  await page.keyboard.press("c");
+  await expect(page.locator("#item-form")).toHaveCount(0);
+  await page.keyboard.press("v");
+  await expect(
+    page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"] .seen-check'),
+  ).toHaveCount(0);
+
+  // raised = facts carrying comments or questions at this point in the run:
+  // http/create-link, http/redirect, slugs/collision-retry, storage/whole-file-writes
+  await page.locator("#scope-raised").click();
+  await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(4);
+  await expect(page.locator('.tree .row[data-path="storage/whole-file-writes.md"]')).toBeVisible();
+  await expect(page.locator('.tree .row[data-path="slugs/collision-retry.md"]')).toBeVisible();
+
+  // d cycles back around to all
+  await page.keyboard.press("d");
+  await expect(page.locator(".tree .row")).toHaveCount(11);
 });
 
 test("the URL names the page; back and forward walk the visited pages", async () => {
