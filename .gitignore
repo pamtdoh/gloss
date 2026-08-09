@@ -3,3 +3,4 @@ dist/
 *.tsbuildinfo
 *.gen.js
 test-results/
+.aliastest/
