@@ -160,6 +160,8 @@ function App(): React.JSX.Element {
   } | null>(null);
 
   const pendingWrites = useRef(new Map<string, number>());
+  // a finger is down: no re-renders allowed, or iOS drops the selection
+  const touchActive = useRef(false);
   const readRef = useRef<HTMLElement | null>(null);
   const readColRef = useRef<HTMLElement | null>(null);
   const lastSpan = useRef<{ path: string; start: number; end: number } | null>(null);
@@ -229,6 +231,7 @@ function App(): React.JSX.Element {
         document.hidden ||
         st.done ||
         st.composer !== null ||
+        touchActive.current ||
         !(window.getSelection()?.isCollapsed ?? true);
       if (!busy && st.data) {
         try {
@@ -266,36 +269,65 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // ---------- selection affordance (mouse path + stored span for a/q) ----------
+  // ---------- selection capture ----------
+  // Deliberately patient: while the user drags iOS selection handles,
+  // selectionchange fires continuously — any state update re-renders and
+  // makes Safari drop the gesture. We only commit the span after the
+  // selection has been quiet for a beat AND no finger is down.
   useEffect(() => {
     let debounce: ReturnType<typeof setTimeout>;
+    const settle = (): void => {
+      if (touchActive.current) {
+        // still dragging — check again shortly, without touching state
+        debounce = setTimeout(settle, 300);
+        return;
+      }
+      const sel = window.getSelection();
+      const container = readRef.current;
+      if (
+        sel &&
+        !sel.isCollapsed &&
+        container &&
+        container.contains(sel.anchorNode) &&
+        stateRef.current.data
+      ) {
+        const span = sourceSpanForSelection(container as HTMLElement, sel);
+        const path = container.getAttribute("data-fact-path");
+        if (span && path) {
+          lastSpan.current = { path, ...span };
+          setPendingSel((current) =>
+            current &&
+            current.path === path &&
+            current.start === span.start &&
+            current.end === span.end
+              ? current
+              : { path, ...span },
+          );
+        }
+      }
+      // a collapsing selection does NOT clear pendingSel — iOS collapses
+      // it on any tap; our painted highlight and the action bar stay.
+    };
     const onSelection = (): void => {
       clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        const sel = window.getSelection();
-        const container = readRef.current;
-        if (
-          sel &&
-          !sel.isCollapsed &&
-          container &&
-          container.contains(sel.anchorNode) &&
-          stateRef.current.data
-        ) {
-          const span = sourceSpanForSelection(container as HTMLElement, sel);
-          const path = container.getAttribute("data-fact-path");
-          if (span && path) {
-            lastSpan.current = { path, ...span };
-            setPendingSel({ path, ...span });
-          }
-        }
-        // a collapsing selection does NOT clear pendingSel — iOS collapses
-        // it on any tap; our painted highlight and the action bar stay.
-      }, 30);
+      debounce = setTimeout(settle, 500);
+    };
+    const onPointerDown = (): void => {
+      touchActive.current = true;
+    };
+    const onPointerUp = (): void => {
+      touchActive.current = false;
     };
     document.addEventListener("selectionchange", onSelection);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerUp, true);
     return () => {
       clearTimeout(debounce);
       document.removeEventListener("selectionchange", onSelection);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerUp, true);
     };
   }, []);
 
@@ -364,15 +396,23 @@ function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path]);
 
-  // auto-seen on dwell, only after the user has actually navigated
+  // auto-seen on dwell, only after the user has actually navigated. The
+  // mark waits out any active touch/selection — its re-render would make
+  // iOS drop an in-progress selection.
   useEffect(() => {
     const fact = targetFact;
     if (!fact || !data || !userMoved.current) return;
     if (seen.has(fact.path) || autoMarked.current.has(fact.path)) return;
-    const timer = setTimeout(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const fire = (): void => {
+      if (touchActive.current || !(window.getSelection()?.isCollapsed ?? true)) {
+        timer = setTimeout(fire, 1500);
+        return;
+      }
       autoMarked.current.add(fact.path);
       markSeen(fact);
-    }, 1500);
+    };
+    timer = setTimeout(fire, 1500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path, data, seen]);
