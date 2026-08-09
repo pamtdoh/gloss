@@ -6,24 +6,22 @@ describe("isEmptySidecar", () => {
     expect(isEmptySidecar({})).toBe(true);
     expect(isEmptySidecar({ items: [] })).toBe(true);
   });
-  test("a decision or an item keeps it alive", () => {
-    expect(isEmptySidecar({ decision: "defer" })).toBe(false);
+  test("an item keeps it alive", () => {
     expect(isEmptySidecar({ items: [{ id: "c1", type: "comment", text: "x" }] })).toBe(false);
   });
 });
 
 describe("summarize", () => {
-  test("counts decisions, items, and undecided facts", () => {
+  test("counts items by type across facts", () => {
     const summary = summarize({
       review: "r",
       snapshot: 2,
       approved: true,
       sidecars: [
-        { decision: "defer" },
         {
-          decision: "simplify",
           items: [
             { id: "a1", type: "annotation", text: "tighten" },
+            { id: "a2", type: "annotation", text: "Not needed." },
             { id: "q1", type: "question", thread: [{ who: "human", text: "why?" }] },
           ],
         },
@@ -35,9 +33,8 @@ describe("summarize", () => {
     expect(summary).toEqual({
       review: "r",
       snapshot: 2,
-      facts: 5,
-      decisions: { "not-needed": 0, simplify: 1, defer: 1, undecided: 3 },
-      annotations: 1,
+      facts: 4,
+      annotations: 2,
       comments: 1,
       openQuestions: 1,
       approved: true,

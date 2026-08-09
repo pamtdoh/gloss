@@ -106,21 +106,18 @@ export interface DirStats {
   facts: number;
   items: number;
   questions: number;
-  undecided: number;
 }
 
 export function dirStats(facts: Fact[], dir: string): DirStats {
   const within = facts.filter((f) => f.path.startsWith(dir + "/"));
   let items = 0;
   let questions = 0;
-  let undecided = 0;
   for (const fact of within) {
     const stats = factStats(fact);
     items += stats.items;
     questions += stats.questions;
-    if (!fact.sidecar?.decision) undecided++;
   }
-  return { facts: within.length, items, questions, undecided };
+  return { facts: within.length, items, questions };
 }
 
 export type ChangeStatus = "new" | "changed" | undefined;
@@ -143,6 +140,5 @@ export function nextId(items: SidecarItem[], prefix: string): string {
 
 export function normalizeSidecar(sidecar: Sidecar): Sidecar | null {
   if (sidecar.items && sidecar.items.length === 0) delete sidecar.items;
-  if (sidecar.decision === undefined && !sidecar.items) return null;
-  return sidecar;
+  return sidecar.items ? sidecar : null;
 }

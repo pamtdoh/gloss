@@ -111,12 +111,6 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     if (opts.events) process.stdout.write(jsonLine({ event, ...data }));
   };
 
-  // decision.changed is coalesced: only an actual value change is an event.
-  const lastDecision = new Map<string, string | undefined>();
-  for (const factPath of walkFacts(snapshotDir(defaultSnapshot))) {
-    lastDecision.set(factPath, readSidecar(snapshotDir(defaultSnapshot), factPath)?.decision);
-  }
-
   const computeSummary = (snapshot: number) => {
     const dir = snapshotDir(snapshot);
     const facts = walkFacts(dir);
@@ -270,10 +264,6 @@ export function runSession(cwd: string, opts: SessionOptions): void {
           if (existsSync(target)) unlinkSync(target);
         } else {
           writeFileSync(target, JSON.stringify(sidecar, null, 2) + "\n");
-        }
-        if (lastDecision.get(factPath) !== sidecar.decision) {
-          lastDecision.set(factPath, sidecar.decision);
-          emit("decision.changed", { path: factPath, decision: sidecar.decision ?? null });
         }
         const knownQuestions = new Set(
           (previous?.items ?? []).filter((i) => i.type === "question").map((i) => i.id),

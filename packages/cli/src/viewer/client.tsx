@@ -13,7 +13,7 @@ import {
   PanelRightOpen,
   X,
 } from "lucide-react";
-import type { Decision, Sidecar, SidecarItem } from "../summary.js";
+import type { Sidecar, SidecarItem } from "../summary.js";
 import { describeAnchor, resolveAnchor, type Anchor } from "./anchor.js";
 import { rangeForSourceSpan, sourceSpanForSelection } from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
@@ -73,7 +73,6 @@ import {
   SelectValue,
 } from "./ui/select.js";
 import { Textarea } from "./ui/textarea.js";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group.js";
 
 // theme: system preference -> .dark class (utilities target it)
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -83,10 +82,13 @@ const applyTheme = (): void => {
 applyTheme();
 darkQuery.addEventListener("change", applyTheme);
 
-const DECISIONS: { d: Decision; key: string; label: string }[] = [
-  { d: "not-needed", key: "1", label: "Not needed" },
-  { d: "simplify", key: "2", label: "Simplify" },
-  { d: "defer", key: "3", label: "Defer" },
+// The old "decisions", demoted per the owner's round-3 call: quick presets
+// that create ordinary whole-fact annotations. One concept, simpler files.
+interface Preset { key: string; label: string; text: string }
+const PRESETS: Preset[] = [
+  { key: "1", label: "Not needed", text: "Not needed." },
+  { key: "2", label: "Simplify", text: "Simplify." },
+  { key: "3", label: "Defer", text: "Defer." },
 ];
 
 type Composer =
@@ -462,32 +464,29 @@ function App(): React.JSX.Element {
     });
   }
 
-  function decide(decision: Decision | null): void {
+  function applyPreset(preset: Preset, paths?: string[]): void {
     if (!data) return;
-    const bulk = selection.size > 0;
-    const targets = bulk ? [...selection] : targetFact ? [targetFact.path] : [];
+    const bulk = !paths && selection.size > 0;
+    const targets = paths ?? (bulk ? [...selection] : targetFact ? [targetFact.path] : []);
     if (!targets.length) return;
-    const before = new Map(
-      targets.map((p) => [p, data.facts.find((f) => f.path === p)?.sidecar?.decision]),
-    );
+    const created: { path: string; id: string }[] = [];
     for (const path of targets) {
       mutateFact(path, (sidecar) => {
-        const next = bulk ? decision : sidecar.decision === decision ? null : decision;
-        if (next) sidecar.decision = next;
-        else delete sidecar.decision;
+        const items = (sidecar.items ??= []);
+        const id = nextId(items, "a");
+        items.push({ id, type: "annotation", text: preset.text });
+        created.push({ path, id });
+        if (!bulk) undoStack.current.push({ path, id });
       });
     }
     if (bulk) {
       setSelection(new Set());
       setToast({
-        message: decision
-          ? `Marked ${targets.length} facts ${decision}`
-          : `Cleared ${targets.length} decisions`,
+        message: `Noted “${preset.label}” on ${targets.length} facts`,
         undo: () => {
-          for (const [path, priorDecision] of before) {
-            mutateFact(path, (sidecar) => {
-              if (priorDecision) sidecar.decision = priorDecision;
-              else delete sidecar.decision;
+          for (const c of created) {
+            mutateFact(c.path, (sidecar) => {
+              sidecar.items = sidecar.items?.filter((i) => i.id !== c.id);
             });
           }
           setToast(null);
@@ -692,10 +691,9 @@ function App(): React.JSX.Element {
         setCollapsed((c) => new Set(c).add(effectiveCursor.path));
       }
     },
-    notNeeded: () => decide("not-needed"),
-    simplify: () => decide("simplify"),
-    defer: () => decide("defer"),
-    clearDecision: () => decide(null),
+    notNeeded: () => applyPreset(PRESETS[0]!),
+    simplify: () => applyPreset(PRESETS[1]!),
+    defer: () => applyPreset(PRESETS[2]!),
     seen: () => toggleSeen(false),
     seenAdvance: () => toggleSeen(true),
     select: () => toggleSelect(),
@@ -855,7 +853,7 @@ function App(): React.JSX.Element {
   }
 
   const yourTurn = openQuestions.answered;
-  const decidedFacts = data.facts.filter((f) => f.sidecar?.decision || f.sidecar?.items?.length);
+  const raisedFacts = data.facts.filter((f) => f.sidecar?.items?.length);
 
   return (
     <div className="app">
@@ -1045,12 +1043,7 @@ function App(): React.JSX.Element {
                     return next;
                   })
                 }
-                onDecide={(path, d) =>
-                  mutateFact(path, (sidecar) => {
-                    if (sidecar.decision === d) delete sidecar.decision;
-                    else sidecar.decision = d;
-                  })
-                }
+                onPreset={(path, preset) => applyPreset(preset, [path])}
               />
             ) : renderedFact ? (
               <>
@@ -1099,14 +1092,14 @@ function App(): React.JSX.Element {
               </nav>
             )}
             {selection.size > 0 && (
-              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk decisions">
+              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick notes">
                 <span className="stat" aria-live="polite">
                   {selection.size} selected
                 </span>
-                {DECISIONS.map(({ d, key, label }) => (
-                  <button key={d} onClick={() => decide(d)}>
-                    <Kbd className="mr-1">{key}</Kbd>
-                    {label}
+                {PRESETS.map((preset) => (
+                  <button key={preset.key} onClick={() => applyPreset(preset)}>
+                    <Kbd className="mr-1">{preset.key}</Kbd>
+                    {preset.label}
                   </button>
                 ))}
                 <button onClick={() => setSelection(new Set())}>esc clear</button>
@@ -1135,7 +1128,7 @@ function App(): React.JSX.Element {
               fact={targetFact}
               anchorStates={anchorStates}
               composer={composer}
-              onDecide={(d) => decide(d)}
+              onPreset={(preset) => applyPreset(preset)}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
                 targetFact &&
@@ -1233,7 +1226,7 @@ function App(): React.JSX.Element {
         data={data}
         progress={progress}
         openQuestions={openQuestions.total}
-        decidedFacts={decidedFacts}
+        raisedFacts={raisedFacts}
         onFinish={() => void finish()}
         onApprove={() => setApproveOpen(true)}
         onClose={() => setOverlay(null)}
@@ -1343,11 +1336,10 @@ function TreeRow(props: {
   if (!fact) return <li />;
   const stats = factStats(fact);
   const status = changeStatus(props.prev, fact);
-  const decision = fact.sidecar?.decision;
   return (
     <li
       id={rowId}
-      className={`row fact ${props.isCursor ? "cursor" : ""} ${!props.seen.has(fact.path) ? "unseen" : ""} ${decision === "not-needed" ? "checked-off" : ""}`}
+      className={`row fact ${props.isCursor ? "cursor" : ""} ${!props.seen.has(fact.path) ? "unseen" : ""}`}
       style={{ paddingLeft: pad }}
       data-path={row.path}
       data-kind="fact"
@@ -1371,15 +1363,6 @@ function TreeRow(props: {
         {stats.items - stats.questions > 0 && (
           <span className="chip count">{stats.items - stats.questions}</span>
         )}
-        {decision && (
-          <span
-            className={`chip ${decision} ${status === "changed" ? "stale" : ""}`}
-            title={status === "changed" ? "Decision predates the latest edit" : undefined}
-          >
-            {decision}
-            {status === "changed" ? " (stale)" : ""}
-          </span>
-        )}
         {props.seen.has(fact.path) && (
           <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
         )}
@@ -1400,7 +1383,7 @@ function DirView(props: {
   onOpen: (row: Row) => void;
   onToggleSelect: (path: string) => void;
   onSelectAll: (paths: string[], on: boolean) => void;
-  onDecide: (path: string, d: Decision) => void;
+  onPreset: (path: string, preset: Preset) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.data.facts, props.dir);
   const subdirs = childDirsOf(props.data.facts, props.dir);
@@ -1423,8 +1406,9 @@ function DirView(props: {
         <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
       )}
       <div className="dirstats stat">
-        {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.undecided} undecided ·{" "}
-        {stats.questions} open question{stats.questions === 1 ? "" : "s"}
+        {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.items} item
+        {stats.items === 1 ? "" : "s"} · {stats.questions} open question
+        {stats.questions === 1 ? "" : "s"}
       </div>
       <div className="facttable" id="fact-table" aria-label={`Facts in ${props.dir}`}>
         {children.length > 0 && (
@@ -1459,12 +1443,11 @@ function DirView(props: {
           </div>
         ))}
         {children.map((fact) => {
-          const decision = fact.sidecar?.decision;
           const stats = factStats(fact);
           return (
             <div
               key={fact.path}
-              className={`trow ${!props.seen.has(fact.path) ? "unseen" : ""} ${decision ? "has-decision" : ""}`}
+              className={`trow ${!props.seen.has(fact.path) ? "unseen" : ""}`}
               data-path={fact.path}
               onClick={() => props.onOpen({ kind: "fact", path: fact.path, depth: 0 })}
             >
@@ -1486,14 +1469,14 @@ function DirView(props: {
                 )}
               </span>
               <span className="decide" onClick={(e) => e.stopPropagation()}>
-                {DECISIONS.map(({ d, label }) => (
+                {PRESETS.map((preset) => (
                   <Button
-                    key={d}
-                    variant={decision === d ? "default" : "outline"}
+                    key={preset.key}
+                    variant="outline"
                     size="xs"
-                    onClick={() => props.onDecide(fact.path, d)}
+                    onClick={() => props.onPreset(fact.path, preset)}
                   >
-                    {label}
+                    {preset.label}
                   </Button>
                 ))}
               </span>
@@ -1509,7 +1492,7 @@ function Panel(props: {
   fact: Fact | null;
   anchorStates: Map<string, "exact" | "drifted" | "detached">;
   composer: Composer | null;
-  onDecide: (d: Decision) => void;
+  onPreset: (preset: Preset) => void;
   onFocusItem: (id: string | null) => void;
   onEdit: (item: SidecarItem) => void;
   onDelete: (id: string) => void;
@@ -1520,35 +1503,30 @@ function Panel(props: {
   onCancel: () => void;
 }): React.JSX.Element {
   const fact = props.fact;
-  const decision = fact?.sidecar?.decision ?? "";
   return (
     <>
       <h2 className="flex items-center justify-between">
-        Decision
+        Quick note
         <Button variant="ghost" size="icon-xs" aria-label="Collapse panel" onClick={props.onCollapse}>
           <PanelRightClose />
         </Button>
       </h2>
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        size="sm"
-        id="decisions"
-        aria-label="Decision"
-        value={decision}
-        disabled={!fact}
-        onValueChange={(value) => {
-          if (value) props.onDecide(value as Decision);
-          else if (decision) props.onDecide(decision as Decision); // toggle off
-        }}
-      >
-        {DECISIONS.map(({ d, key, label }) => (
-          <ToggleGroupItem key={d} value={d} data-decision={d} aria-keyshortcuts={key}>
-            <Kbd>{key}</Kbd>
-            {label}
-          </ToggleGroupItem>
+      <div id="presets" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick note">
+        {PRESETS.map((preset) => (
+          <Button
+            key={preset.key}
+            variant="outline"
+            size="sm"
+            data-preset={preset.label}
+            aria-keyshortcuts={preset.key}
+            disabled={!fact}
+            onClick={() => props.onPreset(preset)}
+          >
+            <Kbd>{preset.key}</Kbd>
+            {preset.label}
+          </Button>
         ))}
-      </ToggleGroup>
+      </div>
       <h2>Items</h2>
       <div id="panel-items">
         {(fact?.sidecar?.items ?? []).map((item) => {
@@ -1654,7 +1632,7 @@ function Panel(props: {
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 decide · v seen · a/q/c raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
+        j/k move · 1–3 quick note · v seen · a/q/c raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
       </p>
     </>
   );
@@ -1805,12 +1783,11 @@ function FinishSheet(props: {
   data: ReviewData;
   progress: { seen: number; total: number };
   openQuestions: number;
-  decidedFacts: Fact[];
+  raisedFacts: Fact[];
   onFinish: () => void;
   onApprove: () => void;
   onClose: () => void;
 }): React.JSX.Element {
-  const decisions = props.data.facts.filter((f) => f.sidecar?.decision).length;
   return (
     <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent id="finish-sheet" className="sm:max-w-[560px]">
@@ -1818,20 +1795,16 @@ function FinishSheet(props: {
           <DialogTitle>Finish review — snapshot {props.data.snapshot}</DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground stat text-[13px]">
-          {props.progress.seen} of {props.progress.total} facts seen · {decisions} decision
-          {decisions === 1 ? "" : "s"} · {props.openQuestions} open question
+          {props.progress.seen} of {props.progress.total} facts seen ·{" "}
+          {props.raisedFacts.length} fact{props.raisedFacts.length === 1 ? "" : "s"} with items ·{" "}
+          {props.openQuestions} open question
           {props.openQuestions === 1 ? "" : "s"}
         </p>
         <ul className="max-h-[40vh] list-none overflow-y-auto p-0">
-          {props.decidedFacts.map((fact) => {
+          {props.raisedFacts.map((fact) => {
             const items = fact.sidecar?.items ?? [];
             return (
               <li key={fact.path} className="border-line-soft border-b py-1.5 text-[13px]">
-                {fact.sidecar?.decision && (
-                  <span className={`chip ${fact.sidecar.decision} mr-1.5`}>
-                    {fact.sidecar.decision}
-                  </span>
-                )}
                 {items.length > 0 && (
                   <span className="chip count mr-1.5">
                     {items.length} item{items.length === 1 ? "" : "s"}
@@ -1842,7 +1815,7 @@ function FinishSheet(props: {
               </li>
             );
           })}
-          {props.decidedFacts.length === 0 && (
+          {props.raisedFacts.length === 0 && (
             <li className="py-1.5 text-[13px]">
               Nothing raised — finishing records agreement with every fact.
             </li>

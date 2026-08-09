@@ -89,17 +89,17 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
   await expect(page).toHaveScreenshot("mobile-fact.png");
 });
 
-test("the review panel opens as a bottom sheet; decisions write sidecars", async () => {
+test("the review panel opens as a bottom sheet; quick-notes write sidecars", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
-  await page.locator('#decisions [data-decision="simplify"]').tap();
+  await page.locator('#presets [data-preset="Simplify"]').tap();
   await expect
     .poll(
       () =>
         existsSync(join(tmp, ".reviewkit/design-review/1/storage/whole-file-writes.review.json")) &&
         sidecar("storage/whole-file-writes.review.json"),
     )
-    .toEqual({ decision: "simplify" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Simplify." }] });
   await expect(page).toHaveScreenshot("mobile-panel.png");
 });
 
@@ -144,9 +144,13 @@ test("selection popup annotates via touch (composer opens in the sheet)", async 
   await page.locator("#item-input").fill("Atomic rename, please.");
   await page.locator("#item-save").tap();
   await expect
-    .poll(() => sidecar("storage/whole-file-writes.review.json").items?.[0])
+    .poll(() =>
+      sidecar("storage/whole-file-writes.review.json").items?.find(
+        (i: { anchor?: unknown }) => i.anchor,
+      ),
+    )
     .toEqual({
-      id: "a1",
+      id: "a2",
       type: "annotation",
       anchor: { quote: "last write wins" },
       text: "Atomic rename, please.",

@@ -56,7 +56,6 @@ try {
     join(review, "1/storage/whole-file-writes.review.json"),
     JSON.stringify(
       {
-        decision: "simplify",
         items: [
           {
             id: "a1",
@@ -72,7 +71,11 @@ try {
   );
   writeFileSync(
     join(review, "1/http/_index.review.json"),
-    JSON.stringify({ decision: "defer" }, null, 2) + "\n",
+    JSON.stringify(
+      { items: [{ id: "a1", type: "annotation", text: "Defer." }] },
+      null,
+      2,
+    ) + "\n",
   );
   writeFileSync(
     join(review, "1/slugs/collision-retry.review.json"),

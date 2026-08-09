@@ -159,32 +159,32 @@ test("j/k walk the tree; a directory row shows its _index fact", async () => {
   );
 });
 
-test("decision keys write sidecars; repeat clears; badges render", async () => {
+test("quick-note preset keys write annotation items; u undoes them", async () => {
   await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.keyboard.press("1");
   await expect
     .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ decision: "not-needed" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
   await expect(
-    page.locator('.tree .row[data-path="http/create-link.md"] .chip.not-needed'),
-  ).toHaveText("not-needed");
+    page.locator('.tree .row[data-path="http/create-link.md"] .chip.count'),
+  ).toHaveText("1");
 
-  await page.keyboard.press("1"); // toggle off — resolution is deletion
+  await page.keyboard.press("u"); // undo — resolution is deletion
   await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
 
   await page.keyboard.press("2");
   await expect
     .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ decision: "simplify" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Simplify." }] });
 
   await page.keyboard.press("j");
   await page.keyboard.press("3");
   await expect
     .poll(() => existsSync(snap2("http/redirect.review.json")) && readSidecar("http/redirect.review.json"))
-    .toEqual({ decision: "defer" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Defer." }] });
 });
 
-test("directory table: bulk decision with undo toast", async () => {
+test("directory table: bulk quick-notes with undo toast", async () => {
   await page.locator('.tree .row[data-path="storage"]').click();
   await expect(page.locator("#fact-table .trow")).toHaveCount(2);
   for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
@@ -194,12 +194,12 @@ test("directory table: bulk decision with undo toast", async () => {
   await page.locator('#bulkbar button:has-text("Not needed")').click();
   await expect
     .poll(() => existsSync(snap2("storage/hit-counting.review.json")) && readSidecar("storage/hit-counting.review.json"))
-    .toEqual({ decision: "not-needed" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
   await expect
     .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")) && readSidecar("storage/whole-file-writes.review.json"))
-    .toEqual({ decision: "not-needed" });
+    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
 
-  await expect(page.locator("#toast")).toContainText("Marked 2 facts not-needed");
+  await expect(page.locator("#toast")).toContainText("Noted “Not needed” on 2 facts");
   await page.locator('#toast button:has-text("Undo")').click();
   await expect.poll(() => existsSync(snap2("storage/hit-counting.review.json"))).toBe(false);
   await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
@@ -360,7 +360,7 @@ test("tree filter narrows the tree; palette search jumps", async () => {
 
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   await page.locator("#btn-finish").click();
-  await expect(page.locator("#finish-sheet")).toContainText("2 decisions");
+  await expect(page.locator("#finish-sheet")).toContainText("4 facts with items");
   await expect(page.locator("#finish-sheet")).toContainText("1 open question");
   await page.locator("#confirm-finish").click();
   await expect(page.locator("#done")).toBeVisible();
@@ -370,8 +370,7 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
     review: "design-review",
     snapshot: 2,
     facts: 10,
-    decisions: { "not-needed": 0, simplify: 1, defer: 1, undecided: 8 },
-    annotations: 1,
+    annotations: 3, // two quick-notes + one selection annotation
     comments: 0,
     openQuestions: 1,
     approved: false,
