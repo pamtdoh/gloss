@@ -253,6 +253,20 @@ function App(): React.JSX.Element {
   });
   stateRef.current = { data, composer, done: done !== null };
 
+  // the URL names the page being viewed: "#dir/" or "#dir/fact.md", so
+  // back/forward walk previously viewed pages and links survive a reload
+  const cursorFromHash = (facts: Fact[]): Row | null => {
+    const raw = decodeURI(location.hash.slice(1));
+    if (!raw) return null;
+    if (raw.endsWith("/")) {
+      const path = raw.slice(0, -1);
+      return facts.some((f) => f.path.startsWith(`${path}/`))
+        ? { kind: "dir", path, depth: 0 }
+        : null;
+    }
+    return facts.some((f) => f.path === raw) ? { kind: "fact", path: raw, depth: 0 } : null;
+  };
+
   // ---------- data ----------
   async function load(snapshot?: number): Promise<void> {
     const next = await fetchReview(snapshot);
@@ -263,7 +277,8 @@ function App(): React.JSX.Element {
         : new Map((await fetchReview(prior)).facts.map((f) => [f.path, f.content])),
     );
     setData(next);
-    setCursor(null);
+    // deep links land on their page; snapshot switches keep the place
+    setCursor(cursorFromHash(next.facts));
     setSelection(new Set());
     setComposer(null);
     setFilter("");
@@ -272,6 +287,9 @@ function App(): React.JSX.Element {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (data) document.title = data.review;
+  }, [data?.review]);
 
   // ---------- seen (content-keyed) ----------
   const seen = useMemo(() => {
@@ -510,6 +528,27 @@ function App(): React.JSX.Element {
       ?.scrollIntoView({ block: "nearest" });
     if (readColRef.current) readColRef.current.scrollTop = 0;
   }, [effectiveCursor?.kind, effectiveCursor?.path]);
+
+  // cursor -> URL: every page the user reaches becomes a history entry.
+  // A popstate-restored cursor already matches the hash, so no re-push;
+  // the pre-navigation initial cursor only replaces.
+  useEffect(() => {
+    if (!effectiveCursor) return;
+    const target = `#${encodeURI(effectiveCursor.path)}${effectiveCursor.kind === "dir" ? "/" : ""}`;
+    if (location.hash === target) return;
+    if (userMoved.current) history.pushState(null, "", target);
+    else history.replaceState(null, "", target);
+  }, [effectiveCursor?.kind, effectiveCursor?.path]);
+
+  // URL -> cursor: back/forward re-open the page named by the hash
+  useEffect(() => {
+    const onPop = (): void => {
+      setCursor(cursorFromHash(stateRef.current.data?.facts ?? []));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // a composer and a pending selection belong to the fact they started on
   useEffect(() => {
@@ -997,7 +1036,7 @@ function App(): React.JSX.Element {
           <Menu />
         </Button>
         <h1>
-          reviewkit — <span id="review-name">{data.review}</span>
+          <span id="review-name">{data.review}</span>
         </h1>
         <span className="progress stat" id="progress">
           <span className="max-[560px]:hidden">

@@ -381,6 +381,30 @@ test("tree filter narrows the tree; palette search jumps", async () => {
   await expect(page.locator("#help-sheet")).toHaveCount(0);
 });
 
+test("the URL names the page; back and forward walk the visited pages", async () => {
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
+  await expect(page).toHaveURL(/#cli\/add-and-list\.md$/);
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await expect(page).toHaveURL(/#http\/create-link\.md$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/#cli\/add-and-list\.md$/);
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
+    "data-path",
+    "cli/add-and-list.md",
+  );
+  await page.goForward();
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
+    "data-path",
+    "http/create-link.md",
+  );
+  // a reload deep-links back to the same page
+  await page.reload();
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
+    "data-path",
+    "http/create-link.md",
+  );
+});
+
 test("theme menu switches dark/light and persists; palette offers it too", async () => {
   const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
   expect(await isDark()).toBe(false); // test context is light-scheme

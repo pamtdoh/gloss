@@ -160,7 +160,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
           }
           res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
           return res.end(
-            `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>reviewkit</title>` +
+            `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>Review</title>` +
               `<body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0">` +
               `<form method="POST" action="/auth"><input type="hidden" name="token" value="${candidate}">` +
               `<button style="font:16px system-ui;padding:10px 22px;border-radius:8px;border:1px solid #ccc;cursor:pointer">Open review</button>` +
@@ -187,7 +187,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       if (!cookies.includes(`rk_session=${sessionCookie}`)) {
         if (url.pathname.startsWith("/api/")) return sendJson(401, { ok: false, error: "unauthorized" });
         res.writeHead(401, { "content-type": "text/html" });
-        return res.end("<h1>Unauthorized</h1><p>Open the one-time URL printed by <code>reviewkit session</code>.</p>");
+        return res.end("<h1>Unauthorized</h1><p>Open the one-time URL printed by the review session.</p>");
       }
       // http is accepted for the proxied host too: tailscale serve without
       // HTTPS certificates still rides WireGuard between the devices.

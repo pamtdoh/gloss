@@ -439,11 +439,26 @@ body {
   transition: background-color var(--dur-hover) var(--ease-out);
 }
 .facttable .trow:hover, .facttable .trow:focus-within { background: var(--panel-2); }
-.facttable .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* titles are whole claims: give them the full row and a second line
+   before ellipsizing — a clipped claim can't be decided on */
+.facttable .title {
+  flex: 1; min-width: 0; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .facttable .trow.unseen .title { font-weight: 650; }
 .facttable .decide { display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
-.facttable .trow:hover .decide, .facttable .trow:focus-within .decide,
-.facttable .trow.has-decision .decide { opacity: 1; }
+.facttable .trow:hover .decide, .facttable .trow:focus-within .decide { opacity: 1; }
+/* invisible buttons must not reserve row width: on fine layouts the quick
+   comments overlay the row's right edge on hover/focus, so the title gets
+   the full row (its hidden state also swallows no clicks) */
+@media (min-width: 861px) {
+  .facttable .trow { position: relative; }
+  .facttable .decide {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    padding-left: 8px; background: var(--panel-2); pointer-events: none;
+  }
+  .facttable .trow:hover .decide, .facttable .trow:focus-within .decide { pointer-events: auto; }
+}
 .bulkbar {
   position: sticky; bottom: 16px; z-index: 5;
   display: flex; align-items: center; gap: 10px; margin-top: 10px;
