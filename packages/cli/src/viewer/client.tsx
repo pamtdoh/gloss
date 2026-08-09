@@ -9,7 +9,6 @@ import {
   ListTodo,
   Menu,
   MessageCircleQuestion,
-  Monitor,
   Moon,
   MoreHorizontal,
   PanelRightClose,
@@ -81,7 +80,6 @@ import {
   SelectValue,
 } from "./ui/select.js";
 import { Textarea } from "./ui/textarea.js";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group.js";
 
 // theme: light | dark | system -> .dark class (utilities target it).
 // Applied once at module load so the first paint is already correct.
@@ -1057,6 +1055,13 @@ function App(): React.JSX.Element {
     });
   }, [factHtml, diagramVersion]);
 
+  // React 19 diffs dangerouslySetInnerHTML by OBJECT identity, not by the
+  // __html string: a fresh {__html} object every render rewrites innerHTML
+  // even when the markup is byte-identical — destroying the reader's live
+  // text selection (and, before the mermaid cache, the rendered diagrams).
+  // One memoized object per markup value makes re-renders truly inert.
+  const factHtmlProp = useMemo(() => ({ __html: processedHtml }), [processedHtml]);
+
   // toast auto-dismiss (paused while hovered)
   const toastHover = useRef(false);
   useEffect(() => {
@@ -1129,45 +1134,18 @@ function App(): React.JSX.Element {
           )}
         </span>
         <span className="spacer" />
-        <DM.Root>
-          <DM.Trigger asChild>
-            <Button variant="ghost" size="icon-sm" id="btn-theme" aria-label="Theme">
-              {effectiveDark ? <Moon /> : <Sun />}
-            </Button>
-          </DM.Trigger>
-          <DM.Portal>
-            <DM.Content
-              className="menu z-50 min-w-[130px] rounded-md border bg-popover p-1 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-              align="end"
-              sideOffset={4}
-            >
-              <DM.RadioGroup
-                value={theme}
-                onValueChange={(v) => setTheme(v as ThemeMode)}
-              >
-                {(
-                  [
-                    ["light", "Light", Sun],
-                    ["dark", "Dark", Moon],
-                    ["system", "System", Monitor],
-                  ] as const
-                ).map(([value, label, Icon]) => (
-                  <DM.RadioItem
-                    key={value}
-                    value={value}
-                    className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent"
-                  >
-                    <Icon className="lucide size-3.5" size={14} />
-                    <span className="flex-1">{label}</span>
-                    <DM.ItemIndicator>
-                      <Check className="lucide size-3.5" size={14} />
-                    </DM.ItemIndicator>
-                  </DM.RadioItem>
-                ))}
-              </DM.RadioGroup>
-            </DM.Content>
-          </DM.Portal>
-        </DM.Root>
+        {/* owner: "just a simple toggle" — flips light/dark; the palette
+            still offers "Theme: system" to hand control back to the OS */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          id="btn-theme"
+          aria-label={effectiveDark ? "Switch to light theme" : "Switch to dark theme"}
+          title={effectiveDark ? "Light theme" : "Dark theme"}
+          onClick={() => setTheme(effectiveDark ? "light" : "dark")}
+        >
+          {effectiveDark ? <Moon /> : <Sun />}
+        </Button>
         <Select
           value={String(data.snapshot)}
           onValueChange={(value) => void load(Number(value))}
@@ -1214,56 +1192,75 @@ function App(): React.JSX.Element {
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
         <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
           <div className="tree-head">
+            {/* one line: the filter input and the scope chip share the row */}
             <div className="tree-filter">
-              <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
-              <Input
-                id="tree-filter"
-                className="h-8 pl-8"
-                placeholder="Filter facts (f)"
-                aria-label="Filter facts"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.stopPropagation();
-                    setFilter("");
-                    e.currentTarget.blur();
-                  }
-                }}
-              />
-              <button
-                className="filter-clear"
-                data-show={filter ? "" : undefined}
-                aria-label="Clear filter"
-                tabIndex={filter ? 0 : -1}
-                onClick={() => setFilter("")}
-              >
-                <X className="lucide size-3.5" size={14} />
-              </button>
-            </div>
-            <div className="scope-row">
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                value={scope}
-                aria-label="Tree scope"
-                onValueChange={(v) => v && setScope(v as Scope)}
-              >
-                {SCOPES.map((s) => (
-                  <ToggleGroupItem
-                    key={s}
-                    value={s}
-                    id={`scope-${s}`}
-                    disabled={s === "changed" && !prev}
-                    title={s === "changed" && !prev ? "No previous snapshot to compare" : undefined}
-                    className="h-7 gap-1.5 px-2.5 text-[12px]"
+              <div className="filter-box">
+                <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
+                <Input
+                  id="tree-filter"
+                  className="h-8 pl-8"
+                  placeholder="Filter facts (f)"
+                  aria-label="Filter facts"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setFilter("");
+                      e.currentTarget.blur();
+                    }
+                  }}
+                />
+                <button
+                  className="filter-clear"
+                  data-show={filter ? "" : undefined}
+                  aria-label="Clear filter"
+                  tabIndex={filter ? 0 : -1}
+                  onClick={() => setFilter("")}
+                >
+                  <X className="lucide size-3.5" size={14} />
+                </button>
+              </div>
+              <DM.Root>
+                <DM.Trigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    id="scope-btn"
+                    aria-label={`Scope: ${SCOPE_LABEL[scope]}`}
+                    className={`h-8 gap-1.5 px-2.5 text-[12px] ${scope !== "all" ? "scope-active" : ""}`}
                   >
-                    {SCOPE_LABEL[s]}
-                    <span className="scope-count">{scopeCounts[s]}</span>
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
+                    {SCOPE_LABEL[scope]}
+                    <span className="scope-count">{scopeCounts[scope]}</span>
+                    <ChevronRight className="lucide size-3 rotate-90 opacity-60" size={12} />
+                  </Button>
+                </DM.Trigger>
+                <DM.Portal>
+                  <DM.Content
+                    className="menu z-50 min-w-[150px] rounded-md border bg-popover p-1 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <DM.RadioGroup value={scope} onValueChange={(v) => v && setScope(v as Scope)}>
+                      {SCOPES.map((s) => (
+                        <DM.RadioItem
+                          key={s}
+                          value={s}
+                          id={`scope-${s}`}
+                          disabled={s === "changed" && !prev}
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-45"
+                        >
+                          <span className="flex-1">{SCOPE_LABEL[s]}</span>
+                          <span className="scope-count">{scopeCounts[s]}</span>
+                          <DM.ItemIndicator>
+                            <Check className="lucide size-3.5" size={14} />
+                          </DM.ItemIndicator>
+                        </DM.RadioItem>
+                      ))}
+                    </DM.RadioGroup>
+                  </DM.Content>
+                </DM.Portal>
+              </DM.Root>
             </div>
           </div>
           <div className="drawer-tools">
@@ -1380,7 +1377,7 @@ function App(): React.JSX.Element {
                   id="fact-content"
                   data-fact-path={renderedFact.path}
                   ref={readRef as React.RefObject<HTMLElement>}
-                  dangerouslySetInnerHTML={{ __html: processedHtml }}
+                  dangerouslySetInnerHTML={factHtmlProp}
                 />
               </>
             ) : (
@@ -1650,6 +1647,18 @@ function rowLabel(row: Row): string {
   return row.kind === "dir" ? `${nameOf(row.path)}/` : nameOf(row.path);
 }
 
+// Markdown rendered behind a stable {__html} object — see factHtmlProp:
+// React 19 diffs dangerouslySetInnerHTML by object identity, so an inline
+// object re-writes the DOM (and re-parses the markdown) on every render.
+function Md(props: { text: string; block?: boolean; className?: string }): React.JSX.Element {
+  const html = useMemo(() => ({ __html: renderMarkdown(props.text) }), [props.text]);
+  return props.block ? (
+    <div className={props.className} dangerouslySetInnerHTML={html} />
+  ) : (
+    <span className={props.className} dangerouslySetInnerHTML={html} />
+  );
+}
+
 type BadgeStatus = "new" | "changed" | "removed" | undefined;
 
 function ChangeBadge({ status }: { status: BadgeStatus }): React.JSX.Element | null {
@@ -1783,6 +1792,7 @@ function DirView(props: {
   onSelectAll: (paths: string[], on: boolean) => void;
   onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
+  const indexHtmlProp = useMemo(() => ({ __html: props.indexHtml }), [props.indexHtml]);
   const children = childFactsOf(props.facts, props.dir);
   const subdirs = childDirsOf(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
@@ -1800,7 +1810,7 @@ function DirView(props: {
           id="fact-content"
           data-fact-path={props.indexFact.path}
           ref={props.readRef as React.RefObject<HTMLElement>}
-          dangerouslySetInnerHTML={{ __html: props.indexHtml }}
+          dangerouslySetInnerHTML={indexHtmlProp}
         />
       ) : (
         <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
@@ -2001,7 +2011,7 @@ function Panel(props: {
                   {(item.thread ?? []).map((turn, i) => (
                     <div key={i} className="turn cardtext">
                       <span className="who">{turn.who}</span>
-                      <span dangerouslySetInnerHTML={{ __html: renderMarkdown(turn.text) }} />
+                      <Md text={turn.text} />
                     </div>
                   ))}
                   <span className="actions">
@@ -2017,12 +2027,7 @@ function Panel(props: {
                   </span>
                 </>
               ) : (
-                item.text && (
-                  <div
-                    className="cardtext"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }}
-                  />
-                )
+                item.text && <Md block className="cardtext" text={item.text} />
               )}
             </div>
           );

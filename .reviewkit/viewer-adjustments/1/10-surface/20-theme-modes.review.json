@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "c1",
+      "type": "comment",
+      "anchor": {
+        "quote": "Light | Dark | System"
+      },
+      "text": "Just a simple toggle is good enough"
+    }
+  ]
+}

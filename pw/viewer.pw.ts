@@ -261,6 +261,24 @@ test("selection comment stores the verbatim quote and paints a highlight", async
   await expect(page).toHaveScreenshot("viewer-annotated.png");
 });
 
+test("a real mouse selection survives re-renders", async () => {
+  // regression: React 19 diffs dangerouslySetInnerHTML by object identity,
+  // so an inline {__html} object rewrote innerHTML on every re-render and
+  // the browser dropped the live selection ~500ms after mouse-up
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
+  const box = (await page.locator("#fact-content p").first().boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 260, box.y + 10, { steps: 12 });
+  await page.mouse.up();
+  await expect(page.locator("#sel-pop")).toBeVisible();
+  await page.waitForTimeout(2500); // outlives the commit debounce and a poll tick
+  expect(await page.evaluate(() => window.getSelection()!.isCollapsed)).toBe(false);
+  await expect(page.locator("#sel-pop")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sel-pop")).toHaveCount(0);
+});
+
 test("anchored question emits question.asked and shows the header pill", async () => {
   await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
   await selectText("10 collisions");
@@ -387,7 +405,9 @@ test("tree filter narrows the tree; palette search jumps", async () => {
 });
 
 test("scope: changed shows changed/new plus a read-only ghost; raised shows noted facts", async () => {
+  await page.locator("#scope-btn").click();
   await page.locator("#scope-changed").click();
+  await expect(page.locator("#scope-btn")).toContainText("Changed");
   // changed: storage/whole-file-writes; new: architecture; removed ghost: slugs/legacy-dedupe
   await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
   await expect(page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]')).toHaveClass(
@@ -409,6 +429,7 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
 
   // raised = facts carrying comments or questions at this point in the run:
   // http/create-link, http/redirect, slugs/collision-retry, storage/whole-file-writes
+  await page.locator("#scope-btn").click();
   await page.locator("#scope-raised").click();
   await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(4);
   await expect(page.locator('.tree .row[data-path="storage/whole-file-writes.md"]')).toBeVisible();
@@ -443,15 +464,16 @@ test("the URL names the page; back and forward walk the visited pages", async ()
   );
 });
 
-test("theme menu switches dark/light and persists; palette offers it too", async () => {
+test("theme button toggles dark/light and persists; system is a palette command", async () => {
   const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
   expect(await isDark()).toBe(false); // test context is light-scheme
   await page.locator("#btn-theme").click();
-  await page.getByRole("menuitemradio", { name: "Dark" }).click();
   await expect.poll(isDark).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("dark");
   await page.reload();
   await expect.poll(isDark).toBe(true); // survives reload before first paint
+  await page.locator("#btn-theme").click();
+  await expect.poll(isDark).toBe(false);
 
   await page.keyboard.press("/");
   await page.locator("[cmdk-input]").fill("theme: system");
