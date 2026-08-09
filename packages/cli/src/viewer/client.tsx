@@ -1113,23 +1113,25 @@ function App(): React.JSX.Element {
               <nav className="pagenav" aria-label="Previous and next fact">
                 <button
                   id="nav-prev"
+                  className="pagenav-link prev"
                   disabled={cursorIndex <= 0}
                   onClick={() => moveCursor(-1)}
                 >
-                  <ChevronRight className="lucide size-4 rotate-180" size={16} />
+                  <span className="pagenav-dir">← Previous</span>
                   <span className="pagenav-label">
                     {cursorIndex > 0 ? rowLabel(rows[cursorIndex - 1]!) : ""}
                   </span>
                 </button>
                 <button
                   id="nav-next"
+                  className="pagenav-link next"
                   disabled={cursorIndex >= rows.length - 1}
                   onClick={() => moveCursor(1)}
                 >
+                  <span className="pagenav-dir">Next →</span>
                   <span className="pagenav-label">
                     {cursorIndex < rows.length - 1 ? rowLabel(rows[cursorIndex + 1]!) : ""}
                   </span>
-                  <ChevronRight className="lucide size-4" size={16} />
                 </button>
               </nav>
             )}
@@ -1448,7 +1450,7 @@ function DirView(props: {
         <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
       )}
       <div className="dirstats stat">
-        {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.items} item
+        {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.items} note
         {stats.items === 1 ? "" : "s"} · {stats.questions} open question
         {stats.questions === 1 ? "" : "s"}
       </div>
