@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ListTodo,
   Menu,
+  MessageCircleQuestion,
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
@@ -917,8 +918,9 @@ function App(): React.JSX.Element {
           <span className="max-[560px]:hidden">
             {progress.seen} / {progress.total} reviewed
           </span>
+          {/* sequential readers care where they ARE, not how much is seen */}
           <span className="hidden max-[560px]:inline">
-            {progress.seen}/{progress.total}
+            {cursorIndex + 1}/{rows.length}
           </span>
         </span>
         <span aria-live="polite">
@@ -933,8 +935,9 @@ function App(): React.JSX.Element {
                   ? `${yourTurn} answered — your turn`
                   : `${openQuestions.total} open question${openQuestions.total > 1 ? "s" : ""}`}
               </span>
-              <span className="hidden max-[560px]:inline">
-                {yourTurn ? `${yourTurn} answered` : `${openQuestions.total} open`}
+              <span className="hidden items-center gap-1 max-[560px]:inline-flex">
+                <MessageCircleQuestion className="lucide size-3.5" size={14} />
+                {yourTurn || openQuestions.total}
               </span>
             </button>
           )}
@@ -948,9 +951,12 @@ function App(): React.JSX.Element {
             size="sm"
             id="snapshot-select"
             aria-label="Snapshot"
-            className="snapshot-select w-[140px]"
+            className="snapshot-select w-[140px] max-[560px]:w-[76px]"
           >
-            <SelectValue />
+            <span className="max-[560px]:hidden">
+              <SelectValue />
+            </span>
+            <span className="hidden max-[560px]:inline">S{data.snapshot}</span>
           </SelectTrigger>
           <SelectContent>
             {data.snapshots.map((s) => (
@@ -996,21 +1002,9 @@ function App(): React.JSX.Element {
             </button>
           </div>
           <div className="drawer-tools">
-            <Select
-              value={String(data.snapshot)}
-              onValueChange={(value) => void load(Number(value))}
-            >
-              <SelectTrigger size="sm" aria-label="Snapshot" className="flex-1">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {data.snapshots.map((s) => (
-                  <SelectItem key={s} value={String(s)}>
-                    Snapshot {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <span className="stat text-muted-foreground flex-1 self-center text-[13px]">
+              {progress.seen} / {progress.total} reviewed
+            </span>
             <Button variant="outline" size="sm" onClick={() => setOverlay("palette")}>
               Search
             </Button>

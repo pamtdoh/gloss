@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "c1",
+      "type": "comment",
+      "anchor": {
+        "quote": "3/25"
+      },
+      "text": "i think the seen count is not that important it has to be shown at the navbar all the time. i thinks for me, it's more important to know which page number i'm currently at, because most of the times, i will just read them sequentially. for the seen count, maybe we could put it in the tree drawer?"
+    }
+  ]
+}
