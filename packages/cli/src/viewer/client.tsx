@@ -428,13 +428,24 @@ function App(): React.JSX.Element {
     const onSelection = (): void => {
       lastSelActivity.current = Date.now();
       clearTimeout(debounce);
-      debounce = setTimeout(settle, coarse ? 250 : 500);
+      // coarse keeps the long iOS buffer. Fine pointers gate on the mouse
+      // button instead (Hypothesis adder / Plate floating-toolbar pattern):
+      // nothing fires mid-drag, so selectionchange only covers keyboard
+      // selections, with a short trailing debounce.
+      if (coarse) debounce = setTimeout(settle, 250);
+      else if (!touchActive.current) debounce = setTimeout(settle, 100);
     };
     const onPointerDown = (): void => {
       touchActive.current = true;
     };
     const onPointerUp = (): void => {
       touchActive.current = false;
+      if (!coarse) {
+        // the selection is final a tick after mouseup — show near-instantly
+        // (Hypothesis uses 10ms here)
+        clearTimeout(debounce);
+        debounce = setTimeout(settle, 10);
+      }
     };
     document.addEventListener("selectionchange", onSelection);
     document.addEventListener("pointerdown", onPointerDown, true);
@@ -996,7 +1007,12 @@ function App(): React.JSX.Element {
       else if (item.type === "question") buckets["rk-question"]!.push(range);
       else buckets["rk-anno"]!.push(range);
     }
-    if (pendingSel && pendingSel.path === renderedFact.path) {
+    // On fine pointers the native selection IS the highlight while it is
+    // live (every studied implementation — Hypothesis, medium-editor,
+    // Plate, tiptap — relies on it); rk-pending paints only once the
+    // composer owns the screen and the native selection is free to
+    // collapse. Touch paints throughout — iOS collapses on any tap.
+    if (pendingSel && pendingSel.path === renderedFact.path && (COARSE || composer)) {
       const range = rangeForSourceSpan(
         readRef.current as HTMLElement,
         pendingSel.start,
@@ -1010,7 +1026,7 @@ function App(): React.JSX.Element {
     return () => {
       for (const name of Object.keys(buckets)) highlights.delete(name);
     };
-  }, [factHtml, renderedFact, focusItemId, pendingSel]);
+  }, [factHtml, renderedFact, focusItemId, pendingSel, composer]);
 
   const [diagramVersion, setDiagramVersion] = useState(0);
   useEffect(() => {
@@ -1198,7 +1214,7 @@ function App(): React.JSX.Element {
                 <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
                 <Input
                   id="tree-filter"
-                  className="h-8 pl-8"
+                  className="h-8 pl-7 text-[12px] md:text-[12px]"
                   placeholder="Filter facts (f)"
                   aria-label="Filter facts"
                   value={filter}

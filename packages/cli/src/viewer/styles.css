@@ -274,10 +274,12 @@ body {
 }
 #scope-btn.scope-active .scope-count { color: inherit; }
 .filter-icon {
-  position: absolute; left: 10px; top: 9px; color: var(--muted);
-  pointer-events: none;
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none;
 }
-.tree-filter input { padding-right: 26px; }
+/* cn() is clsx-only (no tailwind-merge): the component's h-9 ties with the
+   call-site h-8, so the height is pinned here to match the scope chip */
+.tree-filter input { padding-right: 26px; height: 32px; }
 .filter-clear {
   position: absolute; right: 4px; top: 5px; border: none; background: none;
   color: var(--muted); padding: 2px; border-radius: 4px; opacity: 0;
