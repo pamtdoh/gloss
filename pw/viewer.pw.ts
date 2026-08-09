@@ -122,7 +122,7 @@ test.afterAll(async () => {
 
 test("initial render: nested tree, directory view for the first row", async () => {
   await expect(page.locator("#review-name")).toHaveText("design-review");
-  await expect(page.locator("#progress")).toHaveText("0 / 10 reviewed");
+  await expect(page.locator("#progress")).toContainText("0 / 10 reviewed");
   // first row is the cli/ directory; its view shows the child-fact table
   await expect(page.locator(".tree .row").first()).toHaveAttribute("data-kind", "dir");
   await expect(page.locator("#dir-view")).toBeVisible();
@@ -223,7 +223,7 @@ test("selection annotation stores the verbatim quote and paints a highlight", as
   await page.keyboard.press("/");
   await page.locator("[cmdk-input]").fill("mark all facts");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#progress")).toHaveText("10 / 10 reviewed");
+  await expect(page.locator("#progress")).toContainText("10 / 10 reviewed");
 
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
@@ -274,7 +274,7 @@ test("anchored question emits question.asked and shows the header pill", async (
       ),
     )
     .toMatchObject({ id: "q1" });
-  await expect(page.locator("#question-pill")).toHaveText("1 open question");
+  await expect(page.locator("#question-pill")).toContainText("1 open question");
 });
 
 test("an agent answer on disk appears live; the pill flips to your-turn", async () => {
@@ -289,7 +289,7 @@ test("an agent answer on disk appears live; the pill flips to your-turn", async 
   await expect(page.locator(".card.item-question .who").nth(1)).toHaveText("agent", {
     timeout: 10_000,
   });
-  await expect(page.locator("#question-pill")).toHaveText("1 answered — your turn");
+  await expect(page.locator("#question-pill")).toContainText("1 answered — your turn");
 });
 
 test("the human replies in the same thread", async () => {

@@ -6,8 +6,8 @@ import { DropdownMenu as DM } from "radix-ui";
 import {
   Check,
   ChevronRight,
-  CircleHelp,
-  MessageCircleQuestion,
+  ListTodo,
+  Menu,
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
@@ -144,7 +144,11 @@ function App(): React.JSX.Element {
   const [approveOpen, setApproveOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(
+    () => window.matchMedia("(min-width: 1101px)").matches,
+  );
+  const [treeOpen, setTreeOpen] = useState(false); // mobile drawer
+  const isMobile = (): boolean => window.matchMedia("(max-width: 860px)").matches;
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [selHint, setSelHint] = useState<{ x: number; y: number } | null>(null);
@@ -546,6 +550,7 @@ function App(): React.JSX.Element {
   function openRow(row: Row): void {
     userMoved.current = true;
     setCursor(row);
+    if (row.kind === "fact" && isMobile()) setTreeOpen(false);
   }
 
   function toggleSeen(advance: boolean): void {
@@ -774,11 +779,26 @@ function App(): React.JSX.Element {
   return (
     <div className="app">
       <header className="hdr">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="hamburger"
+          id="btn-tree"
+          aria-label="Toggle fact tree"
+          onClick={() => setTreeOpen((open) => !open)}
+        >
+          <Menu />
+        </Button>
         <h1>
           reviewkit — <span id="review-name">{data.review}</span>
         </h1>
         <span className="progress stat" id="progress">
-          {progress.seen} / {progress.total} reviewed
+          <span className="max-[560px]:hidden">
+            {progress.seen} / {progress.total} reviewed
+          </span>
+          <span className="hidden max-[560px]:inline">
+            {progress.seen}/{progress.total}
+          </span>
         </span>
         <span aria-live="polite">
           {openQuestions.total > 0 && (
@@ -787,9 +807,14 @@ function App(): React.JSX.Element {
               id="question-pill"
               onClick={() => moveCursorWhere((f) => factStats(f).questions > 0, 1)}
             >
-              {yourTurn
-                ? `${yourTurn} answered — your turn`
-                : `${openQuestions.total} open question${openQuestions.total > 1 ? "s" : ""}`}
+              <span className="max-[560px]:hidden">
+                {yourTurn
+                  ? `${yourTurn} answered — your turn`
+                  : `${openQuestions.total} open question${openQuestions.total > 1 ? "s" : ""}`}
+              </span>
+              <span className="hidden max-[560px]:inline">
+                {yourTurn ? `${yourTurn} answered` : `${openQuestions.total} open`}
+              </span>
             </button>
           )}
         </span>
@@ -798,7 +823,12 @@ function App(): React.JSX.Element {
           value={String(data.snapshot)}
           onValueChange={(value) => void load(Number(value))}
         >
-          <SelectTrigger size="sm" id="snapshot-select" aria-label="Snapshot" className="w-[140px]">
+          <SelectTrigger
+            size="sm"
+            id="snapshot-select"
+            aria-label="Snapshot"
+            className="snapshot-select w-[140px]"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -810,12 +840,14 @@ function App(): React.JSX.Element {
           </SelectContent>
         </Select>
         <Button size="sm" id="btn-finish" onClick={() => setOverlay("finish")}>
-          Finish review
+          <span className="max-[560px]:hidden">Finish review</span>
+          <span className="hidden max-[560px]:inline">Finish</span>
         </Button>
       </header>
 
       <div className="cols">
-        <nav className="tree-col" aria-label="Facts">
+        {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
+        <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
           <div className="tree-filter">
             <Input
               id="tree-filter"
@@ -958,6 +990,20 @@ function App(): React.JSX.Element {
           </div>
         </main>
 
+        {!panelOpen && (
+          <button
+            className="panel-fab"
+            id="panel-fab"
+            aria-label="Open review panel"
+            onClick={() => setPanelOpen(true)}
+          >
+            <ListTodo className="lucide size-4" size={16} />
+            Review
+            {targetFact && factStats(targetFact).items > 0 && (
+              <span className="chip count">{factStats(targetFact).items}</span>
+            )}
+          </button>
+        )}
         {panelOpen ? (
           <aside className="panel-col panel" aria-label="Review panel">
             <Panel
@@ -1248,8 +1294,8 @@ function DirView(props: {
         <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
       )}
       <div className="dirstats stat">
-        {stats.facts} facts · {stats.undecided} undecided · {stats.questions} open question
-        {stats.questions === 1 ? "" : "s"}
+        {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.undecided} undecided ·{" "}
+        {stats.questions} open question{stats.questions === 1 ? "" : "s"}
       </div>
       <div className="facttable" id="fact-table" aria-label={`Facts in ${props.dir}`}>
         {children.length > 0 && (
@@ -1399,7 +1445,8 @@ function Panel(props: {
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    className="menu-btn absolute top-2 right-2"
+                    className="menu-btn"
+                    style={{ position: "absolute", top: 6, right: 6 }}
                     aria-label={`Actions for ${item.id}`}
                   >
                     <MoreHorizontal />

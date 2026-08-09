@@ -176,11 +176,53 @@ body {
 }
 .col-resizer:hover::after, .col-resizer[data-active]::after { background: var(--accent); }
 
+.scrim {
+  position: fixed; inset: 0; z-index: 14;
+  background: color-mix(in srgb, var(--text) 35%, transparent);
+}
+.hamburger { display: none; }
+.panel-fab { display: none; }
+
 @media (max-width: 1100px) {
-  .panel-col:not(.rail) { position: fixed; right: 0; top: 46px; bottom: 0; z-index: 15; box-shadow: var(--elev-3); }
+  .panel-col:not(.rail) {
+    position: fixed; right: 0; top: 46px; bottom: 0; z-index: 15;
+    box-shadow: var(--elev-3); width: min(360px, 92vw);
+  }
+  .panel-col.rail { display: none; }
+  .panel-fab {
+    display: inline-flex; position: fixed; right: 16px; bottom: 16px; z-index: 13;
+    align-items: center; gap: 6px;
+    background: var(--accent); color: var(--on-accent); border: none;
+    border-radius: 999px; padding: 10px 16px; font-weight: 600;
+    box-shadow: var(--elev-3);
+  }
+  .panel-fab .chip { background: color-mix(in srgb, var(--on-accent) 25%, transparent); color: var(--on-accent); }
 }
 @media (max-width: 860px) {
-  .tree-col { display: none; }
+  .hamburger { display: inline-flex; }
+  .hdr { gap: 8px; padding: 0 10px; }
+  .hdr h1 { display: none; }
+  .hdr .snapshot-select { display: none; }
+  .facttable .trow { flex-wrap: wrap; }
+  .facttable .decide { width: 100%; order: 9; justify-content: flex-end; }
+  .progress { font-size: 12px; }
+  .tree-col {
+    position: fixed; left: 0; top: 46px; bottom: 0; z-index: 15;
+    width: min(320px, 85vw); max-width: none;
+    transform: translateX(-100%);
+    transition: transform var(--dur-med) var(--ease-out);
+    box-shadow: var(--elev-3);
+  }
+  .tree-col[data-open] { transform: translateX(0); }
+  .tree .row { min-height: 40px; }
+  .panel-col:not(.rail) {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto;
+    max-height: 72dvh; border-left: none; border-top: 1px solid var(--line-raised);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  }
+  .read-col { padding: 18px 16px; }
+  .facttable .decide { opacity: 1; } /* no hover on touch — always show */
+  .bulkbar { bottom: 8px; flex-wrap: wrap; }
 }
 
 /* ------------------------------------------------------------- header */
@@ -195,7 +237,7 @@ body {
 .progress { color: var(--muted); font-size: 13px; white-space: nowrap; }
 .pill {
   font-size: 12px; border-radius: 999px; padding: 3px 10px; border: 1px solid transparent;
-  background: var(--panel-2); color: var(--muted);
+  background: var(--panel-2); color: var(--muted); white-space: nowrap;
   transition: background-color var(--dur-hover) var(--ease-out), border-color var(--dur-hover) var(--ease-out);
 }
 .pill:hover { border-color: var(--accent); }
