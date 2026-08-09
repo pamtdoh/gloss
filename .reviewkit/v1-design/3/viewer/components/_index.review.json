@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "id": "q1",
+      "type": "question",
+      "anchor": {
+        "quote": "design-token architecture"
+      },
+      "thread": [
+        {
+          "who": "human",
+          "text": "what does design token mean?"
+        },
+        {
+          "who": "agent",
+          "text": "A design token is a named value for a visual decision — a color, spacing step, shadow, duration, or easing — defined once and referenced everywhere (`--accent`, `--dur-fast`, `--elev-1`). Components never hardcode `#008573` or `120ms`; they say `var(--accent)`. That single layer is why the whole viewer switches to dark mode by swapping one set of values, why every hover runs at the same speed, and why a restyle means editing one block instead of hunting hex codes through every component."
+        }
+      ]
+    },
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "leetcoach"
+      },
+      "text": "I think we are following too much, including the color theme, maybe it's better if we look at references of code review tooling, maybe we can get some inspirations, do visual checks of the example screenshots."
+    }
+  ]
+}

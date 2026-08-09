@@ -955,6 +955,26 @@ function App(): React.JSX.Element {
               <X className="lucide size-3.5" size={14} />
             </button>
           </div>
+          <div className="drawer-tools">
+            <Select
+              value={String(data.snapshot)}
+              onValueChange={(value) => void load(Number(value))}
+            >
+              <SelectTrigger size="sm" aria-label="Snapshot" className="flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {data.snapshots.map((s) => (
+                  <SelectItem key={s} value={String(s)}>
+                    Snapshot {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => setOverlay("palette")}>
+              Search
+            </Button>
+          </div>
           {filtering && (
             <div className="filter-count" aria-live="polite">
               {filteredFacts.length} match{filteredFacts.length === 1 ? "" : "es"}

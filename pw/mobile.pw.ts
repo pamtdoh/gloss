@@ -77,6 +77,8 @@ test("phone layout: no horizontal scroll, compact header, panel closed", async (
 test("hamburger opens the tree drawer; tapping a fact navigates and closes it", async () => {
   await page.locator("#btn-tree").tap();
   await expect(page.locator(".tree-col")).toHaveAttribute("data-open", "");
+  // snapshot switcher + search live in the drawer on mobile
+  await expect(page.locator(".drawer-tools")).toBeVisible();
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').tap();
   await expect(page.locator(".tree-col")).not.toHaveAttribute("data-open", "");
   await expect(page.locator("#fact-content h1")).toHaveText(

@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "decision\nbutton"
+      },
+      "text": "i think we should demote or remove 'decision' as part of the review tooling design. I think after using it, i much prefer adding annotations. I think decisions could be changed, we could think it as a way to add annotations whole fact with preset messages. so we can simplify the sidecar format as well"
+    }
+  ]
+}

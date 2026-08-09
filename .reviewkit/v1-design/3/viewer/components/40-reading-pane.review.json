@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "GFM tables scroll inside their own containers, fenced code and\nin-snapshot images render inline, and Mermaid diagrams draw themed from\nthe token layer, loading their 3.5 MB renderer only when a diagram\nexists."
+      },
+      "text": "Could we add example facts using rich formatting, so i can get a look of them and review it?"
+    }
+  ]
+}
