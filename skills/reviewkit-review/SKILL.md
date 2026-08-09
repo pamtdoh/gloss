@@ -37,7 +37,7 @@ ask, or state the scope you inferred when you present the review.
    - **One condensed, decidable fact per `.md` file.** A fact is a claim
      about the design that the human can judge on its own: let it stand
      (silence is agreement) or annotate it (the viewer offers one-tap
-     stamps like "Not needed." and "Simplify."). If they'd have to say
+     quick-annotate presets like "Not needed." and "Simplify."). If they'd have to say
      "well, parts of it…", split it.
    - **Small.** A `# Title` line stating the claim, then a few sentences.
      Reference file paths where they help.
@@ -78,8 +78,8 @@ reviewkit session <review> --events
 It serves the viewer on loopback, prints a one-time URL on stderr (share
 it with the human if their browser didn't open), and blocks until the
 human clicks **Finish review** or approves. The command exiting is your
-notification; the last stdout line is a JSON summary (annotation and
-comment counts, open questions, approval status). With `--events`,
+notification; the last stdout line is a JSON summary (annotation count,
+open questions, approval status). With `--events`,
 stdout is JSONL: `session.started`, `question.asked`,
 `session.finished`.
 

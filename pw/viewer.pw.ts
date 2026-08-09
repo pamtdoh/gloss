@@ -159,7 +159,7 @@ test("j/k walk the tree; a directory row shows its _index fact", async () => {
   );
 });
 
-test("stamp keys write annotation items; u undoes them", async () => {
+test("quick-annotate keys write annotation items; u undoes them", async () => {
   await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.keyboard.press("1");
   await expect
@@ -184,7 +184,7 @@ test("stamp keys write annotation items; u undoes them", async () => {
     .toEqual({ items: [{ id: "a1", type: "annotation", text: "Defer." }] });
 });
 
-test("directory table: bulk stamps with undo toast", async () => {
+test("directory table: bulk quick-annotate with undo toast", async () => {
   await page.locator('.tree .row[data-path="storage"]').click();
   await expect(page.locator("#fact-table .trow")).toHaveCount(2);
   for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
@@ -199,7 +199,7 @@ test("directory table: bulk stamps with undo toast", async () => {
     .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")) && readSidecar("storage/whole-file-writes.review.json"))
     .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
 
-  await expect(page.locator("#toast")).toContainText("Stamped “Not needed” on 2 facts");
+  await expect(page.locator("#toast")).toContainText("Annotated “Not needed” on 2 facts");
   await page.locator('#toast button:has-text("Undo")').click();
   await expect.poll(() => existsSync(snap2("storage/hit-counting.review.json"))).toBe(false);
   await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
@@ -305,16 +305,16 @@ test("the human replies in the same thread", async () => {
     .toEqual(["human", "agent", "human"]);
 });
 
-test("items can be edited and deleted from the card menu", async () => {
+test("notes can be edited and deleted from the card menu", async () => {
   await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
-  await page.keyboard.press("c");
+  await page.keyboard.press("a"); // no selection = whole-fact annotation
   await page.locator("#item-input").fill("Nice.");
   await page.locator("#item-save").click();
   await expect
     .poll(() => existsSync(snap2("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
-    .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice." }] });
+    .toMatchObject({ items: [{ id: "a1", type: "annotation", text: "Nice." }] });
 
-  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.locator('.card[data-id="a1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Edit" }).click();
   await page.locator("#item-input").fill("Nice and small.");
   await page.locator("#item-save").click();
@@ -322,10 +322,10 @@ test("items can be edited and deleted from the card menu", async () => {
     .poll(() => readSidecar("cli/add-and-list.review.json").items[0].text)
     .toBe("Nice and small.");
 
-  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.locator('.card[data-id="a1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await expect.poll(() => existsSync(snap2("cli/add-and-list.review.json"))).toBe(false);
-  await expect(page.locator("#toast")).toContainText("Deleted c1");
+  await expect(page.locator("#toast")).toContainText("Deleted a1");
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
@@ -360,7 +360,7 @@ test("tree filter narrows the tree; palette search jumps", async () => {
 
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   await page.locator("#btn-finish").click();
-  await expect(page.locator("#finish-sheet")).toContainText("4 facts with items");
+  await expect(page.locator("#finish-sheet")).toContainText("4 facts with notes");
   await expect(page.locator("#finish-sheet")).toContainText("1 open question");
   await page.locator("#confirm-finish").click();
   await expect(page.locator("#done")).toBeVisible();
@@ -370,8 +370,7 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
     review: "design-review",
     snapshot: 2,
     facts: 10,
-    annotations: 3, // two quick-notes + one selection annotation
-    comments: 0,
+    annotations: 3, // two quick-annotates + one selection annotation
     openQuestions: 1,
     approved: false,
   };

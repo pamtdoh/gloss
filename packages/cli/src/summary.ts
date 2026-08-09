@@ -10,6 +10,8 @@ export interface ThreadEntry {
 
 export interface SidecarItem {
   id: string;
+  /** "comment" is legacy (merged into annotation, owner round 3+); it is
+   *  still rendered and counted as an annotation. */
   type: "annotation" | "question" | "comment";
   anchor?: { quote: string; prefix?: string; suffix?: string };
   text?: string;
@@ -29,7 +31,6 @@ export interface Summary {
   snapshot: number;
   facts: number;
   annotations: number;
-  comments: number;
   openQuestions: number;
   approved: boolean;
 }
@@ -41,13 +42,11 @@ export function summarize(input: {
   approved: boolean;
 }): Summary {
   let annotations = 0;
-  let comments = 0;
   let openQuestions = 0;
   for (const sidecar of input.sidecars) {
     for (const item of sidecar?.items ?? []) {
-      if (item.type === "annotation") annotations++;
-      else if (item.type === "comment") comments++;
-      else if (item.type === "question") openQuestions++;
+      if (item.type === "question") openQuestions++;
+      else annotations++; // annotation, or legacy comment
     }
   }
   return {
@@ -55,7 +54,6 @@ export function summarize(input: {
     snapshot: input.snapshot,
     facts: input.sidecars.length,
     annotations,
-    comments,
     openQuestions,
     approved: input.approved,
   };

@@ -82,10 +82,10 @@ const applyTheme = (): void => {
 applyTheme();
 darkQuery.addEventListener("change", applyTheme);
 
-// Stamps — the old "decisions", demoted per the owner's round-3 call:
-// one-tap whole-fact annotations with canned text. One concept, simpler files.
-interface Stamp { key: string; label: string; text: string }
-const STAMPS: Stamp[] = [
+// Quick Annotate — the old "decisions": one-tap whole-fact annotations
+// with canned text. One concept, simpler files.
+interface QuickAnnotation { key: string; label: string; text: string }
+const QUICK_ANNOTATIONS: QuickAnnotation[] = [
   { key: "1", label: "Not needed", text: "Not needed." },
   { key: "2", label: "Simplify", text: "Simplify." },
   { key: "3", label: "Defer", text: "Defer." },
@@ -464,7 +464,7 @@ function App(): React.JSX.Element {
     });
   }
 
-  function applyStamp(stamp: Stamp, paths?: string[]): void {
+  function applyQuickAnnotation(note: QuickAnnotation, paths?: string[]): void {
     if (!data) return;
     const bulk = !paths && selection.size > 0;
     const targets = paths ?? (bulk ? [...selection] : targetFact ? [targetFact.path] : []);
@@ -474,7 +474,7 @@ function App(): React.JSX.Element {
       mutateFact(path, (sidecar) => {
         const items = (sidecar.items ??= []);
         const id = nextId(items, "a");
-        items.push({ id, type: "annotation", text: stamp.text });
+        items.push({ id, type: "annotation", text: note.text });
         created.push({ path, id });
         if (!bulk) undoStack.current.push({ path, id });
       });
@@ -482,7 +482,7 @@ function App(): React.JSX.Element {
     if (bulk) {
       setSelection(new Set());
       setToast({
-        message: `Stamped “${stamp.label}” on ${targets.length} facts`,
+        message: `Annotated “${note.label}” on ${targets.length} facts`,
         undo: () => {
           for (const c of created) {
             mutateFact(c.path, (sidecar) => {
@@ -691,15 +691,14 @@ function App(): React.JSX.Element {
         setCollapsed((c) => new Set(c).add(effectiveCursor.path));
       }
     },
-    notNeeded: () => applyStamp(STAMPS[0]!),
-    simplify: () => applyStamp(STAMPS[1]!),
-    defer: () => applyStamp(STAMPS[2]!),
+    notNeeded: () => applyQuickAnnotation(QUICK_ANNOTATIONS[0]!),
+    simplify: () => applyQuickAnnotation(QUICK_ANNOTATIONS[1]!),
+    defer: () => applyQuickAnnotation(QUICK_ANNOTATIONS[2]!),
     seen: () => toggleSeen(false),
     seenAdvance: () => toggleSeen(true),
     select: () => toggleSelect(),
     annotate: () => beginItem("annotation"),
     question: () => beginItem("question"),
-    comment: () => beginItem("comment"),
     undo: () => undoLast(),
     help: () => setOverlay((o) => (o === "help" ? null : "help")),
     palette: () => setOverlay((o) => (o === "palette" ? null : "palette")),
@@ -1043,7 +1042,7 @@ function App(): React.JSX.Element {
                     return next;
                   })
                 }
-                onStamp={(path, stamp) => applyStamp(stamp, [path])}
+                onQuickAnnotate={(path, note) => applyQuickAnnotation(note, [path])}
               />
             ) : renderedFact ? (
               <>
@@ -1092,14 +1091,14 @@ function App(): React.JSX.Element {
               </nav>
             )}
             {selection.size > 0 && (
-              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk stamps">
+              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick annotate">
                 <span className="stat" aria-live="polite">
                   {selection.size} selected
                 </span>
-                {STAMPS.map((stamp) => (
-                  <button key={stamp.key} onClick={() => applyStamp(stamp)}>
-                    <Kbd className="mr-1">{stamp.key}</Kbd>
-                    {stamp.label}
+                {QUICK_ANNOTATIONS.map((note) => (
+                  <button key={note.key} onClick={() => applyQuickAnnotation(note)}>
+                    <Kbd className="mr-1">{note.key}</Kbd>
+                    {note.label}
                   </button>
                 ))}
                 <button onClick={() => setSelection(new Set())}>esc clear</button>
@@ -1116,7 +1115,7 @@ function App(): React.JSX.Element {
             onClick={() => setPanelOpen(true)}
           >
             <ListTodo className="lucide size-4" size={16} />
-            Review
+            Notes
             {targetFact && factStats(targetFact).items > 0 && (
               <span className="chip count">{factStats(targetFact).items}</span>
             )}
@@ -1128,7 +1127,7 @@ function App(): React.JSX.Element {
               fact={targetFact}
               anchorStates={anchorStates}
               composer={composer}
-              onStamp={(stamp) => applyStamp(stamp)}
+              onQuickAnnotate={(note) => applyQuickAnnotation(note)}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
                 targetFact &&
@@ -1383,7 +1382,7 @@ function DirView(props: {
   onOpen: (row: Row) => void;
   onToggleSelect: (path: string) => void;
   onSelectAll: (paths: string[], on: boolean) => void;
-  onStamp: (path: string, stamp: Stamp) => void;
+  onQuickAnnotate: (path: string, note: QuickAnnotation) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.data.facts, props.dir);
   const subdirs = childDirsOf(props.data.facts, props.dir);
@@ -1469,14 +1468,14 @@ function DirView(props: {
                 )}
               </span>
               <span className="decide" onClick={(e) => e.stopPropagation()}>
-                {STAMPS.map((stamp) => (
+                {QUICK_ANNOTATIONS.map((note) => (
                   <Button
-                    key={stamp.key}
+                    key={note.key}
                     variant="outline"
                     size="xs"
-                    onClick={() => props.onStamp(fact.path, stamp)}
+                    onClick={() => props.onQuickAnnotate(fact.path, note)}
                   >
-                    {stamp.label}
+                    {note.label}
                   </Button>
                 ))}
               </span>
@@ -1492,7 +1491,7 @@ function Panel(props: {
   fact: Fact | null;
   anchorStates: Map<string, "exact" | "drifted" | "detached">;
   composer: Composer | null;
-  onStamp: (stamp: Stamp) => void;
+  onQuickAnnotate: (note: QuickAnnotation) => void;
   onFocusItem: (id: string | null) => void;
   onEdit: (item: SidecarItem) => void;
   onDelete: (id: string) => void;
@@ -1506,28 +1505,28 @@ function Panel(props: {
   return (
     <>
       <h2 className="flex items-center justify-between">
-        Stamps
+        Quick annotate
         <Button variant="ghost" size="icon-xs" aria-label="Collapse panel" onClick={props.onCollapse}>
           <PanelRightClose />
         </Button>
       </h2>
-      <div id="stamps" className="flex flex-wrap gap-1.5" role="group" aria-label="Stamps">
-        {STAMPS.map((stamp) => (
+      <div id="quick-annotate" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick annotate">
+        {QUICK_ANNOTATIONS.map((note) => (
           <Button
-            key={stamp.key}
+            key={note.key}
             variant="outline"
             size="sm"
-            data-stamp={stamp.label}
-            aria-keyshortcuts={stamp.key}
+            data-quick={note.label}
+            aria-keyshortcuts={note.key}
             disabled={!fact}
-            onClick={() => props.onStamp(stamp)}
+            onClick={() => props.onQuickAnnotate(note)}
           >
-            <Kbd>{stamp.key}</Kbd>
-            {stamp.label}
+            <Kbd>{note.key}</Kbd>
+            {note.label}
           </Button>
         ))}
       </div>
-      <h2>Items</h2>
+      <h2>Notes</h2>
       <div id="panel-items">
         {(fact?.sidecar?.items ?? []).map((item) => {
           const anchorState = item.anchor ? props.anchorStates.get(item.id) : undefined;
@@ -1620,7 +1619,7 @@ function Panel(props: {
           );
         })}
         {fact && (fact.sidecar?.items ?? []).length === 0 && (
-          <p className="text-muted-foreground text-[13px]">Nothing raised on this fact.</p>
+          <p className="text-muted-foreground text-[13px]">No notes on this fact.</p>
         )}
         {!fact && (
           <p className="text-muted-foreground text-[13px]">
@@ -1632,7 +1631,7 @@ function Panel(props: {
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 stamp · v seen · a/q/c raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
+        j/k move · 1–3 quick annotate · v seen · a/q raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
       </p>
     </>
   );
@@ -1796,7 +1795,7 @@ function FinishSheet(props: {
         </DialogHeader>
         <p className="text-muted-foreground stat text-[13px]">
           {props.progress.seen} of {props.progress.total} facts seen ·{" "}
-          {props.raisedFacts.length} fact{props.raisedFacts.length === 1 ? "" : "s"} with items ·{" "}
+          {props.raisedFacts.length} fact{props.raisedFacts.length === 1 ? "" : "s"} with notes ·{" "}
           {props.openQuestions} open question
           {props.openQuestions === 1 ? "" : "s"}
         </p>
@@ -1807,7 +1806,7 @@ function FinishSheet(props: {
               <li key={fact.path} className="border-line-soft border-b py-1.5 text-[13px]">
                 {items.length > 0 && (
                   <span className="chip count mr-1.5">
-                    {items.length} item{items.length === 1 ? "" : "s"}
+                    {items.length} note{items.length === 1 ? "" : "s"}
                   </span>
                 )}
                 {titleOf(fact)}

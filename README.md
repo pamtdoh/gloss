@@ -46,9 +46,9 @@ optional `_index.md` group facts — rich Markdown (GFM tables, code,
 Mermaid diagrams, in-snapshot images) encouraged where it clarifies. The
 human reviews in the viewer — a keyboard-driven review surface (press `?`
 for the full map) with a nested fact tree, per-directory table view for
-bulk stamps, ⌘K search palette, seen-tracking with progress, and
+bulk quick-annotate, ⌘K search palette, seen-tracking with progress, and
 changed/new badges against the previous snapshot. j/k to navigate, 1–3
-to stamp (one-tap whole-fact annotations like "Not needed."), text
+to quick-annotate (one-tap whole-fact annotations like "Not needed."), text
 selections become anchored annotations and questions — which writes
 `<fact>.review.json` sidecars next to the facts. There is no decision
 field: everything raised is an item, and a fact with no sidecar stands
