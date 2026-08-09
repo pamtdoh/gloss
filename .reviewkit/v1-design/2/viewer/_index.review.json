@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "text": "Can we do an audit for all the components. I wanted fluid components that feels modern and responsive. can you look at the research and components that has been done in ~/projects/leetcoach . please launch an audit to review each component. i think it's better to have a well tested component, rather than creating it ourselves from scratch. launch opus workflow"
+    },
+    {
+      "id": "a2",
+      "type": "annotation",
+      "text": "Also, I dont think the seen reviewed pages is tracked properly. i only see 0/12 reviewed. i wanna see which files already seen. we also do not have the search feature i wanted. can you look back at the previous comments i made in prev snapshot? please do adversarial review, to make sure we dont miss anything important. use opus workflow"
+    },
+    {
+      "id": "a3",
+      "type": "annotation",
+      "text": "for the facts here, can we also list down the components, and facts about each of them? so i can review them in more detail?"
+    }
+  ]
+}

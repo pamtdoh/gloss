@@ -21,6 +21,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "expand", keys: ["ArrowRight"], shown: "→", section: "Navigate", label: "Expand directory" },
   { id: "collapse", keys: ["ArrowLeft"], shown: "←", section: "Navigate", label: "Collapse directory" },
   { id: "palette", keys: ["$mod+KeyK", "/"], shown: "⌘K or /", section: "Everywhere", label: "Search & commands" },
+  { id: "filter", keys: ["f"], shown: "f", section: "Navigate", label: "Filter the fact tree" },
   { id: "help", keys: ["Shift+?"], shown: "?", section: "Everywhere", label: "Keyboard help" },
   { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection" },
   { id: "notNeeded", keys: ["1"], shown: "1", section: "Decide", label: "Not needed (again to clear)" },

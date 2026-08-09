@@ -205,7 +205,26 @@ test("directory table: bulk decision with undo toast", async () => {
   await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
 });
 
+test("reading a fact marks it seen automatically; v unmarks", async () => {
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await expect(
+    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-dot'),
+  ).toBeVisible({ timeout: 5_000 });
+  const progress = await page.locator("#progress").textContent();
+  expect(Number(progress!.split("/")[0])).toBeGreaterThan(0);
+  await page.keyboard.press("v");
+  await expect(
+    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-dot'),
+  ).toHaveCount(0);
+});
+
 test("selection annotation stores the verbatim quote and paints a highlight", async () => {
+  // make seen state deterministic for the screenshot below
+  await page.keyboard.press("/");
+  await page.locator("#palette-input").fill(">mark all");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#progress")).toHaveText("10 / 10 reviewed");
+
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
   await expect(page.locator("#sel-hint")).toBeVisible();
@@ -316,9 +335,13 @@ test("rich facts render: GFM table and a mermaid diagram", async () => {
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
 });
 
-test("seen tracking updates progress; palette search jumps", async () => {
-  await page.keyboard.press("v");
-  await expect(page.locator("#progress")).toHaveText("1 / 10 reviewed");
+test("tree filter narrows the tree; palette search jumps", async () => {
+  await page.keyboard.press("f");
+  await page.locator("#tree-filter").fill("collision");
+  await expect(page.locator(".tree .row")).toHaveCount(2); // slugs/ + the match
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#tree-filter")).toHaveValue("");
+  await expect(page.locator(".tree .row")).toHaveCount(11);
 
   await page.keyboard.press("/");
   await page.locator("#palette-input").fill("collision");

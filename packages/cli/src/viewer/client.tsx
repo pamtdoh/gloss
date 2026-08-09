@@ -86,6 +86,7 @@ function App(): JSX.Element {
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
+  const [filter, setFilter] = useState("");
 
   const pendingPuts = useRef(new Set<string>());
   const readRef = useRef<HTMLDivElement>(null);
@@ -176,9 +177,20 @@ function App(): JSX.Element {
   }, []);
 
   // ---------- derived ----------
+  const filteredFacts = useMemo(() => {
+    const facts = data?.facts ?? [];
+    const query = filter.trim().toLowerCase();
+    if (!query) return facts;
+    const words = query.split(/\s+/);
+    return facts.filter((fact) => {
+      const text = `${fact.path} ${fact.content}`.toLowerCase();
+      return words.every((word) => text.includes(word));
+    });
+  }, [data, filter]);
   const rows = useMemo(
-    () => (data ? buildRows(data.facts, (dir) => !collapsed.has(dir)) : []),
-    [data, collapsed],
+    () =>
+      buildRows(filteredFacts, (dir) => (filter.trim() ? true : !collapsed.has(dir))),
+    [filteredFacts, collapsed, filter],
   );
   const effectiveCursor: Row | null = cursor ?? rows[0] ?? null;
   const cursorIndex = rows.findIndex(
@@ -214,6 +226,23 @@ function App(): JSX.Element {
     setSeen(new Set(next));
     storeSeen(data.review, data.snapshot, next);
   }
+
+  // Reading a fact marks it seen after a short dwell (GitLab's auto-mark
+  // idea) — `v` still toggles manually, and the state stays browser-local.
+  // autoMarked stops a v-unmark from being auto-remarked mid-dwell.
+  const autoMarked = useRef(new Set<string>());
+  useEffect(() => {
+    const path = targetFact?.path;
+    if (!path || !data || seen.has(path) || autoMarked.current.has(path)) return;
+    const timer = setTimeout(() => {
+      autoMarked.current.add(path);
+      const next = new Set(loadSeen(data.review, data.snapshot));
+      next.add(path);
+      setSeen(next);
+      storeSeen(data.review, data.snapshot, next);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [targetFact?.path, data, seen]);
 
   function putSidecar(fact: Fact): void {
     if (!data) return;
@@ -464,6 +493,7 @@ function App(): JSX.Element {
     comment: () => beginItem("comment"),
     undo: () => undoLast(),
     help: () => setOverlay((o) => (o === "help" ? null : "help")),
+    filter: () => document.getElementById("tree-filter")?.focus(),
     palette: () => setOverlay((o) => (o === "palette" ? null : "palette")),
     escape: () => {
       if (menuFor) setMenuFor(null);
@@ -504,6 +534,7 @@ function App(): JSX.Element {
       u: guard("undo"),
       "Shift+?": guard("help"),
       "/": guard("palette"),
+      f: guard("filter"),
       "$mod+KeyK": (e) => {
         e.preventDefault();
         run("palette");
@@ -656,6 +687,27 @@ function App(): JSX.Element {
 
       <div class="cols">
         <nav class="tree-col" aria-label="Facts">
+          <div class="tree-filter">
+            <input
+              id="tree-filter"
+              placeholder="Filter facts (f)"
+              aria-label="Filter facts"
+              value={filter}
+              onInput={(e) => setFilter((e.target as HTMLInputElement).value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setFilter("");
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+            />
+            {filter && (
+              <button class="filter-clear" aria-label="Clear filter" onClick={() => setFilter("")}>
+                ✕
+              </button>
+            )}
+          </div>
           <ul class="tree" id="fact-list">
             {rows.map((row) => (
               <TreeRow
