@@ -262,10 +262,11 @@ function App(): React.JSX.Element {
 
   // ---------- selection affordance (mouse path + stored span for a/q) ----------
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let debounce: ReturnType<typeof setTimeout>;
+    let hide: ReturnType<typeof setTimeout>;
     const onSelection = (): void => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
         const sel = window.getSelection();
         const container = readRef.current;
         if (
@@ -275,18 +276,26 @@ function App(): React.JSX.Element {
           container.contains(sel.anchorNode) &&
           stateRef.current.data
         ) {
+          clearTimeout(hide);
           const span = sourceSpanForSelection(container as HTMLElement, sel);
           const path = container.getAttribute("data-fact-path");
           if (span && path) lastSpan.current = { path, ...span };
           const rect = sel.getRangeAt(0).getBoundingClientRect();
           setSelHint({ x: rect.left + rect.width / 2, y: rect.top });
         } else {
-          setSelHint(null);
+          // grace period: on touch, the tap that reaches the popup also
+          // collapses the selection — let the tap land before hiding
+          clearTimeout(hide);
+          hide = setTimeout(() => setSelHint(null), 400);
         }
       }, 30);
     };
     document.addEventListener("selectionchange", onSelection);
-    return () => document.removeEventListener("selectionchange", onSelection);
+    return () => {
+      clearTimeout(debounce);
+      clearTimeout(hide);
+      document.removeEventListener("selectionchange", onSelection);
+    };
   }, []);
 
   // ---------- derived ----------
@@ -447,6 +456,7 @@ function App(): React.JSX.Element {
     }
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
     setSelHint(null);
+    setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
 
   function commitComposer(text: string): void {
@@ -973,6 +983,30 @@ function App(): React.JSX.Element {
                 {filtering ? `Nothing matches “${filter.trim()}”.` : "No facts."}
               </p>
             )}
+            {cursorIndex !== -1 && rows.length > 1 && (
+              <nav className="pagenav" aria-label="Previous and next fact">
+                <button
+                  id="nav-prev"
+                  disabled={cursorIndex <= 0}
+                  onClick={() => moveCursor(-1)}
+                >
+                  <ChevronRight className="lucide size-4 rotate-180" size={16} />
+                  <span className="pagenav-label">
+                    {cursorIndex > 0 ? rowLabel(rows[cursorIndex - 1]!) : ""}
+                  </span>
+                </button>
+                <button
+                  id="nav-next"
+                  disabled={cursorIndex >= rows.length - 1}
+                  onClick={() => moveCursor(1)}
+                >
+                  <span className="pagenav-label">
+                    {cursorIndex < rows.length - 1 ? rowLabel(rows[cursorIndex + 1]!) : ""}
+                  </span>
+                  <ChevronRight className="lucide size-4" size={16} />
+                </button>
+              </nav>
+            )}
             {selection.size > 0 && (
               <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk decisions">
                 <span className="stat" aria-live="polite">
@@ -1053,23 +1087,28 @@ function App(): React.JSX.Element {
         <div
           className="sel-hint"
           id="sel-hint"
-          style={{ left: Math.max(8, selHint.x - 70), top: Math.max(8, selHint.y - 40) }}
+          style={{ left: Math.max(8, selHint.x - 80), top: Math.max(54, selHint.y - 44) }}
         >
+          {/* pointerdown: acts before the tap collapses the selection */}
           <Button
             variant="ghost"
-            size="xs"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => beginItem("annotation")}
+            size="sm"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              beginItem("annotation");
+            }}
           >
-            <Kbd>a</Kbd> Annotate
+            Annotate
           </Button>
           <Button
             variant="ghost"
-            size="xs"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => beginItem("question")}
+            size="sm"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              beginItem("question");
+            }}
           >
-            <Kbd>q</Kbd> Ask
+            Ask
           </Button>
         </div>
       )}
@@ -1149,6 +1188,10 @@ function App(): React.JSX.Element {
       )}
     </div>
   );
+}
+
+function rowLabel(row: Row): string {
+  return row.kind === "dir" ? `${nameOf(row.path)}/` : nameOf(row.path);
 }
 
 function ChangeBadge({ status }: { status: "new" | "changed" | undefined }): React.JSX.Element | null {

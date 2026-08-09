@@ -101,6 +101,55 @@ test("the review panel opens as a bottom sheet; decisions write sidecars", async
   await expect(page).toHaveScreenshot("mobile-panel.png");
 });
 
+test("selection popup annotates via touch (composer opens in the sheet)", async () => {
+  // close the sheet from the previous test so the popup is tappable
+  await page.getByRole("button", { name: "Collapse panel" }).tap();
+  await page.evaluate(() => {
+    const container = document.getElementById("fact-content")!;
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const i = node.textContent!.indexOf("last write wins");
+      if (i >= 0) {
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + "last write wins".length);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+    }
+    throw new Error("text not found");
+  });
+  await expect(page.locator("#sel-hint")).toBeVisible();
+  await page.locator('#sel-hint button:has-text("Annotate")').tap();
+  // the composer must be visible inside the (auto-opened) bottom sheet
+  await expect(page.locator(".panel-col.panel #item-form")).toBeVisible();
+  await page.locator("#item-input").fill("Atomic rename, please.");
+  await page.locator("#item-save").tap();
+  await expect
+    .poll(() => sidecar("storage/whole-file-writes.review.json").items?.[0])
+    .toEqual({
+      id: "a1",
+      type: "annotation",
+      anchor: { quote: "last write wins" },
+      text: "Atomic rename, please.",
+    });
+  await page.getByRole("button", { name: "Collapse panel" }).tap();
+});
+
+test("book-style prev/next navigation walks the facts", async () => {
+  await expect(page.locator(".crumb")).toContainText("storage/whole-file-writes.md");
+  await expect(page.locator("#nav-prev .pagenav-label")).toHaveText("hit-counting.md");
+  await page.locator("#nav-prev").tap();
+  await expect(page.locator(".crumb")).toContainText("storage/hit-counting.md");
+  await page.locator("#nav-next").tap();
+  await expect(page.locator(".crumb")).toContainText("storage/whole-file-writes.md");
+  // last row: next is disabled
+  await expect(page.locator("#nav-next")).toBeDisabled();
+});
+
 test("dark theme on mobile", async ({ browser }) => {
   const dark = await browser.newContext({
     viewport: PHONE,

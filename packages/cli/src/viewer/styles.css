@@ -360,6 +360,22 @@ body {
 }
 @keyframes rk-pop { from { opacity: 0; transform: translateY(3px); } }
 
+/* ------------------------------------------------------------- page nav */
+.pagenav {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 28px; border-top: 1px solid var(--line-soft); padding-top: 14px;
+}
+.pagenav button {
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 46%; min-height: 40px; padding: 6px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--panel); color: var(--text); font-size: 13px;
+  transition: border-color var(--dur-hover) var(--ease-out), background-color var(--dur-hover) var(--ease-out);
+}
+.pagenav button:hover:not(:disabled) { border-color: var(--accent); background: var(--panel-2); }
+.pagenav button:disabled { opacity: 0.35; cursor: default; }
+.pagenav-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ------------------------------------------------------------- dir table */
 .dirview .dirstats { color: var(--muted); font-size: 13px; margin: 2px 0 10px; }
 .facttable { border-top: 1px solid var(--line-soft); margin-top: 14px; }
