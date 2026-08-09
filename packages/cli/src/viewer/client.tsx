@@ -151,7 +151,13 @@ function App(): React.JSX.Element {
   const isMobile = (): boolean => window.matchMedia("(max-width: 860px)").matches;
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [selHint, setSelHint] = useState<{ x: number; y: number } | null>(null);
+  // The captured selection survives iOS Safari collapsing the native one:
+  // painted as rk-pending and acted on from a stable bottom bar on touch.
+  const [pendingSel, setPendingSel] = useState<{
+    path: string;
+    start: number;
+    end: number;
+  } | null>(null);
 
   const pendingWrites = useRef(new Map<string, number>());
   const readRef = useRef<HTMLElement | null>(null);
@@ -263,7 +269,6 @@ function App(): React.JSX.Element {
   // ---------- selection affordance (mouse path + stored span for a/q) ----------
   useEffect(() => {
     let debounce: ReturnType<typeof setTimeout>;
-    let hide: ReturnType<typeof setTimeout>;
     const onSelection = (): void => {
       clearTimeout(debounce);
       debounce = setTimeout(() => {
@@ -276,24 +281,20 @@ function App(): React.JSX.Element {
           container.contains(sel.anchorNode) &&
           stateRef.current.data
         ) {
-          clearTimeout(hide);
           const span = sourceSpanForSelection(container as HTMLElement, sel);
           const path = container.getAttribute("data-fact-path");
-          if (span && path) lastSpan.current = { path, ...span };
-          const rect = sel.getRangeAt(0).getBoundingClientRect();
-          setSelHint({ x: rect.left + rect.width / 2, y: rect.top });
-        } else {
-          // grace period: on touch, the tap that reaches the popup also
-          // collapses the selection — let the tap land before hiding
-          clearTimeout(hide);
-          hide = setTimeout(() => setSelHint(null), 400);
+          if (span && path) {
+            lastSpan.current = { path, ...span };
+            setPendingSel({ path, ...span });
+          }
         }
+        // a collapsing selection does NOT clear pendingSel — iOS collapses
+        // it on any tap; our painted highlight and the action bar stay.
       }, 30);
     };
     document.addEventListener("selectionchange", onSelection);
     return () => {
       clearTimeout(debounce);
-      clearTimeout(hide);
       document.removeEventListener("selectionchange", onSelection);
     };
   }, []);
@@ -356,9 +357,10 @@ function App(): React.JSX.Element {
     if (readColRef.current) readColRef.current.scrollTop = 0;
   }, [effectiveCursor?.kind, effectiveCursor?.path]);
 
-  // a composer belongs to the fact it was opened on
+  // a composer and a pending selection belong to the fact they started on
   useEffect(() => {
     if (composer && composer.path !== targetFact?.path) setComposer(null);
+    setPendingSel((p) => (p && p.path !== targetFact?.path ? null : p));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path]);
 
@@ -443,19 +445,18 @@ function App(): React.JSX.Element {
     if (!targetFact) return;
     let anchor: Anchor | undefined;
     if (type !== "comment") {
-      // live selection first; fall back to the last captured span (the
-      // click that opened a menu may already have collapsed the selection)
+      // live selection first, then the pending (survives iOS collapse)
       const sel = window.getSelection();
       const container = readRef.current;
       let span: { start: number; end: number } | null = null;
       if (sel && !sel.isCollapsed && container && container.contains(sel.anchorNode)) {
         span = sourceSpanForSelection(container as HTMLElement, sel);
       }
+      if (!span && pendingSel?.path === targetFact.path) span = pendingSel;
       if (!span && lastSpan.current?.path === targetFact.path) span = lastSpan.current;
       if (span) anchor = describeAnchor(targetFact.content, span.start, span.end);
     }
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
-    setSelHint(null);
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
 
@@ -466,6 +467,7 @@ function App(): React.JSX.Element {
       return;
     }
     const body = text.trim();
+    setPendingSel(null);
     if (active.mode === "new") {
       mutateFact(active.path, (sidecar) => {
         const items = (sidecar.items ??= []);
@@ -709,7 +711,12 @@ function App(): React.JSX.Element {
     const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown })
       .Highlight;
     if (!highlights || !HighlightCtor || !readRef.current || !renderedFact) return;
-    const buckets: Record<string, Range[]> = { "rk-anno": [], "rk-question": [], "rk-focused": [] };
+    const buckets: Record<string, Range[]> = {
+      "rk-anno": [],
+      "rk-question": [],
+      "rk-focused": [],
+      "rk-pending": [],
+    };
     for (const item of renderedFact.sidecar?.items ?? []) {
       if (!item.anchor) continue;
       const resolved = resolveAnchor(renderedFact.content, item.anchor);
@@ -720,13 +727,21 @@ function App(): React.JSX.Element {
       else if (item.type === "question") buckets["rk-question"]!.push(range);
       else buckets["rk-anno"]!.push(range);
     }
+    if (pendingSel && pendingSel.path === renderedFact.path) {
+      const range = rangeForSourceSpan(
+        readRef.current as HTMLElement,
+        pendingSel.start,
+        pendingSel.end,
+      );
+      if (range) buckets["rk-pending"]!.push(range);
+    }
     for (const [name, ranges] of Object.entries(buckets)) {
       highlights.set(name, new HighlightCtor(...ranges));
     }
     return () => {
       for (const name of Object.keys(buckets)) highlights.delete(name);
     };
-  }, [factHtml, renderedFact, focusItemId]);
+  }, [factHtml, renderedFact, focusItemId, pendingSel]);
 
   useEffect(() => {
     const container = readRef.current;
@@ -1024,7 +1039,7 @@ function App(): React.JSX.Element {
           </div>
         </main>
 
-        {!panelOpen && (
+        {!panelOpen && !pendingSel && (
           <button
             className="panel-fab"
             id="panel-fab"
@@ -1083,32 +1098,24 @@ function App(): React.JSX.Element {
         )}
       </div>
 
-      {selHint && (
-        <div
-          className="sel-hint"
-          id="sel-hint"
-          style={{ left: Math.max(8, selHint.x - 80), top: Math.max(54, selHint.y - 44) }}
-        >
-          {/* pointerdown: acts before the tap collapses the selection */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              beginItem("annotation");
-            }}
-          >
+      {pendingSel && targetFact && pendingSel.path === targetFact.path && !composer && (
+        <div className="sel-bar" id="sel-bar" role="toolbar" aria-label="Selected text actions">
+          <span className="sel-bar-quote">
+            “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
+          </span>
+          <Button size="sm" onClick={() => beginItem("annotation")}>
             Annotate
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              beginItem("question");
-            }}
-          >
+          <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
             Ask
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Dismiss selection"
+            onClick={() => setPendingSel(null)}
+          >
+            <X />
           </Button>
         </div>
       )}

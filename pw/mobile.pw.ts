@@ -122,8 +122,21 @@ test("selection popup annotates via touch (composer opens in the sheet)", async 
     }
     throw new Error("text not found");
   });
-  await expect(page.locator("#sel-hint")).toBeVisible();
-  await page.locator('#sel-hint button:has-text("Annotate")').tap();
+  await expect(page.locator("#sel-bar")).toBeVisible();
+  // simulate iOS Safari collapsing the native selection on tap — the
+  // captured selection (and its painted highlight) must survive
+  await page.evaluate(() => window.getSelection()!.removeAllRanges());
+  await expect(page.locator("#sel-bar")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const pending = (CSS as unknown as { highlights: Map<string, Iterable<Range>> })
+          .highlights.get("rk-pending");
+        return pending ? [...pending].length : 0;
+      }),
+    )
+    .toBeGreaterThan(0);
+  await page.locator('#sel-bar button:has-text("Annotate")').tap();
   // the composer must be visible inside the (auto-opened) bottom sheet
   await expect(page.locator(".panel-col.panel #item-form")).toBeVisible();
   await page.locator("#item-input").fill("Atomic rename, please.");

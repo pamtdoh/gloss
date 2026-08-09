@@ -352,13 +352,27 @@ body {
   text-decoration-color: var(--accent);
   text-underline-offset: 3px;
 }
-.sel-hint {
-  position: fixed; z-index: 12; display: flex; gap: 4px; align-items: center;
-  background: var(--overlay); border: 1px solid var(--line-raised);
-  border-radius: 999px; padding: 3px 6px; box-shadow: var(--elev-3);
-  animation: rk-pop var(--dur-fast) var(--ease-out);
+/* the captured selection: survives iOS collapsing the native selection */
+::highlight(rk-pending) {
+  background-color: var(--focus-tint);
 }
 @keyframes rk-pop { from { opacity: 0; transform: translateY(3px); } }
+/* fixed action bar for the captured selection — the stable touch surface */
+.sel-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 18;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--overlay); border-top: 1px solid var(--line-raised);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  box-shadow: var(--elev-4);
+  animation: rk-toast-in var(--dur-med) var(--ease-out);
+}
+.sel-bar-quote {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; color: var(--muted); font-size: 13px; font-style: italic;
+}
+@media (min-width: 861px) {
+  .sel-bar { left: auto; right: 24px; bottom: 18px; border: 1px solid var(--line-raised); border-radius: 12px; max-width: 480px; }
+}
 
 /* ------------------------------------------------------------- page nav */
 .pagenav {

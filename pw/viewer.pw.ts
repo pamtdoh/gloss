@@ -227,7 +227,7 @@ test("selection annotation stores the verbatim quote and paints a highlight", as
 
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
-  await expect(page.locator("#sel-hint")).toBeVisible();
+  await expect(page.locator("#sel-bar")).toBeVisible();
   await page.keyboard.press("a");
   await expect(page.locator("#item-form")).toBeVisible();
   await expect(page.locator("#item-form-label")).toContainText("annotation");
