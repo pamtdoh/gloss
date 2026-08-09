@@ -38,6 +38,7 @@ import {
   nextId,
   normalizeSidecar,
   titleOf,
+  type ChangeStatus,
   type Fact,
   type ReviewData,
   type Row,
@@ -90,13 +91,11 @@ const storedTheme = (): ThemeMode => {
   const v = localStorage.getItem(THEME_KEY);
   return v === "light" || v === "dark" ? v : "system";
 };
-const applyTheme = (mode: ThemeMode): void => {
-  document.documentElement.classList.toggle(
-    "dark",
-    mode === "dark" || (mode === "system" && darkQuery.matches),
-  );
+const applyTheme = (dark: boolean): void => {
+  document.documentElement.classList.toggle("dark", dark);
 };
-applyTheme(storedTheme());
+const initialTheme = storedTheme();
+applyTheme(initialTheme === "dark" || (initialTheme === "system" && darkQuery.matches));
 
 // Quick Comment — the old "decisions": one-tap whole-fact comments with
 // canned text. One concept, simpler files.
@@ -125,6 +124,20 @@ const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
 type Scope = "all" | "changed" | "raised";
 const SCOPES: Scope[] = ["all", "changed", "raised"];
 const SCOPE_LABEL: Record<Scope, string> = { all: "All", changed: "Changed", raised: "Raised" };
+
+// the URL names the page being viewed: "#dir/" or "#dir/fact.md", so
+// back/forward walk previously viewed pages and links survive a reload
+function cursorFromHash(facts: Fact[]): Row | null {
+  const raw = decodeURI(location.hash.slice(1));
+  if (!raw) return null;
+  if (raw.endsWith("/")) {
+    const path = raw.slice(0, -1);
+    return facts.some((f) => f.path.startsWith(`${path}/`))
+      ? { kind: "dir", path, depth: 0 }
+      : null;
+  }
+  return facts.some((f) => f.path === raw) ? { kind: "fact", path: raw, depth: 0 } : null;
+}
 
 // Coarse pointers get the fixed bottom action bar (iOS owns the selection
 // callout and collapses the selection on any tap — floating popovers near
@@ -230,12 +243,12 @@ function App(): React.JSX.Element {
     darkQuery.addEventListener("change", onChange);
     return () => darkQuery.removeEventListener("change", onChange);
   }, []);
+  const effectiveDark = theme === "dark" || (theme === "system" && sysDark);
   useEffect(() => {
     if (theme === "system") localStorage.removeItem(THEME_KEY);
     else localStorage.setItem(THEME_KEY, theme);
-    applyTheme(theme);
-  }, [theme, sysDark]);
-  const effectiveDark = theme === "dark" || (theme === "system" && sysDark);
+    applyTheme(effectiveDark);
+  }, [theme, effectiveDark]);
   // The captured selection survives iOS Safari collapsing the native one:
   // painted as rk-pending and acted on from a stable bottom bar on touch.
   // On fine pointers it is set only when the composer opens — the draft
@@ -271,20 +284,6 @@ function App(): React.JSX.Element {
     done: false,
   });
   stateRef.current = { data, composer, done: done !== null };
-
-  // the URL names the page being viewed: "#dir/" or "#dir/fact.md", so
-  // back/forward walk previously viewed pages and links survive a reload
-  const cursorFromHash = (facts: Fact[]): Row | null => {
-    const raw = decodeURI(location.hash.slice(1));
-    if (!raw) return null;
-    if (raw.endsWith("/")) {
-      const path = raw.slice(0, -1);
-      return facts.some((f) => f.path.startsWith(`${path}/`))
-        ? { kind: "dir", path, depth: 0 }
-        : null;
-    }
-    return facts.some((f) => f.path === raw) ? { kind: "fact", path: raw, depth: 0 } : null;
-  };
 
   // ---------- data ----------
   async function load(snapshot?: number): Promise<void> {
@@ -394,7 +393,6 @@ function App(): React.JSX.Element {
   // committed when the selection collapses (= the gesture is over). On
   // fine pointers a short settle after the drag is safe.
   useEffect(() => {
-    const coarse = COARSE;
     let debounce: ReturnType<typeof setTimeout>;
     const commit = (span: { path: string; start: number; end: number }): void => {
       setPendingSel((current) =>
@@ -415,7 +413,7 @@ function App(): React.JSX.Element {
         container &&
         container.contains(sel.anchorNode) &&
         stateRef.current.data;
-      if (!coarse) {
+      if (!COARSE) {
         // desktop: the bubble is a pure mirror of the live selection. While
         // the composer is open ALL selection churn is ignored (medium-
         // editor's stopSelectionUpdates) — its draft anchor must not move.
@@ -451,7 +449,7 @@ function App(): React.JSX.Element {
       // button instead (Hypothesis adder / Plate floating-toolbar pattern):
       // nothing fires mid-drag, so selectionchange only covers keyboard
       // selections, with a short trailing debounce.
-      if (coarse) debounce = setTimeout(settle, 250);
+      if (COARSE) debounce = setTimeout(settle, 250);
       else if (!touchActive.current) debounce = setTimeout(settle, 100);
     };
     const onPointerDown = (): void => {
@@ -459,7 +457,7 @@ function App(): React.JSX.Element {
     };
     const onPointerUp = (): void => {
       touchActive.current = false;
-      if (!coarse) {
+      if (!COARSE) {
         // the selection is final a tick after mouseup — show near-instantly
         // (Hypothesis uses 10ms here)
         clearTimeout(debounce);
@@ -479,39 +477,6 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // desktop bubble position: anchored to the live span, tracking scroll
-  const [selPop, setSelPop] = useState<{ x: number; top: number; bottom: number } | null>(null);
-  useEffect(() => {
-    if (COARSE || !liveSel) {
-      setSelPop(null);
-      return;
-    }
-    let raf = 0;
-    const update = (): void => {
-      const container = readRef.current;
-      const range =
-        container && container.getAttribute("data-fact-path") === liveSel.path
-          ? rangeForSourceSpan(container as HTMLElement, liveSel.start, liveSel.end)
-          : null;
-      const rect = range?.getBoundingClientRect();
-      setSelPop(
-        rect ? { x: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom } : null,
-      );
-    };
-    update();
-    const onScroll = (): void => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(update);
-    };
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [liveSel]);
-
   // ---------- derived ----------
   // facts deleted since the previous snapshot, resurrected read-only from
   // the previous snapshot's copy (prev already holds their content)
@@ -520,29 +485,36 @@ function App(): React.JSX.Element {
     const live = new Set(data.facts.map((f) => f.path));
     return [...prev.entries()]
       .filter(([path]) => !live.has(path))
-      .map(([path, content]): Fact => ({ path, content, sidecar: null }))
+      .map(([path, content]): Fact => ({ path, content, sidecar: null, ghost: true }))
       .sort((a, b) => a.path.localeCompare(b.path));
   }, [prev, data]);
-  const ghostPaths = useMemo(() => new Set(ghosts.map((g) => g.path)), [ghosts]);
+  // every fact a row can name, ghosts included — the one path->fact lookup
+  const factMap = useMemo(
+    () => new Map([...(data?.facts ?? []), ...ghosts].map((f) => [f.path, f])),
+    [data, ghosts],
+  );
 
-  const scopeCounts = useMemo(() => {
-    const facts = data?.facts ?? [];
-    return {
-      all: facts.length,
-      changed: facts.filter((f) => changeStatus(prev, f) !== undefined).length + ghosts.length,
-      raised: facts.filter((f) => (f.sidecar?.items?.length ?? 0) > 0).length,
-    };
-  }, [data, prev, ghosts]);
+  const changedFacts = useMemo(
+    () => (data?.facts ?? []).filter((f) => changeStatus(prev, f) !== undefined),
+    [data, prev],
+  );
+  const raisedFacts = useMemo(
+    () => (data?.facts ?? []).filter((f) => (f.sidecar?.items?.length ?? 0) > 0),
+    [data],
+  );
+  const scopeCounts = {
+    all: data?.facts.length ?? 0,
+    changed: changedFacts.length + ghosts.length,
+    raised: raisedFacts.length,
+  };
 
   const scopedFacts = useMemo(() => {
-    const facts = data?.facts ?? [];
     if (scope === "changed") {
-      const changed = facts.filter((f) => changeStatus(prev, f) !== undefined);
-      return [...changed, ...ghosts].sort((a, b) => a.path.localeCompare(b.path));
+      return [...changedFacts, ...ghosts].sort((a, b) => a.path.localeCompare(b.path));
     }
-    if (scope === "raised") return facts.filter((f) => (f.sidecar?.items?.length ?? 0) > 0);
-    return facts;
-  }, [data, scope, prev, ghosts]);
+    if (scope === "raised") return raisedFacts;
+    return data?.facts ?? [];
+  }, [data, scope, changedFacts, raisedFacts, ghosts]);
 
   const filteredFacts = useMemo(() => {
     const query = filter.trim().toLowerCase();
@@ -570,17 +542,11 @@ function App(): React.JSX.Element {
 
   const targetFact: Fact | null = useMemo(() => {
     if (!data || !effectiveCursor) return null;
-    if (effectiveCursor.kind === "fact") {
-      return (
-        data.facts.find((f) => f.path === effectiveCursor.path) ??
-        ghosts.find((g) => g.path === effectiveCursor.path) ??
-        null
-      );
-    }
+    if (effectiveCursor.kind === "fact") return factMap.get(effectiveCursor.path) ?? null;
     return indexFactOf(data.facts, effectiveCursor.path);
-  }, [data, effectiveCursor, ghosts]);
+  }, [data, effectiveCursor, factMap]);
   // a ghost is readable but not actionable: no comments, no seen, no select
-  const targetIsGhost = targetFact !== null && ghostPaths.has(targetFact.path);
+  const targetIsGhost = targetFact?.ghost === true;
 
   const openQuestions = useMemo(() => {
     let total = 0;
@@ -697,9 +663,9 @@ function App(): React.JSX.Element {
   function applyQuickComment(note: QuickComment, paths?: string[]): void {
     if (!data) return;
     const bulk = !paths && selection.size > 0;
-    const targets = (
-      paths ?? (bulk ? [...selection] : targetFact && !targetIsGhost ? [targetFact.path] : [])
-    ).filter((p) => !ghostPaths.has(p));
+    // ghosts can't get here: not selectable, and the cursor case is guarded
+    const targets =
+      paths ?? (bulk ? [...selection] : targetFact && !targetIsGhost ? [targetFact.path] : []);
     if (!targets.length) return;
     const created: { path: string; id: string }[] = [];
     for (const path of targets) {
@@ -752,18 +718,23 @@ function App(): React.JSX.Element {
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
 
+  // the ONE way out of a composer without saving — every cancel path
+  // (empty save, Escape, the panel's Cancel button) must drop the desktop
+  // draft anchor, or a stale span re-shows highlight or bubble with no
+  // native selection behind it (touch keeps its bar, re-actionable)
+  function cancelComposer(): void {
+    setComposer(null);
+    if (!COARSE) {
+      setPendingSel(null);
+      setLiveSel(null);
+    }
+    closeSheetIfOverlay();
+  }
+
   function commitComposer(text: string): void {
     const active = composer;
     if (!active || !text.trim()) {
-      setComposer(null);
-      // desktop: cancelling abandons the draft anchor (touch keeps its bar);
-      // liveSel goes too, else a stale span re-shows the bubble with no
-      // native selection behind it
-      if (!COARSE) {
-        setPendingSel(null);
-        setLiveSel(null);
-      }
-      closeSheetIfOverlay();
+      cancelComposer();
       return;
     }
     const body = text.trim();
@@ -876,8 +847,10 @@ function App(): React.JSX.Element {
   }
 
   function toggleSelect(path?: string): void {
-    const target = path ?? (effectiveCursor?.kind === "fact" ? effectiveCursor.path : null);
-    if (!target || ghostPaths.has(target)) return;
+    // explicit paths come from table checkboxes, which ghosts never render
+    const target =
+      path ?? (effectiveCursor?.kind === "fact" && !targetIsGhost ? effectiveCursor.path : null);
+    if (!target) return;
     setSelection((current) => {
       const next = new Set(current);
       if (next.has(target)) next.delete(target);
@@ -958,13 +931,8 @@ function App(): React.JSX.Element {
         return order[(order.indexOf(s) + 1) % order.length] ?? "all";
       }),
     close: () => {
-      if (composer) {
-        setComposer(null);
-        if (!COARSE) {
-          setPendingSel(null); // abandon the draft anchor
-          setLiveSel(null);
-        }
-      } else if (overlay) setOverlay(null);
+      if (composer) cancelComposer();
+      else if (overlay) setOverlay(null);
       else if (pendingSel || liveSel) {
         setPendingSel(null);
         setLiveSel(null);
@@ -1004,17 +972,18 @@ function App(): React.JSX.Element {
         ? indexFactOf(data?.facts ?? [], effectiveCursor.path)
         : null;
 
+  const prevSnapshot = data ? (data.snapshots.filter((s) => s < data.snapshot).pop() ?? null) : null;
+
   const factHtml = useMemo(() => {
     if (!renderedFact || !data) return "";
     // a ghost's images live in the snapshot it was deleted from
-    const snapshot = ghostPaths.has(renderedFact.path)
-      ? (data.snapshots.filter((s) => s < data.snapshot).pop() ?? data.snapshot)
-      : data.snapshot;
+    const snapshot = renderedFact.ghost ? (prevSnapshot ?? data.snapshot) : data.snapshot;
     return renderMarkdown(renderedFact.content, {
       assetBase: `/asset/${snapshot}/`,
       factDir: dirOf(renderedFact.path),
     });
-  }, [renderedFact, data, ghostPaths]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedFact, data, prevSnapshot]);
 
   const anchorStates = useMemo(() => {
     const states = new Map<string, "exact" | "drifted" | "detached">();
@@ -1142,8 +1111,6 @@ function App(): React.JSX.Element {
 
   const yourTurn = openQuestions.answered;
   const latestSnapshot = Math.max(...data.snapshots);
-  const prevSnapshot = data.snapshots.filter((s) => s < data.snapshot).pop() ?? null;
-  const raisedFacts = data.facts.filter((f) => f.sidecar?.items?.length);
 
   return (
     <div className="app">
@@ -1247,14 +1214,13 @@ function App(): React.JSX.Element {
       <div className="cols">
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
         <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
-          <div className="tree-head">
-            {/* one line: the filter input and the scope chip share the row */}
-            <div className="tree-filter">
-              <div className="filter-box">
+          {/* pinned while the tree scrolls; the input and scope chip share the row */}
+          <div className="tree-filter">
+            <div className="filter-box">
                 <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
                 <Input
                   id="tree-filter"
-                  className="h-8 pl-7 text-[12px] md:text-[12px]"
+                  className="pl-7"
                   placeholder="Filter facts (f)"
                   aria-label="Filter facts"
                   value={filter}
@@ -1277,47 +1243,25 @@ function App(): React.JSX.Element {
                   <X className="lucide size-3.5" size={14} />
                 </button>
               </div>
-              <DM.Root>
-                <DM.Trigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    id="scope-btn"
-                    aria-label={`Scope: ${SCOPE_LABEL[scope]}`}
-                    className={`h-8 gap-1.5 px-2.5 text-[12px] ${scope !== "all" ? "scope-active" : ""}`}
-                  >
-                    {SCOPE_LABEL[scope]}
-                    <span className="scope-count">{scopeCounts[scope]}</span>
-                    <ChevronRight className="lucide size-3 rotate-90 opacity-60" size={12} />
-                  </Button>
-                </DM.Trigger>
-                <DM.Portal>
-                  <DM.Content
-                    className="menu z-50 min-w-[150px] rounded-md border bg-popover p-1 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-                    align="end"
-                    sideOffset={4}
-                  >
-                    <DM.RadioGroup value={scope} onValueChange={(v) => v && setScope(v as Scope)}>
-                      {SCOPES.map((s) => (
-                        <DM.RadioItem
-                          key={s}
-                          value={s}
-                          id={`scope-${s}`}
-                          disabled={s === "changed" && !prev}
-                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-45"
-                        >
-                          <span className="flex-1">{SCOPE_LABEL[s]}</span>
-                          <span className="scope-count">{scopeCounts[s]}</span>
-                          <DM.ItemIndicator>
-                            <Check className="lucide size-3.5" size={14} />
-                          </DM.ItemIndicator>
-                        </DM.RadioItem>
-                      ))}
-                    </DM.RadioGroup>
-                  </DM.Content>
-                </DM.Portal>
-              </DM.Root>
-            </div>
+              <Select value={scope} onValueChange={(v) => v && setScope(v as Scope)}>
+                <SelectTrigger
+                  size="sm"
+                  id="scope-btn"
+                  aria-label={`Scope: ${SCOPE_LABEL[scope]}`}
+                  className={`gap-1.5 px-2.5 text-[12px] ${scope !== "all" ? "scope-active" : ""}`}
+                >
+                  {SCOPE_LABEL[scope]}
+                  <span className="scope-count">{scopeCounts[scope]}</span>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {SCOPES.map((s) => (
+                    <SelectItem key={s} value={s} id={`scope-${s}`} disabled={s === "changed" && !prev}>
+                      <span className="flex-1">{SCOPE_LABEL[s]}</span>
+                      <span className="scope-count">{scopeCounts[s]}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
           </div>
           <div className="drawer-tools">
             <span className="stat text-muted-foreground flex-1 self-center text-[13px]">
@@ -1361,7 +1305,7 @@ function App(): React.JSX.Element {
                   row={row}
                   data={data}
                   prev={prev}
-                  ghost={row.kind === "fact" ? ghosts.find((g) => g.path === row.path) : undefined}
+                  fact={row.kind === "fact" ? factMap.get(row.path) : undefined}
                   seen={seen}
                   selection={selection}
                   collapsed={collapsed}
@@ -1390,11 +1334,10 @@ function App(): React.JSX.Element {
                 dir={effectiveCursor.path}
                 data={data}
                 facts={filteredFacts}
-                ghostPaths={ghostPaths}
                 prev={prev}
                 seen={seen}
                 selection={selection}
-                indexHtml={processedHtml}
+                indexHtml={factHtmlProp}
                 readRef={readRef}
                 indexFact={renderedFact}
                 onOpen={openRow}
@@ -1415,10 +1358,8 @@ function App(): React.JSX.Element {
               <>
                 <div className="crumb">
                   <span>{renderedFact.path}</span>
-                  <ChangeBadge
-                    status={targetIsGhost ? "removed" : changeStatus(prev, renderedFact)}
-                  />
-                  {!targetIsGhost && seen.has(renderedFact.path) && (
+                  <ChangeBadge status={changeStatus(prev, renderedFact)} />
+                  {seen.has(renderedFact.path) && (
                     <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                   )}
                 </div>
@@ -1524,10 +1465,7 @@ function App(): React.JSX.Element {
               onReanchor={(id) => targetFact && reanchor(targetFact.path, id)}
               onCollapse={() => setPanelOpen(false)}
               onCommit={commitComposer}
-              onCancel={() => {
-                setComposer(null);
-                closeSheetIfOverlay();
-              }}
+              onCancel={cancelComposer}
             />
           </aside>
         ) : (
@@ -1583,44 +1521,13 @@ function App(): React.JSX.Element {
         : liveSel &&
           targetFact &&
           liveSel.path === targetFact.path &&
-          !composer &&
-          selPop && (
-            <div
-              className="sel-pop"
-              id="sel-pop"
-              role="toolbar"
-              aria-label="Selected text actions"
-              data-quote={targetFact.content.slice(liveSel.start, liveSel.end)}
-              // preventDefault on the container too: a press anywhere on the
-              // bubble — including its padding — must not collapse the
-              // selection it acts on (medium-editor's one gap, closed)
-              onPointerDown={(e) => e.preventDefault()}
-              style={{
-                left: Math.min(Math.max(8, selPop.x - 85), window.innerWidth - 178),
-                top: selPop.top - 44 < 54 ? selPop.bottom + 8 : selPop.top - 44,
-              }}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  beginItem("comment");
-                }}
-              >
-                Comment
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  beginItem("question");
-                }}
-              >
-                Ask
-              </Button>
-            </div>
+          !composer && (
+            <SelBubble
+              span={liveSel}
+              quote={targetFact.content.slice(liveSel.start, liveSel.end)}
+              readRef={readRef}
+              onAct={beginItem}
+            />
           )}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
@@ -1714,6 +1621,89 @@ function rowLabel(row: Row): string {
   return row.kind === "dir" ? `${nameOf(row.path)}/` : nameOf(row.path);
 }
 
+// The bubble owns its position tracking: scroll frames re-render this leaf
+// alone, never the app tree, and the Range is built once per span — only
+// getBoundingClientRect runs per frame (rebuilding the Range re-queried
+// every offset run in the fact, per frame).
+function SelBubble(props: {
+  span: { path: string; start: number; end: number };
+  quote: string;
+  readRef: React.MutableRefObject<HTMLElement | null>;
+  onAct: (type: SidecarItem["type"]) => void;
+}): React.JSX.Element | null {
+  const [pos, setPos] = useState<{ x: number; top: number; bottom: number } | null>(null);
+  useEffect(() => {
+    const container = props.readRef.current;
+    const range =
+      container && container.getAttribute("data-fact-path") === props.span.path
+        ? rangeForSourceSpan(container, props.span.start, props.span.end)
+        : null;
+    if (!range) {
+      setPos(null);
+      return;
+    }
+    let raf = 0;
+    const update = (): void => {
+      const rect = range.getBoundingClientRect();
+      const next = { x: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom };
+      setPos((p) =>
+        p && p.x === next.x && p.top === next.top && p.bottom === next.bottom ? p : next,
+      );
+    };
+    update();
+    const onScroll = (): void => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [props.span, props.readRef]);
+  if (!pos) return null;
+  return (
+    <div
+      className="sel-pop"
+      id="sel-pop"
+      role="toolbar"
+      aria-label="Selected text actions"
+      data-quote={props.quote}
+      // preventDefault on the container too: a press anywhere on the
+      // bubble — including its padding — must not collapse the
+      // selection it acts on (medium-editor's one gap, closed)
+      onPointerDown={(e) => e.preventDefault()}
+      style={{
+        left: Math.min(Math.max(8, pos.x - 85), window.innerWidth - 178),
+        top: pos.top - 44 < 54 ? pos.bottom + 8 : pos.top - 44,
+      }}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          props.onAct("comment");
+        }}
+      >
+        Comment
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onPointerDown={(e) => {
+          e.preventDefault();
+          props.onAct("question");
+        }}
+      >
+        Ask
+      </Button>
+    </div>
+  );
+}
+
 // Markdown rendered behind a stable {__html} object — see factHtmlProp:
 // React 19 diffs dangerouslySetInnerHTML by object identity, so an inline
 // object re-writes the DOM (and re-parses the markdown) on every render.
@@ -1726,9 +1716,7 @@ function Md(props: { text: string; block?: boolean; className?: string }): React
   );
 }
 
-type BadgeStatus = "new" | "changed" | "removed" | undefined;
-
-function ChangeBadge({ status }: { status: BadgeStatus }): React.JSX.Element | null {
+function ChangeBadge({ status }: { status: ChangeStatus }): React.JSX.Element | null {
   if (!status) return null;
   return <span className={`chip ${status}`}>{status}</span>;
 }
@@ -1736,7 +1724,7 @@ function ChangeBadge({ status }: { status: BadgeStatus }): React.JSX.Element | n
 // tree rows use 14px glyphs instead of word chips — the words cost ~45px
 // of name width in a 300px column (GitHub/GitLab both glyph here)
 const GLYPHS = { changed: SquareDot, new: SquarePlus, removed: SquareMinus } as const;
-function ChangeGlyph({ status }: { status: BadgeStatus }): React.JSX.Element | null {
+function ChangeGlyph({ status }: { status: ChangeStatus }): React.JSX.Element | null {
   if (!status) return null;
   const Icon = GLYPHS[status];
   return (
@@ -1750,7 +1738,7 @@ function TreeRow(props: {
   row: Row;
   data: ReviewData;
   prev: Map<string, string> | null;
-  ghost: Fact | undefined;
+  fact: Fact | undefined;
   seen: Set<string>;
   selection: Set<string>;
   collapsed: Set<string>;
@@ -1801,15 +1789,15 @@ function TreeRow(props: {
       </li>
     );
   }
-  const fact = props.ghost ?? data.facts.find((f) => f.path === row.path);
+  const fact = props.fact;
   if (!fact) return <li />;
   const stats = factStats(fact);
-  const status: BadgeStatus = props.ghost ? "removed" : changeStatus(props.prev, fact);
+  const status = changeStatus(props.prev, fact);
   return (
     <li
       id={rowId}
       className={`row fact ${props.isCursor ? "cursor" : ""} ${
-        props.ghost ? "ghost" : !props.seen.has(fact.path) ? "unseen" : ""
+        fact.ghost ? "ghost" : !props.seen.has(fact.path) ? "unseen" : ""
       }`}
       style={{ paddingLeft: pad }}
       data-path={row.path}
@@ -1834,7 +1822,7 @@ function TreeRow(props: {
         {stats.items - stats.questions > 0 && (
           <span className="chip count">{stats.items - stats.questions}</span>
         )}
-        {!props.ghost && props.seen.has(fact.path) && (
+        {props.seen.has(fact.path) && (
           <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
         )}
       </span>
@@ -1847,11 +1835,11 @@ function DirView(props: {
   data: ReviewData;
   /** the scoped + filtered display set — the table always mirrors the tree */
   facts: Fact[];
-  ghostPaths: Set<string>;
   prev: Map<string, string> | null;
   seen: Set<string>;
   selection: Set<string>;
-  indexHtml: string;
+  /** already wrapped in the stable {__html} object — see factHtmlProp */
+  indexHtml: { __html: string };
   indexFact: Fact | null;
   readRef: React.MutableRefObject<HTMLElement | null>;
   onOpen: (row: Row) => void;
@@ -1859,11 +1847,10 @@ function DirView(props: {
   onSelectAll: (paths: string[], on: boolean) => void;
   onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
-  const indexHtmlProp = useMemo(() => ({ __html: props.indexHtml }), [props.indexHtml]);
   const children = childFactsOf(props.facts, props.dir);
   const subdirs = childDirsOf(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
-  const selectable = children.filter((f) => !props.ghostPaths.has(f.path));
+  const selectable = children.filter((f) => !f.ghost);
   const allSelected =
     selectable.length > 0 && selectable.every((f) => props.selection.has(f.path));
   return (
@@ -1877,7 +1864,7 @@ function DirView(props: {
           id="fact-content"
           data-fact-path={props.indexFact.path}
           ref={props.readRef as React.RefObject<HTMLElement>}
-          dangerouslySetInnerHTML={indexHtmlProp}
+          dangerouslySetInnerHTML={props.indexHtml}
         />
       ) : (
         <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
@@ -1921,7 +1908,7 @@ function DirView(props: {
         ))}
         {children.map((fact) => {
           const stats = factStats(fact);
-          const ghost = props.ghostPaths.has(fact.path);
+          const ghost = fact.ghost === true;
           return (
             <div
               key={fact.path}
@@ -1941,12 +1928,12 @@ function DirView(props: {
               )}
               <span className="title">{titleOf(fact)}</span>
               <span className="badges">
-                <ChangeBadge status={ghost ? "removed" : changeStatus(props.prev, fact)} />
+                <ChangeBadge status={changeStatus(props.prev, fact)} />
                 {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
                 {stats.items - stats.questions > 0 && (
                   <span className="chip count">{stats.items - stats.questions}</span>
                 )}
-                {!ghost && props.seen.has(fact.path) && (
+                {props.seen.has(fact.path) && (
                   <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                 )}
               </span>

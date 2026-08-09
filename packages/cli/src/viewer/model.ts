@@ -4,6 +4,8 @@ export interface Fact {
   path: string;
   content: string;
   sidecar: Sidecar | null;
+  /** deleted since the previous snapshot; resurrected read-only from its copy */
+  ghost?: true;
 }
 
 export interface ReviewData {
@@ -120,9 +122,10 @@ export function dirStats(facts: Fact[], dir: string): DirStats {
   return { facts: within.length, items, questions };
 }
 
-export type ChangeStatus = "new" | "changed" | undefined;
+export type ChangeStatus = "new" | "changed" | "removed" | undefined;
 
 export function changeStatus(prev: Map<string, string> | null, fact: Fact): ChangeStatus {
+  if (fact.ghost) return "removed";
   if (!prev) return undefined;
   const before = prev.get(fact.path);
   if (before === undefined) return "new";
