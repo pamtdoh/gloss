@@ -231,7 +231,7 @@ test("selection comment stores the verbatim quote and paints a highlight", async
 
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
-  await expect(page.locator("#sel-bar")).toBeVisible();
+  await expect(page.locator("#sel-pop")).toBeVisible();
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toBeVisible();
   await expect(page.locator("#item-form-label")).toContainText("comment");
@@ -350,11 +350,12 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
   rmSync(snap2("architecture.review.json"));
   await expect(page.locator(".card[data-id=c9]")).toHaveCount(0, { timeout: 10_000 });
-  // selecting inside a fenced code block must offer the comment bar
+  // selecting inside a fenced code block must offer the comment bubble
   await selectText(`"type": "comment"`);
-  await expect(page.locator("#sel-bar")).toBeVisible();
-  await expect(page.locator("#sel-bar")).toContainText(`"type": "comment"`);
+  await expect(page.locator("#sel-pop")).toBeVisible();
+  await expect(page.locator("#sel-pop")).toHaveAttribute("data-quote", `"type": "comment"`);
   await page.keyboard.press("Escape");
+  await expect(page.locator("#sel-pop")).toHaveCount(0);
 });
 
 test("tree filter narrows the tree; palette search jumps", async () => {
@@ -378,6 +379,23 @@ test("tree filter narrows the tree; palette search jumps", async () => {
   await expect(page.locator("#help-sheet")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("#help-sheet")).toHaveCount(0);
+});
+
+test("theme menu switches dark/light and persists; palette offers it too", async () => {
+  const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
+  expect(await isDark()).toBe(false); // test context is light-scheme
+  await page.locator("#btn-theme").click();
+  await page.getByRole("menuitemradio", { name: "Dark" }).click();
+  await expect.poll(isDark).toBe(true);
+  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("dark");
+  await page.reload();
+  await expect.poll(isDark).toBe(true); // survives reload before first paint
+
+  await page.keyboard.press("/");
+  await page.locator("[cmdk-input]").fill("theme: system");
+  await page.keyboard.press("Enter");
+  await expect.poll(isDark).toBe(false);
+  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe(null);
 });
 
 test("older snapshots show a banner with a switch back to latest", async () => {

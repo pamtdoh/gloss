@@ -9,10 +9,13 @@ import {
   ListTodo,
   Menu,
   MessageCircleQuestion,
+  Monitor,
+  Moon,
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
   Search,
+  Sun,
   X,
 } from "lucide-react";
 import type { Sidecar, SidecarItem } from "../summary.js";
@@ -76,13 +79,22 @@ import {
 } from "./ui/select.js";
 import { Textarea } from "./ui/textarea.js";
 
-// theme: system preference -> .dark class (utilities target it)
+// theme: light | dark | system -> .dark class (utilities target it).
+// Applied once at module load so the first paint is already correct.
+type ThemeMode = "light" | "dark" | "system";
+const THEME_KEY = "rk-theme";
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-const applyTheme = (): void => {
-  document.documentElement.classList.toggle("dark", darkQuery.matches);
+const storedTheme = (): ThemeMode => {
+  const v = localStorage.getItem(THEME_KEY);
+  return v === "light" || v === "dark" ? v : "system";
 };
-applyTheme();
-darkQuery.addEventListener("change", applyTheme);
+const applyTheme = (mode: ThemeMode): void => {
+  document.documentElement.classList.toggle(
+    "dark",
+    mode === "dark" || (mode === "system" && darkQuery.matches),
+  );
+};
+applyTheme(storedTheme());
 
 // Quick Comment — the old "decisions": one-tap whole-fact comments with
 // canned text. One concept, simpler files.
@@ -104,6 +116,12 @@ interface ToastState {
 }
 
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
+
+// Coarse pointers get the fixed bottom action bar (iOS owns the selection
+// callout and collapses the selection on any tap — floating popovers near
+// the selection are unwinnable there). Fine pointers get a bubble at the
+// selection instead.
+const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
 // Mermaid rendering goes THROUGH React state, never DOM mutation: mutating
 // dangerouslySetInnerHTML's subtree behind React's back meant any re-render
@@ -194,6 +212,20 @@ function App(): React.JSX.Element {
   };
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [theme, setTheme] = useState<ThemeMode>(storedTheme);
+  // OS scheme changes re-render so the header icon tracks the effective theme
+  const [sysDark, setSysDark] = useState(darkQuery.matches);
+  useEffect(() => {
+    const onChange = (): void => setSysDark(darkQuery.matches);
+    darkQuery.addEventListener("change", onChange);
+    return () => darkQuery.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    if (theme === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, theme);
+    applyTheme(theme);
+  }, [theme, sysDark]);
+  const effectiveDark = theme === "dark" || (theme === "system" && sysDark);
   // The captured selection survives iOS Safari collapsing the native one:
   // painted as rk-pending and acted on from a stable bottom bar on touch.
   const [pendingSel, setPendingSel] = useState<{
@@ -324,7 +356,7 @@ function App(): React.JSX.Element {
   // committed when the selection collapses (= the gesture is over). On
   // fine pointers a short settle after the drag is safe.
   useEffect(() => {
-    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const coarse = COARSE;
     let debounce: ReturnType<typeof setTimeout>;
     const commit = (span: { path: string; start: number; end: number }): void => {
       setPendingSel((current) =>
@@ -356,6 +388,12 @@ function App(): React.JSX.Element {
       } else if (coarse && lastSpan.current) {
         // collapse on touch = the gesture ended; now committing is safe
         commit(lastSpan.current);
+      } else if (!coarse && !stateRef.current.composer) {
+        // desktop: a collapsed selection means the user clicked away —
+        // the bubble follows the native selection (the composer keeps its
+        // pending highlight; typing in it collapses the selection too)
+        lastSpan.current = null;
+        setPendingSel(null);
       }
     };
     const onSelection = (): void => {
@@ -381,6 +419,39 @@ function App(): React.JSX.Element {
       document.removeEventListener("pointercancel", onPointerUp, true);
     };
   }, []);
+
+  // desktop bubble position: anchored to the pending span, tracking scroll
+  const [selPop, setSelPop] = useState<{ x: number; top: number; bottom: number } | null>(null);
+  useEffect(() => {
+    if (COARSE || !pendingSel) {
+      setSelPop(null);
+      return;
+    }
+    let raf = 0;
+    const update = (): void => {
+      const container = readRef.current;
+      const range =
+        container && container.getAttribute("data-fact-path") === pendingSel.path
+          ? rangeForSourceSpan(container as HTMLElement, pendingSel.start, pendingSel.end)
+          : null;
+      const rect = range?.getBoundingClientRect();
+      setSelPop(
+        rect ? { x: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom } : null,
+      );
+    };
+    update();
+    const onScroll = (): void => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [pendingSel]);
 
   // ---------- derived ----------
   const filteredFacts = useMemo(() => {
@@ -750,7 +821,11 @@ function App(): React.JSX.Element {
     close: () => {
       if (composer) setComposer(null);
       else if (overlay) setOverlay(null);
-      else if (selection.size) setSelection(new Set());
+      else if (pendingSel) {
+        setPendingSel(null);
+        lastSpan.current = null;
+        window.getSelection()?.removeAllRanges();
+      } else if (selection.size) setSelection(new Set());
     },
   };
   useEffect(() => {
@@ -953,6 +1028,45 @@ function App(): React.JSX.Element {
           )}
         </span>
         <span className="spacer" />
+        <DM.Root>
+          <DM.Trigger asChild>
+            <Button variant="ghost" size="icon-sm" id="btn-theme" aria-label="Theme">
+              {effectiveDark ? <Moon /> : <Sun />}
+            </Button>
+          </DM.Trigger>
+          <DM.Portal>
+            <DM.Content
+              className="menu z-50 min-w-[130px] rounded-md border bg-popover p-1 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+              align="end"
+              sideOffset={4}
+            >
+              <DM.RadioGroup
+                value={theme}
+                onValueChange={(v) => setTheme(v as ThemeMode)}
+              >
+                {(
+                  [
+                    ["light", "Light", Sun],
+                    ["dark", "Dark", Moon],
+                    ["system", "System", Monitor],
+                  ] as const
+                ).map(([value, label, Icon]) => (
+                  <DM.RadioItem
+                    key={value}
+                    value={value}
+                    className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[highlighted]:bg-accent"
+                  >
+                    <Icon className="lucide size-3.5" size={14} />
+                    <span className="flex-1">{label}</span>
+                    <DM.ItemIndicator>
+                      <Check className="lucide size-3.5" size={14} />
+                    </DM.ItemIndicator>
+                  </DM.RadioItem>
+                ))}
+              </DM.RadioGroup>
+            </DM.Content>
+          </DM.Portal>
+        </DM.Root>
         <Select
           value={String(data.snapshot)}
           onValueChange={(value) => void load(Number(value))}
@@ -1229,30 +1343,70 @@ function App(): React.JSX.Element {
         )}
       </div>
 
-      {pendingSel && targetFact && pendingSel.path === targetFact.path && !composer && (
-        <div className="sel-bar" id="sel-bar" role="toolbar" aria-label="Selected text actions">
-          <span className="sel-bar-quote">
-            “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
-          </span>
-          <Button size="sm" onClick={() => beginItem("comment")}>
-            Comment
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
-            Ask
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Dismiss selection"
-            onClick={() => {
-              setPendingSel(null);
-              lastSpan.current = null; // else the next tap re-commits it
-            }}
-          >
-            <X />
-          </Button>
-        </div>
-      )}
+      {pendingSel &&
+        targetFact &&
+        pendingSel.path === targetFact.path &&
+        !composer &&
+        (COARSE ? (
+          <div className="sel-bar" id="sel-bar" role="toolbar" aria-label="Selected text actions">
+            <span className="sel-bar-quote">
+              “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
+            </span>
+            <Button size="sm" onClick={() => beginItem("comment")}>
+              Comment
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
+              Ask
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Dismiss selection"
+              onClick={() => {
+                setPendingSel(null);
+                lastSpan.current = null; // else the next tap re-commits it
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        ) : (
+          selPop && (
+            <div
+              className="sel-pop"
+              id="sel-pop"
+              role="toolbar"
+              aria-label="Selected text actions"
+              data-quote={targetFact.content.slice(pendingSel.start, pendingSel.end)}
+              style={{
+                left: Math.min(Math.max(8, selPop.x - 85), window.innerWidth - 178),
+                top: selPop.top - 44 < 54 ? selPop.bottom + 8 : selPop.top - 44,
+              }}
+            >
+              {/* pointerdown + preventDefault: act without collapsing the selection */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  beginItem("comment");
+                }}
+              >
+                Comment
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  beginItem("question");
+                }}
+              >
+                Ask
+              </Button>
+            </div>
+          )
+        ))}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
       <Palette
@@ -1278,6 +1432,12 @@ function App(): React.JSX.Element {
           },
           { label: "Toggle review panel", run: () => setPanelOpen((open) => !open) },
           { label: "Keyboard help", run: () => setOverlay("help") },
+          ...(["light", "dark", "system"] as const)
+            .filter((mode) => mode !== theme)
+            .map((mode) => ({
+              label: `Theme: ${mode}`,
+              run: () => setTheme(mode),
+            })),
           ...data.snapshots
             .filter((s) => s !== data.snapshot)
             .map((s) => ({ label: `Switch to snapshot ${s}`, run: () => void load(s) })),

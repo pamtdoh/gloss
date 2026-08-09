@@ -396,6 +396,15 @@ body {
 @media (min-width: 861px) {
   .sel-bar { left: auto; right: 24px; bottom: 18px; border: 1px solid var(--line-raised); border-radius: 12px; max-width: 480px; }
 }
+/* fine pointers: the actions ride a bubble at the selection instead */
+.sel-pop {
+  position: fixed; z-index: 18;
+  display: flex; align-items: center; gap: 2px;
+  background: var(--overlay); border: 1px solid var(--line-raised);
+  border-radius: 10px; padding: 3px;
+  box-shadow: var(--elev-4);
+  animation: rk-pop var(--dur-fast) var(--ease-out);
+}
 
 /* -------------------------------------------------- page nav (blog-style) */
 .pagenav {
