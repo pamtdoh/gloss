@@ -162,6 +162,9 @@ function App(): React.JSX.Element {
   const pendingWrites = useRef(new Map<string, number>());
   // a finger is down: no re-renders allowed, or iOS drops the selection
   const touchActive = useRef(false);
+  // native handle drags fire NO pointer events — selectionchange activity
+  // is the only signal that a gesture may be in progress
+  const lastSelActivity = useRef(0);
   const readRef = useRef<HTMLElement | null>(null);
   const readColRef = useRef<HTMLElement | null>(null);
   const lastSpan = useRef<{ path: string; start: number; end: number } | null>(null);
@@ -232,6 +235,7 @@ function App(): React.JSX.Element {
         st.done ||
         st.composer !== null ||
         touchActive.current ||
+        Date.now() - lastSelActivity.current < 2000 ||
         !(window.getSelection()?.isCollapsed ?? true);
       if (!busy && st.data) {
         try {
@@ -270,47 +274,51 @@ function App(): React.JSX.Element {
   }, []);
 
   // ---------- selection capture ----------
-  // Deliberately patient: while the user drags iOS selection handles,
-  // selectionchange fires continuously — any state update re-renders and
-  // makes Safari drop the gesture. We only commit the span after the
-  // selection has been quiet for a beat AND no finger is down.
+  // iOS Safari drops an in-progress selection if the page re-renders, and
+  // native handle drags fire no pointer events, so there is no reliable
+  // "still dragging" signal. On touch we therefore NEVER touch state while
+  // a selection is live — the span is tracked silently in a ref, and only
+  // committed when the selection collapses (= the gesture is over). On
+  // fine pointers a short settle after the drag is safe.
   useEffect(() => {
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
     let debounce: ReturnType<typeof setTimeout>;
+    const commit = (span: { path: string; start: number; end: number }): void => {
+      setPendingSel((current) =>
+        current &&
+        current.path === span.path &&
+        current.start === span.start &&
+        current.end === span.end
+          ? current
+          : span,
+      );
+    };
     const settle = (): void => {
-      if (touchActive.current) {
-        // still dragging — check again shortly, without touching state
-        debounce = setTimeout(settle, 300);
-        return;
-      }
       const sel = window.getSelection();
       const container = readRef.current;
-      if (
+      const live =
         sel &&
         !sel.isCollapsed &&
         container &&
         container.contains(sel.anchorNode) &&
-        stateRef.current.data
-      ) {
+        stateRef.current.data;
+      if (live) {
         const span = sourceSpanForSelection(container as HTMLElement, sel);
         const path = container.getAttribute("data-fact-path");
         if (span && path) {
           lastSpan.current = { path, ...span };
-          setPendingSel((current) =>
-            current &&
-            current.path === path &&
-            current.start === span.start &&
-            current.end === span.end
-              ? current
-              : { path, ...span },
-          );
+          // touch: stay silent — committing re-renders mid-gesture
+          if (!coarse && !touchActive.current) commit(lastSpan.current);
         }
+      } else if (coarse && lastSpan.current) {
+        // collapse on touch = the gesture ended; now committing is safe
+        commit(lastSpan.current);
       }
-      // a collapsing selection does NOT clear pendingSel — iOS collapses
-      // it on any tap; our painted highlight and the action bar stay.
     };
     const onSelection = (): void => {
+      lastSelActivity.current = Date.now();
       clearTimeout(debounce);
-      debounce = setTimeout(settle, 500);
+      debounce = setTimeout(settle, coarse ? 250 : 500);
     };
     const onPointerDown = (): void => {
       touchActive.current = true;
@@ -393,6 +401,9 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (composer && composer.path !== targetFact?.path) setComposer(null);
     setPendingSel((p) => (p && p.path !== targetFact?.path ? null : p));
+    if (lastSpan.current && lastSpan.current.path !== targetFact?.path) {
+      lastSpan.current = null;
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path]);
 
@@ -405,7 +416,11 @@ function App(): React.JSX.Element {
     if (seen.has(fact.path) || autoMarked.current.has(fact.path)) return;
     let timer: ReturnType<typeof setTimeout>;
     const fire = (): void => {
-      if (touchActive.current || !(window.getSelection()?.isCollapsed ?? true)) {
+      if (
+        touchActive.current ||
+        Date.now() - lastSelActivity.current < 2000 ||
+        !(window.getSelection()?.isCollapsed ?? true)
+      ) {
         timer = setTimeout(fire, 1500);
         return;
       }
@@ -508,6 +523,7 @@ function App(): React.JSX.Element {
     }
     const body = text.trim();
     setPendingSel(null);
+    lastSpan.current = null; // a later collapse must not resurrect the bar
     if (active.mode === "new") {
       mutateFact(active.path, (sidecar) => {
         const items = (sidecar.items ??= []);
@@ -1153,7 +1169,10 @@ function App(): React.JSX.Element {
             size="icon-sm"
             variant="ghost"
             aria-label="Dismiss selection"
-            onClick={() => setPendingSel(null)}
+            onClick={() => {
+              setPendingSel(null);
+              lastSpan.current = null; // else the next tap re-commits it
+            }}
           >
             <X />
           </Button>

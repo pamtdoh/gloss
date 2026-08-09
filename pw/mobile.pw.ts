@@ -122,9 +122,9 @@ test("selection popup annotates via touch (composer opens in the sheet)", async 
     }
     throw new Error("text not found");
   });
-  await expect(page.locator("#sel-bar")).toBeVisible();
-  // simulate iOS Safari collapsing the native selection on tap — the
-  // captured selection (and its painted highlight) must survive
+  // on touch, nothing commits while the selection is live (a re-render
+  // would make iOS drop the gesture); the collapse is what commits it
+  await page.waitForTimeout(600);
   await page.evaluate(() => window.getSelection()!.removeAllRanges());
   await expect(page.locator("#sel-bar")).toBeVisible();
   await expect
