@@ -89,9 +89,10 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
   await expect(page).toHaveScreenshot("mobile-fact.png");
 });
 
-test("the review panel opens as a bottom sheet; quick-annotate writes sidecars", async () => {
+test("the review panel opens as a bottom sheet; quick comments write and close it", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
+  await expect(page).toHaveScreenshot("mobile-panel.png");
   await page.locator('#quick-comment [data-quick="Simplify"]').tap();
   await expect
     .poll(
@@ -100,12 +101,11 @@ test("the review panel opens as a bottom sheet; quick-annotate writes sidecars",
         sidecar("storage/whole-file-writes.review.json"),
     )
     .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });
-  await expect(page).toHaveScreenshot("mobile-panel.png");
+  // the sheet gets out of the way after an action
+  await expect(page.locator(".panel-col.panel")).toHaveCount(0);
 });
 
 test("selection popup comments via touch (composer opens in the sheet)", async () => {
-  // close the sheet from the previous test so the popup is tappable
-  await page.getByRole("button", { name: "Collapse panel" }).tap();
   await page.evaluate(() => {
     const container = document.getElementById("fact-content")!;
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
@@ -155,7 +155,8 @@ test("selection popup comments via touch (composer opens in the sheet)", async (
       anchor: { quote: "last write wins" },
       text: "Atomic rename, please.",
     });
-  await page.getByRole("button", { name: "Collapse panel" }).tap();
+  // saving closes the sheet on mobile
+  await expect(page.locator(".panel-col.panel")).toHaveCount(0);
 });
 
 test("book-style prev/next navigation walks the facts", async () => {

@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "c1",
+      "type": "comment",
+      "anchor": {
+        "quote": "Search"
+      },
+      "text": "do we need a search button? can the button be inside the search bar?"
+    }
+  ]
+}

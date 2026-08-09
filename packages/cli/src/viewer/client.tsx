@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  Search,
   X,
 } from "lucide-react";
 import type { Sidecar, SidecarItem } from "../summary.js";
@@ -186,6 +187,11 @@ function App(): React.JSX.Element {
   );
   const [treeOpen, setTreeOpen] = useState(false); // mobile drawer
   const isMobile = (): boolean => window.matchMedia("(max-width: 860px)").matches;
+  // the panel is an overlay/sheet below 1100px — after an action it should
+  // get out of the way instead of covering the fact
+  const closeSheetIfOverlay = (): void => {
+    if (window.matchMedia("(max-width: 1100px)").matches) setPanelOpen(false);
+  };
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   // The captured selection survives iOS Safari collapsing the native one:
@@ -514,6 +520,7 @@ function App(): React.JSX.Element {
         if (!bulk) undoStack.current.push({ path, id });
       });
     }
+    if (!bulk) closeSheetIfOverlay();
     if (bulk) {
       setSelection(new Set());
       setToast({
@@ -552,6 +559,7 @@ function App(): React.JSX.Element {
     const active = composer;
     if (!active || !text.trim()) {
       setComposer(null);
+      closeSheetIfOverlay();
       return;
     }
     const body = text.trim();
@@ -582,6 +590,7 @@ function App(): React.JSX.Element {
       });
     }
     setComposer(null);
+    closeSheetIfOverlay();
   }
 
   function deleteItem(path: string, id: string): void {
@@ -951,7 +960,14 @@ function App(): React.JSX.Element {
             size="sm"
             id="snapshot-select"
             aria-label="Snapshot"
-            className="snapshot-select w-[140px] max-[560px]:w-[76px]"
+            title={
+              data.snapshot === Math.max(...data.snapshots)
+                ? undefined
+                : `Older snapshot — ${Math.max(...data.snapshots)} is latest`
+            }
+            className={`snapshot-select w-[140px] max-[560px]:w-[76px] ${
+              data.snapshot === Math.max(...data.snapshots) ? "" : "snapshot-stale"
+            }`}
           >
             <span className="max-[560px]:hidden">
               <SelectValue />
@@ -976,9 +992,10 @@ function App(): React.JSX.Element {
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
         <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
           <div className="tree-filter">
+            <Search className="lucide filter-icon size-3.5" size={14} aria-hidden="true" />
             <Input
               id="tree-filter"
-              className="h-8"
+              className="h-8 pl-8"
               placeholder="Filter facts (f)"
               aria-label="Filter facts"
               value={filter}
@@ -1005,9 +1022,6 @@ function App(): React.JSX.Element {
             <span className="stat text-muted-foreground flex-1 self-center text-[13px]">
               {progress.seen} / {progress.total} reviewed
             </span>
-            <Button variant="outline" size="sm" onClick={() => setOverlay("palette")}>
-              Search
-            </Button>
           </div>
           {filtering && (
             <div className="filter-count" aria-live="polite">
@@ -1185,7 +1199,10 @@ function App(): React.JSX.Element {
               onReanchor={(id) => targetFact && reanchor(targetFact.path, id)}
               onCollapse={() => setPanelOpen(false)}
               onCommit={commitComposer}
-              onCancel={() => setComposer(null)}
+              onCancel={() => {
+                setComposer(null);
+                closeSheetIfOverlay();
+              }}
             />
           </aside>
         ) : (
