@@ -155,16 +155,38 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       if (!hostOk) return sendJson(400, { ok: false, error: "bad host" });
 
       if (url.pathname === "/auth") {
-        if (tokenUsed || url.searchParams.get("token") !== token) {
-          res.writeHead(403, { "content-type": "text/plain" });
-          return res.end("This one-time review link has expired. Restart the session for a new one.");
+        // GET never consumes the token — messaging apps prefetch links for
+        // previews and would burn a one-time GET. The page below submits
+        // the token via POST (prefetchers don't run JS or submit forms).
+        if (req.method === "GET") {
+          const candidate = url.searchParams.get("token") ?? "";
+          if (tokenUsed || !/^[a-f0-9]{64}$/.test(candidate)) {
+            res.writeHead(403, { "content-type": "text/plain" });
+            return res.end("This one-time review link has expired. Restart the session for a new one.");
+          }
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          return res.end(
+            `<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><title>reviewkit</title>` +
+              `<body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0">` +
+              `<form method="POST" action="/auth"><input type="hidden" name="token" value="${candidate}">` +
+              `<button style="font:16px system-ui;padding:10px 22px;border-radius:8px;border:1px solid #ccc;cursor:pointer">Open review</button>` +
+              `</form><script>document.forms[0].submit()</script></body>`,
+          );
         }
-        tokenUsed = true;
-        res.writeHead(302, {
-          "set-cookie": `rk_session=${sessionCookie}; HttpOnly; SameSite=Strict; Path=/`,
-          location: "/",
-        });
-        return res.end();
+        if (req.method === "POST") {
+          const body = new URLSearchParams(await readBody(req));
+          if (tokenUsed || body.get("token") !== token) {
+            res.writeHead(403, { "content-type": "text/plain" });
+            return res.end("This one-time review link has expired. Restart the session for a new one.");
+          }
+          tokenUsed = true;
+          res.writeHead(303, {
+            "set-cookie": `rk_session=${sessionCookie}; HttpOnly; SameSite=Strict; Path=/`,
+            location: "/",
+          });
+          return res.end();
+        }
+        return sendJson(405, { ok: false, error: "method not allowed" });
       }
 
       const cookies = (req.headers.cookie ?? "").split(";").map((c) => c.trim());
