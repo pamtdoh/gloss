@@ -89,10 +89,10 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
   await expect(page).toHaveScreenshot("mobile-fact.png");
 });
 
-test("the review panel opens as a bottom sheet; quick-notes write sidecars", async () => {
+test("the review panel opens as a bottom sheet; stamps write sidecars", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
-  await page.locator('#presets [data-preset="Simplify"]').tap();
+  await page.locator('#stamps [data-stamp="Simplify"]').tap();
   await expect
     .poll(
       () =>

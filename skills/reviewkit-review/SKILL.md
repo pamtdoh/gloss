@@ -36,8 +36,8 @@ ask, or state the scope you inferred when you present the review.
 
    - **One condensed, decidable fact per `.md` file.** A fact is a claim
      about the design that the human can judge on its own: let it stand
-     (silence is agreement) or annotate it (the viewer offers quick
-     presets like "Not needed." and "Simplify."). If they'd have to say
+     (silence is agreement) or annotate it (the viewer offers one-tap
+     stamps like "Not needed." and "Simplify."). If they'd have to say
      "well, parts of it…", split it.
    - **Small.** A `# Title` line stating the claim, then a few sentences.
      Reference file paths where they help.

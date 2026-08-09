@@ -82,10 +82,10 @@ const applyTheme = (): void => {
 applyTheme();
 darkQuery.addEventListener("change", applyTheme);
 
-// The old "decisions", demoted per the owner's round-3 call: quick presets
-// that create ordinary whole-fact annotations. One concept, simpler files.
-interface Preset { key: string; label: string; text: string }
-const PRESETS: Preset[] = [
+// Stamps — the old "decisions", demoted per the owner's round-3 call:
+// one-tap whole-fact annotations with canned text. One concept, simpler files.
+interface Stamp { key: string; label: string; text: string }
+const STAMPS: Stamp[] = [
   { key: "1", label: "Not needed", text: "Not needed." },
   { key: "2", label: "Simplify", text: "Simplify." },
   { key: "3", label: "Defer", text: "Defer." },
@@ -464,7 +464,7 @@ function App(): React.JSX.Element {
     });
   }
 
-  function applyPreset(preset: Preset, paths?: string[]): void {
+  function applyStamp(stamp: Stamp, paths?: string[]): void {
     if (!data) return;
     const bulk = !paths && selection.size > 0;
     const targets = paths ?? (bulk ? [...selection] : targetFact ? [targetFact.path] : []);
@@ -474,7 +474,7 @@ function App(): React.JSX.Element {
       mutateFact(path, (sidecar) => {
         const items = (sidecar.items ??= []);
         const id = nextId(items, "a");
-        items.push({ id, type: "annotation", text: preset.text });
+        items.push({ id, type: "annotation", text: stamp.text });
         created.push({ path, id });
         if (!bulk) undoStack.current.push({ path, id });
       });
@@ -482,7 +482,7 @@ function App(): React.JSX.Element {
     if (bulk) {
       setSelection(new Set());
       setToast({
-        message: `Noted “${preset.label}” on ${targets.length} facts`,
+        message: `Stamped “${stamp.label}” on ${targets.length} facts`,
         undo: () => {
           for (const c of created) {
             mutateFact(c.path, (sidecar) => {
@@ -691,9 +691,9 @@ function App(): React.JSX.Element {
         setCollapsed((c) => new Set(c).add(effectiveCursor.path));
       }
     },
-    notNeeded: () => applyPreset(PRESETS[0]!),
-    simplify: () => applyPreset(PRESETS[1]!),
-    defer: () => applyPreset(PRESETS[2]!),
+    notNeeded: () => applyStamp(STAMPS[0]!),
+    simplify: () => applyStamp(STAMPS[1]!),
+    defer: () => applyStamp(STAMPS[2]!),
     seen: () => toggleSeen(false),
     seenAdvance: () => toggleSeen(true),
     select: () => toggleSelect(),
@@ -1043,7 +1043,7 @@ function App(): React.JSX.Element {
                     return next;
                   })
                 }
-                onPreset={(path, preset) => applyPreset(preset, [path])}
+                onStamp={(path, stamp) => applyStamp(stamp, [path])}
               />
             ) : renderedFact ? (
               <>
@@ -1092,14 +1092,14 @@ function App(): React.JSX.Element {
               </nav>
             )}
             {selection.size > 0 && (
-              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick notes">
+              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk stamps">
                 <span className="stat" aria-live="polite">
                   {selection.size} selected
                 </span>
-                {PRESETS.map((preset) => (
-                  <button key={preset.key} onClick={() => applyPreset(preset)}>
-                    <Kbd className="mr-1">{preset.key}</Kbd>
-                    {preset.label}
+                {STAMPS.map((stamp) => (
+                  <button key={stamp.key} onClick={() => applyStamp(stamp)}>
+                    <Kbd className="mr-1">{stamp.key}</Kbd>
+                    {stamp.label}
                   </button>
                 ))}
                 <button onClick={() => setSelection(new Set())}>esc clear</button>
@@ -1128,7 +1128,7 @@ function App(): React.JSX.Element {
               fact={targetFact}
               anchorStates={anchorStates}
               composer={composer}
-              onPreset={(preset) => applyPreset(preset)}
+              onStamp={(stamp) => applyStamp(stamp)}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
                 targetFact &&
@@ -1383,7 +1383,7 @@ function DirView(props: {
   onOpen: (row: Row) => void;
   onToggleSelect: (path: string) => void;
   onSelectAll: (paths: string[], on: boolean) => void;
-  onPreset: (path: string, preset: Preset) => void;
+  onStamp: (path: string, stamp: Stamp) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.data.facts, props.dir);
   const subdirs = childDirsOf(props.data.facts, props.dir);
@@ -1469,14 +1469,14 @@ function DirView(props: {
                 )}
               </span>
               <span className="decide" onClick={(e) => e.stopPropagation()}>
-                {PRESETS.map((preset) => (
+                {STAMPS.map((stamp) => (
                   <Button
-                    key={preset.key}
+                    key={stamp.key}
                     variant="outline"
                     size="xs"
-                    onClick={() => props.onPreset(fact.path, preset)}
+                    onClick={() => props.onStamp(fact.path, stamp)}
                   >
-                    {preset.label}
+                    {stamp.label}
                   </Button>
                 ))}
               </span>
@@ -1492,7 +1492,7 @@ function Panel(props: {
   fact: Fact | null;
   anchorStates: Map<string, "exact" | "drifted" | "detached">;
   composer: Composer | null;
-  onPreset: (preset: Preset) => void;
+  onStamp: (stamp: Stamp) => void;
   onFocusItem: (id: string | null) => void;
   onEdit: (item: SidecarItem) => void;
   onDelete: (id: string) => void;
@@ -1506,24 +1506,24 @@ function Panel(props: {
   return (
     <>
       <h2 className="flex items-center justify-between">
-        Quick note
+        Stamps
         <Button variant="ghost" size="icon-xs" aria-label="Collapse panel" onClick={props.onCollapse}>
           <PanelRightClose />
         </Button>
       </h2>
-      <div id="presets" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick note">
-        {PRESETS.map((preset) => (
+      <div id="stamps" className="flex flex-wrap gap-1.5" role="group" aria-label="Stamps">
+        {STAMPS.map((stamp) => (
           <Button
-            key={preset.key}
+            key={stamp.key}
             variant="outline"
             size="sm"
-            data-preset={preset.label}
-            aria-keyshortcuts={preset.key}
+            data-stamp={stamp.label}
+            aria-keyshortcuts={stamp.key}
             disabled={!fact}
-            onClick={() => props.onPreset(preset)}
+            onClick={() => props.onStamp(stamp)}
           >
-            <Kbd>{preset.key}</Kbd>
-            {preset.label}
+            <Kbd>{stamp.key}</Kbd>
+            {stamp.label}
           </Button>
         ))}
       </div>
@@ -1632,7 +1632,7 @@ function Panel(props: {
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 quick note · v seen · a/q/c raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
+        j/k move · 1–3 stamp · v seen · a/q/c raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
       </p>
     </>
   );

@@ -18,8 +18,8 @@ coding agent for implementation. The complete loop:
    scoping semantics of its own.
 2. The agent condenses the design into small facts (one Markdown file each).
 3. A browser UI — the only place a browser appears — gives the human fast,
-   keyboard-driven browsing, text annotations (with quick presets like
-   "not needed" / "simplify" / "defer"), comments, and anchored questions.
+   keyboard-driven browsing, text annotations (with one-tap "stamps"
+   like "not needed" / "simplify" / "defer"), comments, and anchored questions.
 4. When the human finishes, the agent is notified, reads the annotations
    and questions, and decides what to do next: answer questions, revise
    facts, or hand off to implementation.
@@ -202,7 +202,7 @@ artifact deserves real structure, not conventions layered on prose.
 
 - `items` carry the three types: `annotation`, `question`, `comment`.
   There is no decision field (owner, round 3): what were decisions are
-  viewer quick-presets that write ordinary whole-fact annotations
+  viewer "stamps" — one-tap whole-fact annotations with canned text
   ("Not needed." / "Simplify." / "Defer."), editable like any annotation.
   An absent sidecar means the fact stands as written — silence is
   agreement.
@@ -256,8 +256,8 @@ progress, no agent access to its API):
   selecting a directory presents its `_index.md` group fact.
 - Search across facts.
 - A table view: a directory's direct children as rows, so a run of small
-  facts can be reviewed (and bulk quick-noted) in one screen.
-- Keyboard-driven throughout: J/K navigation and quick-note preset keys.
+  facts can be reviewed (and bulk-stamped) in one screen.
+- Keyboard-driven throughout: J/K navigation and stamp keys.
 - Text-selection annotations and anchored questions (writing the sidecar
   schema above); annotations, questions, and comments can be edited and
   deleted, not just undone.
@@ -343,7 +343,7 @@ usable release, not a fast-follow.
   group's order tells a story; alphabetical sort is the only ordering rule.
 - **No decision field** (owner round-3 self-review, 2026-08-09): sidecars
   are `items` only. After real use the owner preferred annotations;
-  decisions survive solely as viewer quick-presets that create whole-fact
+  decisions survive solely as viewer stamps that create whole-fact
   annotations. Supersedes the earlier decision-set entries.
 - **Anchor triple** (viewer redesign, 2026-08-09): `anchor.quote` is the
   verbatim selection; optional `prefix`/`suffix` disambiguate (W3C
