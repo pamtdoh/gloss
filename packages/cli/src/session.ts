@@ -151,9 +151,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       const hostOk =
         req.headers.host === `127.0.0.1:${port}` ||
         (opts.serveHost !== undefined &&
-          (req.headers.host === opts.serveHost ||
-            req.headers.host === `${opts.serveHost}:443` ||
-            req.headers.host === `${opts.serveHost}:80`));
+          (req.headers.host ?? "").split(":")[0] === opts.serveHost);
       if (!hostOk) return sendJson(400, { ok: false, error: "bad host" });
 
       if (url.pathname === "/auth") {
@@ -177,11 +175,16 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       }
       // http is accepted for the proxied host too: tailscale serve without
       // HTTPS certificates still rides WireGuard between the devices.
+      const originHostname = (() => {
+        try {
+          return req.headers.origin ? new URL(req.headers.origin).hostname : null;
+        } catch {
+          return null;
+        }
+      })();
       const originOk =
         req.headers.origin === `http://127.0.0.1:${port}` ||
-        (opts.serveHost !== undefined &&
-          (req.headers.origin === `https://${opts.serveHost}` ||
-            req.headers.origin === `http://${opts.serveHost}`));
+        (opts.serveHost !== undefined && originHostname === opts.serveHost);
       if (req.method !== "GET" && !originOk) {
         return sendJson(403, { ok: false, error: "bad origin" });
       }
