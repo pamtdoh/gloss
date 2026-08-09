@@ -380,6 +380,15 @@ test("tree filter narrows the tree; palette search jumps", async () => {
   await expect(page.locator("#help-sheet")).toHaveCount(0);
 });
 
+test("older snapshots show a banner with a switch back to latest", async () => {
+  await page.keyboard.press("/");
+  await page.locator("[cmdk-input]").fill("switch to snapshot 1");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#stale-banner")).toContainText("Viewing snapshot 1 — latest is 2");
+  await page.locator("#stale-banner button").click();
+  await expect(page.locator("#stale-banner")).toHaveCount(0);
+});
+
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   await page.locator("#btn-finish").click();
   await expect(page.locator("#finish-sheet")).toContainText("4 facts with notes");

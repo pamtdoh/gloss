@@ -905,6 +905,7 @@ function App(): React.JSX.Element {
   }
 
   const yourTurn = openQuestions.answered;
+  const latestSnapshot = Math.max(...data.snapshots);
   const raisedFacts = data.facts.filter((f) => f.sidecar?.items?.length);
 
   return (
@@ -987,6 +988,12 @@ function App(): React.JSX.Element {
           <span className="hidden max-[560px]:inline">Finish</span>
         </Button>
       </header>
+      {data.snapshot !== latestSnapshot && (
+        <div className="stale-banner" id="stale-banner" role="status">
+          Viewing snapshot {data.snapshot} — latest is {latestSnapshot} ·{" "}
+          <button onClick={() => void load(latestSnapshot)}>Switch</button>
+        </div>
+      )}
 
       <div className="cols">
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
