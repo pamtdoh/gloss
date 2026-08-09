@@ -35,14 +35,18 @@ ask, or state the scope you inferred when you present the review.
    design's shape. Conventions (good practice, not rules):
 
    - **One condensed, decidable fact per `.md` file.** A fact is a claim
-     about the design that the human can judge on its own: keep it, drop
-     it, simplify it, or defer it. If they'd have to say "well, parts of
-     it…", split it.
+     about the design that the human can judge on its own: let it stand
+     (silence is agreement), or mark it not-needed, simplify, or defer.
+     If they'd have to say "well, parts of it…", split it.
    - **Small.** A `# Title` line stating the claim, then a few sentences.
      Reference file paths where they help; never paste code blocks a human
      would have to read.
    - **Kebab-case filenames** named for the subject
      (`collision-retry.md`, not `fact-07.md`).
+   - **Number facts when the group tells a story.** Everything sorts
+     alphabetically, so numeric prefixes (`10-auth.md`, `20-sessions.md`)
+     make narrative order the reading order. Skip numbering where order
+     doesn't matter.
    - **Group related facts in directories.** When a group forms a coherent
      whole, add an `_index.md` — a fact about the group itself, like a
      module definition whose summary claim is itself decidable. Skip it
@@ -75,8 +79,10 @@ JSONL: `session.started`, `decision.changed`, `question.asked`,
 
 ## Answer questions live, while the session runs
 
-When a `question.asked` event arrives (or whenever you check the session's
-output), answer without waiting for the review to finish:
+**Watch the session's output while it runs** — as a background task, poll
+or monitor its stream; an agent that only wakes when the command exits
+answers nothing live. When a `question.asked` event arrives, answer
+without waiting for the review to finish:
 
 1. Read the fact's `<fact>.review.json`, find the question item by `id`.
 2. Append `{ "who": "agent", "text": "…" }` to its `thread` and write the

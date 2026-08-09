@@ -1,9 +1,11 @@
 # ReviewKit
 
-Status: revised 2026-08-09 after the owner's review. This is the only design
-document. The review-state schema in section 6 is a real, settled convention
-— it's what the viewer and skills share — but nothing enforces it; agents
-follow it by instruction, not validation.
+Status: revised 2026-08-09 after the owner's review, and again the same day
+after the owner's round-1 ReviewKit self-review (viewer scope in section 8,
+decision set in section 6). This is the only design document. The
+review-state schema in section 6 is a real, settled convention — it's what
+the viewer and skills share — but nothing enforces it; agents follow it by
+instruction, not validation.
 
 ## 1. The problem
 
@@ -16,8 +18,9 @@ coding agent for implementation. The complete loop:
    scoping semantics of its own.
 2. The agent condenses the design into small facts (one Markdown file each).
 3. A browser UI — the only place a browser appears — gives the human fast,
-   keyboard-driven browsing, decisions (keep / not needed / simplify /
-   defer), text annotations, comments, and anchored questions.
+   keyboard-driven browsing, decisions (not needed / simplify / defer —
+   leaving no decision means the fact stands), text annotations, comments,
+   and anchored questions.
 4. When the human finishes, the agent is notified, reads the decisions and
    annotations, and decides what to do next: answer questions, revise facts,
    or hand off to implementation.
@@ -142,6 +145,11 @@ a fact about the group as a whole, like a module definition in a programming
 language (its summary claim is itself decidable). Use it when the group
 deserves its own claim; skip it where it would be boilerplate.
 
+Facts sort alphabetically everywhere — the viewer and a terminal `ls` agree.
+When a group reads as a story, numeric filename prefixes (`10-auth.md`,
+`20-sessions.md`) make narrative order the sort order; the tool attaches no
+meaning to names, so numbering is purely an authoring convention.
+
 ```
     2/
       _review.json            # optional: snapshot-level notes, same schema
@@ -184,8 +192,10 @@ artifact deserves real structure, not conventions layered on prose.
 }
 ```
 
-- `decision` is optional: `"keep" | "not-needed" | "simplify" | "defer"`.
-  Absent means undecided (and an absent sidecar means agreement).
+- `decision` is optional: `"not-needed" | "simplify" | "defer"`. There is
+  no "keep": agreement needs no mark, so an absent decision — like an
+  absent sidecar — means the fact stands as written. Silence is agreement
+  at every level.
 - `items` carry the three types: `annotation`, `question`, `comment`.
 - `id` is a short string unique within the file — it's what session events
   and viewer undo refer to.
@@ -222,14 +232,33 @@ Installed into the target repo; identical content under `.claude/skills/` and
   implement them; don't modify `.reviewkit/`. If there is no `approved/`
   directory, stop and say so.
 
-## 8. Viewer scope (deliberately thin)
+## 8. Viewer scope (rich as a review surface, thin on integration)
 
-Three-column fixed layout, J/K navigation, four decision keys, undo for
-annotations and comments, text-selection annotations and anchored questions
-(writing the sidecar schema above), safe Markdown rendering, reduced-motion
-and accessibility-clean, snapshot switching, a **Finish review** action that
-ends the session and wakes the agent, and an approve action that promotes
-the snapshot to `approved/`.
+Revised after the owner's round-1 self-review: the first, deliberately
+minimal viewer reviewed poorly. The viewer should be a *rich* review
+surface — informed by the best of GitHub/GitLab-class review UIs — while
+staying humans-only and integration-thin (no creation forms, no agent
+progress, no agent access to its API):
+
+- Nested tree navigation mirroring the fact directories — not a flat list;
+  selecting a directory presents its `_index.md` group fact.
+- Search across facts.
+- A table view: a directory's direct children as rows, so a run of small
+  facts can be decided in one screen.
+- Keyboard-driven throughout: J/K navigation and decision keys for the
+  three decisions.
+- Text-selection annotations and anchored questions (writing the sidecar
+  schema above); annotations, questions, and comments can be edited and
+  deleted, not just undone.
+- A compact review panel that doesn't crowd the fact being read.
+- Safe Markdown rendering, reduced-motion and accessibility-clean, snapshot
+  switching, live thread reload, a **Finish review** action that ends the
+  session and wakes the agent, and an approve action that promotes the
+  snapshot to `approved/`.
+
+Modern frontend tooling and libraries are fine where they pull their
+weight; the page must remain self-contained, served entirely by the
+session on loopback.
 
 ## 9. What we deliberately do not build
 
@@ -286,3 +315,11 @@ usable release, not a fast-follow.
 - **No built-in scoping**: the user's prompt defines what gets reviewed.
 - **M4 is in v1**; terminal-only review is supported and documented.
 - **One design doc**: this file.
+- **Rich viewer** (owner round-1 self-review, 2026-08-09): the viewer is a
+  generous review surface (section 8) — nested navigation, search, table
+  view for bulk decisions, editable items — redesigned research-first from
+  GitHub/GitLab-class review UIs; libraries allowed.
+- **No keep decision** (same review): decisions are
+  `not-needed | simplify | defer`; agreement is the absence of a decision.
+- **Numbering convention** (same review): numeric filename prefixes when a
+  group's order tells a story; alphabetical sort is the only ordering rule.
