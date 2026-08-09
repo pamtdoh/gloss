@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "Facts"
+      },
+      "text": "i'm wondering, sometimes, it might be helpful to tell multiple facts as a single story. but how could we maintain ordering between the many fact files? should we also give example to encourage numbering in the fact files, if order is important?"
+    }
+  ]
+}
