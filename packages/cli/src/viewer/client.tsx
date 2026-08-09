@@ -103,9 +103,39 @@ interface ToastState {
 
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
 
-// mermaid render ids must be unique per call — reusing one (e.g. after a
-// re-render) makes mermaid throw and the block falls back to raw source
+// Mermaid rendering goes THROUGH React state, never DOM mutation: mutating
+// dangerouslySetInnerHTML's subtree behind React's back meant any re-render
+// of the fact (its own sidecar changing, a poll) reverted the diagram to
+// raw source. SVGs are rendered once per source into a module cache and
+// spliced into the HTML React owns.
 let mermaidSeq = 0;
+const mermaidCache = new Map<string, string>(); // source -> svg | "__error__"
+let mermaidLoader: Promise<void> | null = null;
+function ensureMermaid(): Promise<void> {
+  if ((window as unknown as { __rkMermaid?: unknown }).__rkMermaid) return Promise.resolve();
+  if (!mermaidLoader) {
+    mermaidLoader = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/mermaid.js";
+      script.onload = () => resolve();
+      script.onerror = () => {
+        mermaidLoader = null; // a failed load may retry next time
+        script.remove();
+        reject(new Error("mermaid failed to load"));
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return mermaidLoader;
+}
+const MERMAID_BLOCK = /<pre class="rk-mermaid"[^>]*><code>([\s\S]*?)<\/code><\/pre>/g;
+function unescapeHtml(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
+}
 
 // Dialogs restore focus on close; if that would land in a text field, the
 // single-key shortcuts die silently — drop the restore instead.
@@ -799,38 +829,48 @@ function App(): React.JSX.Element {
     };
   }, [factHtml, renderedFact, focusItemId, pendingSel]);
 
+  const [diagramVersion, setDiagramVersion] = useState(0);
   useEffect(() => {
-    const container = readRef.current;
-    if (!container) return;
-    const blocks = container.querySelectorAll("pre.rk-mermaid:not([data-done])");
-    if (!blocks.length) return;
-    const renderAll = (): void => {
-      const mermaid = (window as unknown as {
-        __rkMermaid?: { render: (id: string, src: string) => Promise<{ svg: string }> };
-      }).__rkMermaid;
-      if (!mermaid) return;
-      container.querySelectorAll("pre.rk-mermaid:not([data-done])").forEach((pre, i) => {
-        pre.setAttribute("data-done", "1");
-        void mermaid
-          .render(`rk-mmd-${++mermaidSeq}`, pre.textContent ?? "")
-          .then(({ svg }) => {
-            pre.innerHTML = svg;
-          })
-          .catch(() => pre.setAttribute("data-error", "1"));
+    const sources = [...factHtml.matchAll(MERMAID_BLOCK)].map((m) => unescapeHtml(m[1]!));
+    const missing = sources.filter((src) => !mermaidCache.has(src));
+    if (!missing.length) return;
+    let cancelled = false;
+    void ensureMermaid()
+      .then(async () => {
+        const mermaid = (window as unknown as {
+          __rkMermaid: { render: (id: string, src: string) => Promise<{ svg: string }> };
+        }).__rkMermaid;
+        for (const src of missing) {
+          if (mermaidCache.has(src)) continue;
+          try {
+            const { svg } = await mermaid.render(`rk-mmd-${++mermaidSeq}`, src);
+            mermaidCache.set(src, svg);
+          } catch {
+            mermaidCache.set(src, "__error__");
+          }
+        }
+        if (!cancelled) setDiagramVersion((v) => v + 1);
+      })
+      .catch(() => {
+        /* load failed; a later view retries */
       });
+    return () => {
+      cancelled = true;
     };
-    if ((window as unknown as { __rkMermaid?: unknown }).__rkMermaid) {
-      renderAll();
-    } else {
-      document.addEventListener("rk-mermaid-ready", renderAll, { once: true });
-      if (!document.querySelector("script[src='/mermaid.js']")) {
-        const script = document.createElement("script");
-        script.src = "/mermaid.js";
-        document.body.appendChild(script);
-      }
-      return () => document.removeEventListener("rk-mermaid-ready", renderAll);
-    }
   }, [factHtml]);
+
+  // splice cached SVGs into the HTML React owns — re-renders are now stable
+  const processedHtml = useMemo(() => {
+    void diagramVersion;
+    return factHtml.replace(MERMAID_BLOCK, (block, code: string) => {
+      const svg = mermaidCache.get(unescapeHtml(code));
+      if (!svg) return block; // still loading: show the source
+      if (svg === "__error__") {
+        return `<pre class="rk-mermaid" data-error="1"><code>${code}</code></pre>`;
+      }
+      return `<div class="rk-mermaid">${svg}</div>`;
+    });
+  }, [factHtml, diagramVersion]);
 
   // toast auto-dismiss (paused while hovered)
   const toastHover = useRef(false);
@@ -1030,7 +1070,7 @@ function App(): React.JSX.Element {
                 prev={prev}
                 seen={seen}
                 selection={selection}
-                indexHtml={factHtml}
+                indexHtml={processedHtml}
                 readRef={readRef}
                 indexFact={renderedFact}
                 onOpen={openRow}
@@ -1061,7 +1101,7 @@ function App(): React.JSX.Element {
                   id="fact-content"
                   data-fact-path={renderedFact.path}
                   ref={readRef as React.RefObject<HTMLElement>}
-                  dangerouslySetInnerHTML={{ __html: factHtml }}
+                  dangerouslySetInnerHTML={{ __html: processedHtml }}
                 />
               </>
             ) : (

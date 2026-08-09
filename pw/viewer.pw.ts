@@ -337,6 +337,19 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await page.locator('.tree .row[data-path="architecture.md"]').click();
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
+  // the diagram must survive a poll-driven re-render of its own fact
+  writeFileSync(
+    snap2("architecture.review.json"),
+    JSON.stringify({ items: [{ id: "c9", type: "comment", text: "poll poke" }] }) + "\n",
+  );
+  await expect(page.locator(".card[data-id=c9]")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
+  // and survive navigating away and back
+  await page.locator("#nav-prev").click();
+  await page.locator("#nav-next").click();
+  await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
+  rmSync(snap2("architecture.review.json"));
+  await expect(page.locator(".card[data-id=c9]")).toHaveCount(0, { timeout: 10_000 });
   // selecting inside a fenced code block must offer the comment bar
   await selectText(`"type": "comment"`);
   await expect(page.locator("#sel-bar")).toBeVisible();
