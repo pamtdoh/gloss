@@ -6,11 +6,22 @@
     "reviewkit": "./dist/reviewkit.js"
   },
   "scripts": {
-    "build": "bun build src/viewer/client.ts --target=browser --outfile src/viewer/client.gen.js && bun build src/reviewkit.ts --target=node --banner '#!/usr/bin/env node' --outfile dist/reviewkit.js && chmod +x dist/reviewkit.js",
+    "build": "bun build src/viewer/client.tsx --target=browser --production --format=iife --outfile src/viewer/client.gen.js && bun build src/viewer/styles.css --minify --outfile src/viewer/client.gen.css && bun build src/viewer/mermaid-entry.ts --target=browser --production --format=iife --outfile src/viewer/mermaid.gen.js && bun build src/reviewkit.ts --target=node --banner '#!/usr/bin/env node' --outfile dist/reviewkit.js && chmod +x dist/reviewkit.js",
     "typecheck": "bun x tsc --noEmit"
   },
   "devDependencies": {
+    "@types/mdast": "^4.0.4",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@leeoniya/ufuzzy": "^1.0.19",
+    "approx-string-match": "^2.0.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "mermaid": "^11.16.1",
+    "micromark-extension-gfm": "^3.0.0",
+    "preact": "^10.29.8",
+    "tinykeys": "^4.0.0"
   }
 }

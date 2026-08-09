@@ -42,10 +42,16 @@ reading and writing ordinary files.
 The `reviewkit-review` skill (`skills/reviewkit-review/SKILL.md`) is the
 entry point: from a conversation, the agent condenses the requested scope
 into one fact per Markdown file under `.reviewkit/<review>/1/`, with
-optional `_index.md` group facts. The human reviews in the viewer — j/k to
-navigate, 1–4 to decide (keep / not needed / simplify / defer), text
+optional `_index.md` group facts — rich Markdown (GFM tables, code,
+Mermaid diagrams, in-snapshot images) encouraged where it clarifies. The
+human reviews in the viewer — a keyboard-driven review surface (press `?`
+for the full map) with a nested fact tree, per-directory table view for
+bulk decisions, ⌘K search palette, seen-tracking with progress, and
+changed/new badges against the previous snapshot. j/k to navigate, 1–3 to
+decide (not needed / simplify / defer), text
 selections become anchored annotations and questions — which writes
-`<fact>.review.json` sidecars next to the facts. Questions are live: the
+`<fact>.review.json` sidecars next to the facts. There is no "keep": a
+fact with no decision stands as written. Questions are live: the
 agent answers by appending to the sidecar's thread while the session runs,
 and the viewer picks it up within seconds. A fact with no sidecar means
 agreement; resolving an item deletes it; approval is the accepted snapshot

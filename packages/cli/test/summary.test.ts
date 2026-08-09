@@ -7,7 +7,7 @@ describe("isEmptySidecar", () => {
     expect(isEmptySidecar({ items: [] })).toBe(true);
   });
   test("a decision or an item keeps it alive", () => {
-    expect(isEmptySidecar({ decision: "keep" })).toBe(false);
+    expect(isEmptySidecar({ decision: "defer" })).toBe(false);
     expect(isEmptySidecar({ items: [{ id: "c1", type: "comment", text: "x" }] })).toBe(false);
   });
 });
@@ -19,7 +19,7 @@ describe("summarize", () => {
       snapshot: 2,
       approved: true,
       sidecars: [
-        { decision: "keep" },
+        { decision: "defer" },
         {
           decision: "simplify",
           items: [
@@ -36,7 +36,7 @@ describe("summarize", () => {
       review: "r",
       snapshot: 2,
       facts: 5,
-      decisions: { keep: 1, "not-needed": 0, simplify: 1, defer: 0, undecided: 3 },
+      decisions: { "not-needed": 0, simplify: 1, defer: 1, undecided: 3 },
       annotations: 1,
       comments: 1,
       openQuestions: 1,

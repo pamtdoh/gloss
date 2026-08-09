@@ -39,8 +39,13 @@ ask, or state the scope you inferred when you present the review.
      (silence is agreement), or mark it not-needed, simplify, or defer.
      If they'd have to say "well, parts of it…", split it.
    - **Small.** A `# Title` line stating the claim, then a few sentences.
-     Reference file paths where they help; never paste code blocks a human
-     would have to read.
+     Reference file paths where they help.
+   - **Rich where richness clarifies.** Use a GFM table for an
+     enumeration, a fenced code block when the exact shape *is* the claim
+     (a schema, a config, a wire format), a Mermaid diagram for a flow,
+     and images saved inside the snapshot directory (referenced
+     relatively, so they travel with copies). Never paste code the human
+     would have to review line-by-line — that defeats the point.
    - **Kebab-case filenames** named for the subject
      (`collision-retry.md`, not `fact-07.md`).
    - **Number facts when the group tells a story.** Everything sorts

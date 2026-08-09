@@ -13,8 +13,19 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { join, relative, resolve, sep } from "node:path";
 import { type Sidecar, isEmptySidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
-// Bundled at build time; served as /client.js.
+// Bundled at build time; served as /client.js, /client.css, /mermaid.js.
 import clientJs from "./viewer/client.gen.js" with { type: "text" };
+import clientCss from "./viewer/client.gen.css" with { type: "text" };
+import mermaidJs from "./viewer/mermaid.gen.js" with { type: "text" };
+
+const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
 
 export interface SessionOptions {
   review: string;
@@ -162,6 +173,27 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       if (req.method === "GET" && url.pathname === "/client.js") {
         res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
         return res.end(clientJs);
+      }
+      if (req.method === "GET" && url.pathname === "/client.css") {
+        res.writeHead(200, { "content-type": "text/css; charset=utf-8" });
+        return res.end(clientCss);
+      }
+      if (req.method === "GET" && url.pathname === "/mermaid.js") {
+        res.writeHead(200, { "content-type": "text/javascript; charset=utf-8" });
+        return res.end(mermaidJs);
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/asset/")) {
+        // /asset/<snapshot>/<path> — images stored inside the snapshot
+        const [, , snap, ...restPath] = url.pathname.split("/");
+        const snapshot = Number(snap);
+        const ext = ("." + (restPath[restPath.length - 1] ?? "").split(".").pop()).toLowerCase();
+        const type = IMAGE_TYPES[ext];
+        if (!snapshots.includes(snapshot) || !type) return sendJson(404, { ok: false, error: "not found" });
+        const dir = snapshotDir(snapshot);
+        const abs = resolve(dir, restPath.map(decodeURIComponent).join("/"));
+        if (!abs.startsWith(dir + sep) || !existsSync(abs)) return sendJson(404, { ok: false, error: "not found" });
+        res.writeHead(200, { "content-type": type });
+        return res.end(readFileSync(abs));
       }
       if (req.method === "GET" && url.pathname === "/api/review") {
         const snapshot = url.searchParams.has("snapshot")

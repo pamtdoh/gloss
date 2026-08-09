@@ -150,6 +150,12 @@ When a group reads as a story, numeric filename prefixes (`10-auth.md`,
 `20-sessions.md`) make narrative order the sort order; the tool attaches no
 meaning to names, so numbering is purely an authoring convention.
 
+Facts are rich Markdown, and richness is encouraged where it clarifies:
+GFM tables for enumerations, fenced code where the exact shape is the
+claim, Mermaid diagrams for flows, and images stored inside the snapshot
+directory and referenced relatively (they travel with snapshot copies).
+The viewer renders all of it safely and never fetches beyond the session.
+
 ```
     2/
       _review.json            # optional: snapshot-level notes, same schema
@@ -199,11 +205,14 @@ artifact deserves real structure, not conventions layered on prose.
 - `items` carry the three types: `annotation`, `question`, `comment`.
 - `id` is a short string unique within the file — it's what session events
   and viewer undo refer to.
-- **Anchoring:** `anchor.quote` is the exact text the user selected in the
-  fact; the viewer widens the selection as needed so the quote is unique
-  within the fact. No `anchor` means the item concerns the whole fact. If a
-  later edit breaks a quote, the viewer shows the item as detached rather
-  than dropping it.
+- **Anchoring:** `anchor.quote` is exactly the text the user selected —
+  never altered. When the quote alone is ambiguous within the fact,
+  optional `anchor.prefix` / `anchor.suffix` (up to ~32 characters of
+  surrounding text each) disambiguate it, following the W3C
+  TextQuoteSelector. No `anchor` means the item concerns the whole fact.
+  If a later edit breaks a quote, the viewer fuzzy-re-anchors when the
+  match is unambiguous (showing the item as drifted) and otherwise shows
+  it as detached — never dropped — with a re-anchor action.
 - **Q&A**: `thread` entries are appended in order, labeled by `who`
   (`human` or `agent`). `text` fields may contain Markdown; the viewer
   renders them safely.
@@ -251,10 +260,17 @@ progress, no agent access to its API):
   schema above); annotations, questions, and comments can be edited and
   deleted, not just undone.
 - A compact review panel that doesn't crowd the fact being read.
-- Safe Markdown rendering, reduced-motion and accessibility-clean, snapshot
-  switching, live thread reload, a **Finish review** action that ends the
-  session and wakes the agent, and an approve action that promotes the
-  snapshot to `approved/`.
+- Safe rendering of rich Markdown (GFM tables, fenced code, in-snapshot
+  images, Mermaid diagrams), reduced-motion and accessibility-clean,
+  snapshot switching, live thread reload, a **Finish review** action that
+  ends the session and wakes the agent, and an approve action that
+  promotes the snapshot to `approved/`.
+- A local-only "seen" mark per fact with a progress readout — kept in the
+  browser (localStorage), never written into `.reviewkit/`, so files stay
+  the only source of review truth.
+- Facts that differ from the previous snapshot carry a "changed" badge,
+  computed by plain text comparison of the two standalone copies — no
+  stored fingerprints.
 
 Modern frontend tooling and libraries are fine where they pull their
 weight; the page must remain self-contained, served entirely by the
@@ -323,3 +339,10 @@ usable release, not a fast-follow.
   `not-needed | simplify | defer`; agreement is the absence of a decision.
 - **Numbering convention** (same review): numeric filename prefixes when a
   group's order tells a story; alphabetical sort is the only ordering rule.
+- **Anchor triple** (viewer redesign, 2026-08-09): `anchor.quote` is the
+  verbatim selection; optional `prefix`/`suffix` disambiguate (W3C
+  TextQuoteSelector). Quote-widening is retired.
+- **Rich facts** (same): tables, code, diagrams, and in-snapshot images are
+  encouraged where they clarify; the skills say so.
+- **Seen state is viewer-local** (same): progress tracking lives in the
+  browser, never in `.reviewkit/`.

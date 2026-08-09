@@ -1,5 +1,5 @@
 // Shapes from DESIGN.md §6 — a shared convention, not a validated schema.
-export type Decision = "keep" | "not-needed" | "simplify" | "defer";
+export type Decision = "not-needed" | "simplify" | "defer";
 
 export interface ThreadEntry {
   who: "human" | "agent";
@@ -9,7 +9,7 @@ export interface ThreadEntry {
 export interface SidecarItem {
   id: string;
   type: "annotation" | "question" | "comment";
-  anchor?: { quote: string };
+  anchor?: { quote: string; prefix?: string; suffix?: string };
   text?: string;
   thread?: ThreadEntry[];
 }
@@ -41,7 +41,6 @@ export function summarize(input: {
   approved: boolean;
 }): Summary {
   const decisions: Record<string, number> = {
-    keep: 0,
     "not-needed": 0,
     simplify: 0,
     defer: 0,

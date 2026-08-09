@@ -9,7 +9,15 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,11 +32,21 @@ let context: BrowserContext;
 let page: Page;
 const stdoutLines: Record<string, unknown>[] = [];
 
-const snapshotPath = (...parts: string[]) =>
-  join(tmp, ".reviewkit/design-review/1", ...parts);
+const snap2 = (...parts: string[]) => join(tmp, ".reviewkit/design-review/2", ...parts);
+const readSidecar = (relative: string) => JSON.parse(readFileSync(snap2(relative), "utf8"));
 
-const readSidecar = (relative: string) =>
-  JSON.parse(readFileSync(snapshotPath(relative), "utf8"));
+const RICH_FACT = `# The design in one picture
+
+| piece | role |
+|-------|------|
+| facts | one claim per file |
+| sidecars | the human's review state |
+
+\`\`\`mermaid
+flowchart LR
+  A[facts] --> B[sidecars] --> C[approved/]
+\`\`\`
+`;
 
 async function selectText(needle: string): Promise<void> {
   await page.evaluate((text) => {
@@ -63,6 +81,13 @@ test.beforeAll(async ({ browser }) => {
     join(tmp, ".reviewkit/design-review"),
     { recursive: true },
   );
+  // snapshot 2 = iterated copy: one changed fact, one new rich fact
+  cpSync(join(tmp, ".reviewkit/design-review/1"), snap2(), { recursive: true });
+  appendFileSync(
+    snap2("storage/whole-file-writes.md"),
+    "A write-through cache was considered and rejected for v1.\n",
+  );
+  writeFileSync(snap2("architecture.md"), RICH_FACT);
 
   proc = spawn("node", [cli, "session", "design-review", "--events", "--no-browser"], {
     cwd: tmp,
@@ -86,7 +111,7 @@ test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
   page = await context.newPage();
   await page.goto(url);
-  await expect(page.locator(".fact-item")).toHaveCount(9);
+  await expect(page.locator(".tree .row")).toHaveCount(11); // 4 dirs + 7 facts
 });
 
 test.afterAll(async () => {
@@ -95,69 +120,95 @@ test.afterAll(async () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 });
 
-test("renders the fact tree with the first fact selected", async () => {
-  await expect(page.locator(".fact-item").first()).toHaveClass(/selected/);
-  await expect(page.locator(".fact-item").first()).toHaveAttribute(
+test("initial render: nested tree, directory view for the first row", async () => {
+  await expect(page.locator("#review-name")).toHaveText("design-review");
+  await expect(page.locator("#progress")).toHaveText("0 / 10 reviewed");
+  // first row is the cli/ directory; its view shows the child-fact table
+  await expect(page.locator(".tree .row").first()).toHaveAttribute("data-kind", "dir");
+  await expect(page.locator("#dir-view")).toBeVisible();
+  await expect(page.locator("#fact-table .trow")).toHaveCount(1);
+  // interdiff badges from snapshot 1 -> 2
+  await expect(
+    page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .chip.changed'),
+  ).toHaveText("changed");
+  await expect(
+    page.locator('.tree .row[data-path="architecture.md"] .chip.new'),
+  ).toHaveText("new");
+  await expect(page).toHaveScreenshot("viewer-initial.png");
+});
+
+test("j/k walk the tree; a directory row shows its _index fact", async () => {
+  await page.keyboard.press("j"); // cli/add-and-list.md
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",
     "cli/add-and-list.md",
   );
   await expect(page.locator("#fact-content h1")).toHaveText(
     "The CLI is a second front door over the same store",
   );
-  await expect(page).toHaveScreenshot("viewer-initial.png");
-});
-
-test("j/k navigate facts", async () => {
-  await page.keyboard.press("j");
-  await page.keyboard.press("j");
-  await expect(page.locator(".fact-item.selected")).toHaveAttribute(
-    "data-path",
-    "http/create-link.md",
-  );
+  await page.keyboard.press("j"); // http/ directory
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute("data-path", "http");
   await expect(page.locator("#fact-content h1")).toHaveText(
-    "Link creation accepts any body without validation",
+    "The HTTP surface is two routes and nothing else",
   );
+  await expect(page.locator("#fact-table .trow")).toHaveCount(2);
   await page.keyboard.press("k");
-  await expect(page.locator(".fact-item.selected")).toHaveAttribute(
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",
-    "http/_index.md",
+    "cli/add-and-list.md",
   );
 });
 
-test("decision keys write real sidecars; repeating a key clears it", async () => {
-  // On http/_index.md from the previous test.
+test("decision keys write sidecars; repeat clears; badges render", async () => {
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.keyboard.press("1");
-  await expect.poll(() => existsSync(snapshotPath("http/_index.review.json"))).toBe(true);
-  expect(readSidecar("http/_index.review.json")).toEqual({ decision: "keep" });
-  await expect(
-    page.locator('.fact-item[data-path="http/_index.md"] .badge'),
-  ).toHaveText("keep");
-
-  // Toggle off: empty sidecar means agreement, so the file is deleted.
-  await page.keyboard.press("1");
-  await expect.poll(() => existsSync(snapshotPath("http/_index.review.json"))).toBe(false);
-
-  await page.keyboard.press("3");
   await expect
-    .poll(() => existsSync(snapshotPath("http/_index.review.json")) && readSidecar("http/_index.review.json"))
+    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
+    .toEqual({ decision: "not-needed" });
+  await expect(
+    page.locator('.tree .row[data-path="http/create-link.md"] .chip.not-needed'),
+  ).toHaveText("not-needed");
+
+  await page.keyboard.press("1"); // toggle off — resolution is deletion
+  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
+
+  await page.keyboard.press("2");
+  await expect
+    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
     .toEqual({ decision: "simplify" });
 
   await page.keyboard.press("j");
-  await page.keyboard.press("2");
+  await page.keyboard.press("3");
   await expect
-    .poll(() => existsSync(snapshotPath("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ decision: "not-needed" });
-
-  await page.keyboard.press("j");
-  await page.keyboard.press("4");
-  await expect
-    .poll(() => existsSync(snapshotPath("http/redirect.review.json")) && readSidecar("http/redirect.review.json"))
+    .poll(() => existsSync(snap2("http/redirect.review.json")) && readSidecar("http/redirect.review.json"))
     .toEqual({ decision: "defer" });
 });
 
-test("a selection annotation writes an anchored sidecar item", async () => {
-  await page.locator('.fact-item[data-path="storage/whole-file-writes.md"]').click();
+test("directory table: bulk decision with undo toast", async () => {
+  await page.locator('.tree .row[data-path="storage"]').click();
+  await expect(page.locator("#fact-table .trow")).toHaveCount(2);
+  for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
+    await page.locator(`#fact-table .trow[data-path="${path}"] input[type=checkbox]`).click();
+  }
+  await expect(page.locator("#bulkbar")).toContainText("2 selected");
+  await page.locator('#bulkbar button:has-text("Not needed")').click();
+  await expect
+    .poll(() => existsSync(snap2("storage/hit-counting.review.json")) && readSidecar("storage/hit-counting.review.json"))
+    .toEqual({ decision: "not-needed" });
+  await expect
+    .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")) && readSidecar("storage/whole-file-writes.review.json"))
+    .toEqual({ decision: "not-needed" });
+
+  await expect(page.locator("#toast")).toContainText("Marked 2 facts not-needed");
+  await page.locator('#toast button:has-text("Undo")').click();
+  await expect.poll(() => existsSync(snap2("storage/hit-counting.review.json"))).toBe(false);
+  await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
+});
+
+test("selection annotation stores the verbatim quote and paints a highlight", async () => {
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
+  await expect(page.locator("#sel-hint")).toBeVisible();
   await page.keyboard.press("a");
   await expect(page.locator("#item-form")).toBeVisible();
   await expect(page.locator("#item-form-label")).toContainText("annotation");
@@ -165,30 +216,31 @@ test("a selection annotation writes an anchored sidecar item", async () => {
   await page.locator("#item-save").click();
 
   await expect
-    .poll(() => existsSync(snapshotPath("storage/whole-file-writes.review.json")))
+    .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")))
     .toBe(true);
   const sidecar = readSidecar("storage/whole-file-writes.review.json");
-  expect(sidecar.items).toHaveLength(1);
-  expect(sidecar.items[0]).toEqual({
-    id: "a1",
-    type: "annotation",
-    anchor: { quote: "last write wins" },
-    text: "Consider write-through with an atomic rename.",
-  });
-  await expect(page.locator(".item-annotation blockquote")).toHaveText("last write wins");
+  expect(sidecar.items).toEqual([
+    {
+      id: "a1",
+      type: "annotation",
+      anchor: { quote: "last write wins" },
+      text: "Consider write-through with an atomic rename.",
+    },
+  ]);
+  await expect(page.locator(".card.item-annotation blockquote")).toHaveText("last write wins");
+  const highlights = await page.evaluate(() => [...(CSS as any).highlights.keys()]);
+  expect(highlights).toContain("rk-anno");
   await expect(page).toHaveScreenshot("viewer-annotated.png");
 });
 
-test("an anchored question writes a human thread and emits question.asked", async () => {
-  await page.locator('.fact-item[data-path="slugs/collision-retry.md"]').click();
+test("anchored question emits question.asked and shows the header pill", async () => {
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
   await selectText("10 collisions");
   await page.keyboard.press("q");
   await page.locator("#item-input").fill("Why ten? Is that enough at scale?");
   await page.locator("#item-save").click();
 
-  await expect
-    .poll(() => existsSync(snapshotPath("slugs/collision-retry.review.json")))
-    .toBe(true);
+  await expect.poll(() => existsSync(snap2("slugs/collision-retry.review.json"))).toBe(true);
   const sidecar = readSidecar("slugs/collision-retry.review.json");
   expect(sidecar.items[0]).toEqual({
     id: "q1",
@@ -202,12 +254,12 @@ test("an anchored question writes a human thread and emits question.asked", asyn
         (l) => l.event === "question.asked" && l.path === "slugs/collision-retry.md",
       ),
     )
-    .toMatchObject({ id: "q1", text: "Why ten? Is that enough at scale?" });
+    .toMatchObject({ id: "q1" });
+  await expect(page.locator("#question-pill")).toHaveText("1 open question");
 });
 
-test("an agent answer written to the sidecar appears live, mid-session", async () => {
-  // The agent answers by editing the file directly — no API, no reload.
-  const path = snapshotPath("slugs/collision-retry.review.json");
+test("an agent answer on disk appears live; the pill flips to your-turn", async () => {
+  const path = snap2("slugs/collision-retry.review.json");
   const sidecar = JSON.parse(readFileSync(path, "utf8"));
   sidecar.items[0].thread.push({
     who: "agent",
@@ -215,48 +267,87 @@ test("an agent answer written to the sidecar appears live, mid-session", async (
   });
   writeFileSync(path, JSON.stringify(sidecar, null, 2) + "\n");
 
-  const thread = page.locator(".item-question .who");
-  await expect(thread.nth(1)).toHaveText("agent", { timeout: 10_000 });
-  await expect(page.locator(".item-question")).toContainText("ten retries only fail");
+  await expect(page.locator(".card.item-question .who").nth(1)).toHaveText("agent", {
+    timeout: 10_000,
+  });
+  await expect(page.locator("#question-pill")).toHaveText("1 answered — your turn");
 });
 
 test("the human replies in the same thread", async () => {
-  await page.locator(".item-question .item-reply").click();
+  await page.locator(".card.item-question .item-reply").click();
   await page.locator("#item-input").fill("Good enough — keeping it.");
   await page.locator("#item-save").click();
-
   await expect
     .poll(() =>
-      JSON.parse(
-        readFileSync(snapshotPath("slugs/collision-retry.review.json"), "utf8"),
-      ).items[0].thread.map((t: { who: string }) => t.who),
+      readSidecar("slugs/collision-retry.review.json").items[0].thread.map(
+        (t: { who: string }) => t.who,
+      ),
     )
     .toEqual(["human", "agent", "human"]);
 });
 
-test("undo removes the last comment; empty sidecar is deleted", async () => {
-  await page.locator('.fact-item[data-path="cli/add-and-list.md"]').click();
+test("items can be edited and deleted from the card menu", async () => {
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
   await page.keyboard.press("c");
+  await page.locator("#item-input").fill("Nice.");
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => existsSync(snap2("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
+    .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice." }] });
+
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.locator('.menu button:has-text("Edit")').click();
   await page.locator("#item-input").fill("Nice and small.");
   await page.locator("#item-save").click();
   await expect
-    .poll(() => existsSync(snapshotPath("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
-    .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice and small." }] });
+    .poll(() => readSidecar("cli/add-and-list.review.json").items[0].text)
+    .toBe("Nice and small.");
 
-  await page.keyboard.press("u");
-  await expect.poll(() => existsSync(snapshotPath("cli/add-and-list.review.json"))).toBe(false);
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.locator('.menu button:has-text("Delete")').click();
+  await expect.poll(() => existsSync(snap2("cli/add-and-list.review.json"))).toBe(false);
+  await expect(page.locator("#toast")).toContainText("Deleted c1");
+  await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
-test("finish review ends the session with a JSON summary", async () => {
+test("rich facts render: GFM table and a mermaid diagram", async () => {
+  await page.locator('.tree .row[data-path="architecture.md"]').click();
+  await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
+  await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
+});
+
+test("seen tracking updates progress; palette search jumps", async () => {
+  await page.keyboard.press("v");
+  await expect(page.locator("#progress")).toHaveText("1 / 10 reviewed");
+
+  await page.keyboard.press("/");
+  await page.locator("#palette-input").fill("collision");
+  await expect(page.locator(".palette .result").first()).toContainText("collision");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
+    "data-path",
+    "slugs/collision-retry.md",
+  );
+
+  await page.keyboard.press("Shift+?");
+  await expect(page.locator("#help-sheet")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#help-sheet")).toHaveCount(0);
+});
+
+test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   await page.locator("#btn-finish").click();
-  await expect(page.locator("#overlay")).toBeVisible();
+  await expect(page.locator("#finish-sheet")).toContainText("2 decisions");
+  await expect(page.locator("#finish-sheet")).toContainText("1 open question");
+  await page.locator("#confirm-finish").click();
+  await expect(page.locator("#done")).toBeVisible();
   expect(await exited).toBe(0);
 
   const expectedSummary = {
     review: "design-review",
-    snapshot: 1,
-    facts: 9,
-    decisions: { keep: 0, "not-needed": 1, simplify: 1, defer: 1, undecided: 6 },
+    snapshot: 2,
+    facts: 10,
+    decisions: { "not-needed": 0, simplify: 1, defer: 1, undecided: 8 },
     annotations: 1,
     comments: 0,
     openQuestions: 1,
@@ -264,6 +355,5 @@ test("finish review ends the session with a JSON summary", async () => {
   };
   const finished = stdoutLines.find((l) => l.event === "session.finished");
   expect(finished?.summary).toEqual(expectedSummary);
-  // The last stdout line is the bare summary — the blocking command's result.
   expect(stdoutLines[stdoutLines.length - 1]).toEqual(expectedSummary);
 });
