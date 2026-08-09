@@ -238,7 +238,16 @@ function App(): React.JSX.Element {
   const effectiveDark = theme === "dark" || (theme === "system" && sysDark);
   // The captured selection survives iOS Safari collapsing the native one:
   // painted as rk-pending and acted on from a stable bottom bar on touch.
+  // On fine pointers it is set only when the composer opens — the draft
+  // anchor — never while the native selection is doing its job.
   const [pendingSel, setPendingSel] = useState<{
+    path: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  // fine pointers: the mapped live selection driving the bubble — a pure
+  // mirror of the native selection, cleared the moment it collapses
+  const [liveSel, setLiveSel] = useState<{
     path: string;
     start: number;
     end: number;
@@ -406,23 +415,33 @@ function App(): React.JSX.Element {
         container &&
         container.contains(sel.anchorNode) &&
         stateRef.current.data;
+      if (!coarse) {
+        // desktop: the bubble is a pure mirror of the live selection. While
+        // the composer is open ALL selection churn is ignored (medium-
+        // editor's stopSelectionUpdates) — its draft anchor must not move.
+        if (stateRef.current.composer) return;
+        const span = live ? sourceSpanForSelection(container as HTMLElement, sel) : null;
+        const path = span ? container!.getAttribute("data-fact-path") : null;
+        setLiveSel((current) =>
+          span && path
+            ? current &&
+              current.path === path &&
+              current.start === span.start &&
+              current.end === span.end
+              ? current
+              : { path, ...span }
+            : null,
+        );
+        return;
+      }
+      // touch: capture silently mid-gesture, commit when it ends (iOS
+      // drops an in-progress selection if the page re-renders)
       if (live) {
         const span = sourceSpanForSelection(container as HTMLElement, sel);
         const path = container.getAttribute("data-fact-path");
-        if (span && path) {
-          lastSpan.current = { path, ...span };
-          // touch: stay silent — committing re-renders mid-gesture
-          if (!coarse && !touchActive.current) commit(lastSpan.current);
-        }
-      } else if (coarse && lastSpan.current) {
-        // collapse on touch = the gesture ended; now committing is safe
+        if (span && path) lastSpan.current = { path, ...span };
+      } else if (lastSpan.current) {
         commit(lastSpan.current);
-      } else if (!coarse && !stateRef.current.composer) {
-        // desktop: a collapsed selection means the user clicked away —
-        // the bubble follows the native selection (the composer keeps its
-        // pending highlight; typing in it collapses the selection too)
-        lastSpan.current = null;
-        setPendingSel(null);
       }
     };
     const onSelection = (): void => {
@@ -460,10 +479,10 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // desktop bubble position: anchored to the pending span, tracking scroll
+  // desktop bubble position: anchored to the live span, tracking scroll
   const [selPop, setSelPop] = useState<{ x: number; top: number; bottom: number } | null>(null);
   useEffect(() => {
-    if (COARSE || !pendingSel) {
+    if (COARSE || !liveSel) {
       setSelPop(null);
       return;
     }
@@ -471,8 +490,8 @@ function App(): React.JSX.Element {
     const update = (): void => {
       const container = readRef.current;
       const range =
-        container && container.getAttribute("data-fact-path") === pendingSel.path
-          ? rangeForSourceSpan(container as HTMLElement, pendingSel.start, pendingSel.end)
+        container && container.getAttribute("data-fact-path") === liveSel.path
+          ? rangeForSourceSpan(container as HTMLElement, liveSel.start, liveSel.end)
           : null;
       const rect = range?.getBoundingClientRect();
       setSelPop(
@@ -491,7 +510,7 @@ function App(): React.JSX.Element {
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
-  }, [pendingSel]);
+  }, [liveSel]);
 
   // ---------- derived ----------
   // facts deleted since the previous snapshot, resurrected read-only from
@@ -613,6 +632,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     if (composer && composer.path !== targetFact?.path) setComposer(null);
     setPendingSel((p) => (p && p.path !== targetFact?.path ? null : p));
+    setLiveSel((s) => (s && s.path !== targetFact?.path ? null : s));
     if (lastSpan.current && lastSpan.current.path !== targetFact?.path) {
       lastSpan.current = null;
     }
@@ -719,9 +739,15 @@ function App(): React.JSX.Element {
     if (sel && !sel.isCollapsed && container && container.contains(sel.anchorNode)) {
       span = sourceSpanForSelection(container as HTMLElement, sel);
     }
+    if (!span && !COARSE && liveSel?.path === targetFact.path) span = liveSel;
     if (!span && pendingSel?.path === targetFact.path) span = pendingSel;
     if (!span && lastSpan.current?.path === targetFact.path) span = lastSpan.current;
     if (span) anchor = describeAnchor(targetFact.content, span.start, span.end);
+    // desktop: the span becomes the composer's draft anchor — the only
+    // moment pendingSel (and its painted highlight) exists on fine pointers
+    if (!COARSE) {
+      setPendingSel(span ? { path: targetFact.path, start: span.start, end: span.end } : null);
+    }
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
@@ -730,11 +756,19 @@ function App(): React.JSX.Element {
     const active = composer;
     if (!active || !text.trim()) {
       setComposer(null);
+      // desktop: cancelling abandons the draft anchor (touch keeps its bar);
+      // liveSel goes too, else a stale span re-shows the bubble with no
+      // native selection behind it
+      if (!COARSE) {
+        setPendingSel(null);
+        setLiveSel(null);
+      }
       closeSheetIfOverlay();
       return;
     }
     const body = text.trim();
     setPendingSel(null);
+    setLiveSel(null);
     lastSpan.current = null; // a later collapse must not resurrect the bar
     if (active.mode === "new") {
       mutateFact(active.path, (sidecar) => {
@@ -924,10 +958,16 @@ function App(): React.JSX.Element {
         return order[(order.indexOf(s) + 1) % order.length] ?? "all";
       }),
     close: () => {
-      if (composer) setComposer(null);
-      else if (overlay) setOverlay(null);
-      else if (pendingSel) {
+      if (composer) {
+        setComposer(null);
+        if (!COARSE) {
+          setPendingSel(null); // abandon the draft anchor
+          setLiveSel(null);
+        }
+      } else if (overlay) setOverlay(null);
+      else if (pendingSel || liveSel) {
         setPendingSel(null);
+        setLiveSel(null);
         lastSpan.current = null;
         window.getSelection()?.removeAllRanges();
       } else if (selection.size) setSelection(new Set());
@@ -1507,47 +1547,59 @@ function App(): React.JSX.Element {
         )}
       </div>
 
-      {pendingSel &&
-        targetFact &&
-        pendingSel.path === targetFact.path &&
-        !composer &&
-        (COARSE ? (
-          <div className="sel-bar" id="sel-bar" role="toolbar" aria-label="Selected text actions">
-            <span className="sel-bar-quote">
-              “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
-            </span>
-            <Button size="sm" onClick={() => beginItem("comment")}>
-              Comment
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
-              Ask
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Dismiss selection"
-              onClick={() => {
-                setPendingSel(null);
-                lastSpan.current = null; // else the next tap re-commits it
-              }}
+      {COARSE
+        ? pendingSel &&
+          targetFact &&
+          pendingSel.path === targetFact.path &&
+          !composer && (
+            <div
+              className="sel-bar"
+              id="sel-bar"
+              role="toolbar"
+              aria-label="Selected text actions"
             >
-              <X />
-            </Button>
-          </div>
-        ) : (
+              <span className="sel-bar-quote">
+                “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
+              </span>
+              <Button size="sm" onClick={() => beginItem("comment")}>
+                Comment
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
+                Ask
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Dismiss selection"
+                onClick={() => {
+                  setPendingSel(null);
+                  lastSpan.current = null; // else the next tap re-commits it
+                }}
+              >
+                <X />
+              </Button>
+            </div>
+          )
+        : liveSel &&
+          targetFact &&
+          liveSel.path === targetFact.path &&
+          !composer &&
           selPop && (
             <div
               className="sel-pop"
               id="sel-pop"
               role="toolbar"
               aria-label="Selected text actions"
-              data-quote={targetFact.content.slice(pendingSel.start, pendingSel.end)}
+              data-quote={targetFact.content.slice(liveSel.start, liveSel.end)}
+              // preventDefault on the container too: a press anywhere on the
+              // bubble — including its padding — must not collapse the
+              // selection it acts on (medium-editor's one gap, closed)
+              onPointerDown={(e) => e.preventDefault()}
               style={{
                 left: Math.min(Math.max(8, selPop.x - 85), window.innerWidth - 178),
                 top: selPop.top - 44 < 54 ? selPop.bottom + 8 : selPop.top - 44,
               }}
             >
-              {/* pointerdown + preventDefault: act without collapsing the selection */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -1569,8 +1621,7 @@ function App(): React.JSX.Element {
                 Ask
               </Button>
             </div>
-          )
-        ))}
+          )}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
       <Palette

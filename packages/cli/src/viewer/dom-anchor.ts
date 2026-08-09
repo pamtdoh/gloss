@@ -39,17 +39,28 @@ export function sourceSpanForSelection(
 ): { start: number; end: number } | null {
   if (selection.rangeCount === 0 || selection.isCollapsed) return null;
   const range = selection.getRangeAt(0);
-  if (!container.contains(range.startContainer) || !container.contains(range.endContainer)) {
-    return null;
+  // No common-ancestor guard: a triple-click range legally ends at the
+  // START of the block after the paragraph, hoisting the common ancestor
+  // above the fact container. Intersecting the container is enough — the
+  // run scan below can only ever map text inside it.
+  if (!range.intersectsNode(container)) return null;
+  // Intersect the range with every offset-carrying run instead of mapping
+  // the two endpoints. Endpoints can sit on ELEMENT nodes — triple-click,
+  // drags past a block edge — where the offset is a child index, not a
+  // character offset; endpoint mapping misread those as tiny spans
+  // ("selected a sentence, got a word").
+  let start: number | null = null;
+  let end: number | null = null;
+  for (const run of offsetRuns(container)) {
+    const text = run.el.firstChild;
+    if (!text || text.nodeType !== Node.TEXT_NODE || !range.intersectsNode(text)) continue;
+    const len = text.textContent?.length ?? 0;
+    const from = range.startContainer === text ? range.startOffset : 0;
+    const to = range.endContainer === text ? range.endOffset : len;
+    if (to <= from) continue;
+    if (start === null || run.s + from < start) start = run.s + from;
+    if (end === null || run.s + to > end) end = run.s + to;
   }
-  const toSource = (node: Node, offset: number): number | null => {
-    let el: Element | null = node instanceof Element ? node : node.parentElement;
-    while (el && el !== container && !el.hasAttribute("data-s")) el = el.parentElement;
-    if (!el || el === container) return null;
-    return Number(el.getAttribute("data-s")) + offset;
-  };
-  const start = toSource(range.startContainer, range.startOffset);
-  const end = toSource(range.endContainer, range.endOffset);
   if (start === null || end === null || end <= start) return null;
   return { start, end };
 }

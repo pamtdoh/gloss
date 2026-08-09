@@ -279,6 +279,19 @@ test("a real mouse selection survives re-renders", async () => {
   await expect(page.locator("#sel-pop")).toHaveCount(0);
 });
 
+test("triple-click captures the whole paragraph, not a word", async () => {
+  // regression: selection endpoints on ELEMENT nodes (triple-click) were
+  // misread as char offsets, shrinking a sentence to a single word
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
+  await page.locator("#fact-content p").first().click({ clickCount: 3 });
+  await expect(page.locator("#sel-pop")).toBeVisible();
+  const quote = await page.locator("#sel-pop").getAttribute("data-quote");
+  expect(quote).toContain("addLink");
+  expect(quote).toContain("last write wins");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sel-pop")).toHaveCount(0);
+});
+
 test("anchored question emits question.asked and shows the header pill", async () => {
   await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
   await selectText("10 collisions");
