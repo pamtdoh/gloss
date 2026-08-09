@@ -188,7 +188,7 @@ test("directory table: bulk decision with undo toast", async () => {
   await page.locator('.tree .row[data-path="storage"]').click();
   await expect(page.locator("#fact-table .trow")).toHaveCount(2);
   for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
-    await page.locator(`#fact-table .trow[data-path="${path}"] input[type=checkbox]`).click();
+    await page.locator(`#fact-table .trow[data-path="${path}"] [role=checkbox]`).click();
   }
   await expect(page.locator("#bulkbar")).toContainText("2 selected");
   await page.locator('#bulkbar button:has-text("Not needed")').click();
@@ -208,20 +208,20 @@ test("directory table: bulk decision with undo toast", async () => {
 test("reading a fact marks it seen automatically; v unmarks", async () => {
   await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
   await expect(
-    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-dot'),
+    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-check'),
   ).toBeVisible({ timeout: 5_000 });
   const progress = await page.locator("#progress").textContent();
   expect(Number(progress!.split("/")[0])).toBeGreaterThan(0);
   await page.keyboard.press("v");
   await expect(
-    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-dot'),
+    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-check'),
   ).toHaveCount(0);
 });
 
 test("selection annotation stores the verbatim quote and paints a highlight", async () => {
   // make seen state deterministic for the screenshot below
   await page.keyboard.press("/");
-  await page.locator("#palette-input").fill(">mark all");
+  await page.locator("[cmdk-input]").fill("mark all facts");
   await page.keyboard.press("Enter");
   await expect(page.locator("#progress")).toHaveText("10 / 10 reviewed");
 
@@ -315,7 +315,7 @@ test("items can be edited and deleted from the card menu", async () => {
     .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice." }] });
 
   await page.locator('.card[data-id="c1"] .menu-btn').click();
-  await page.locator('.menu button:has-text("Edit")').click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
   await page.locator("#item-input").fill("Nice and small.");
   await page.locator("#item-save").click();
   await expect
@@ -323,7 +323,7 @@ test("items can be edited and deleted from the card menu", async () => {
     .toBe("Nice and small.");
 
   await page.locator('.card[data-id="c1"] .menu-btn').click();
-  await page.locator('.menu button:has-text("Delete")').click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
   await expect.poll(() => existsSync(snap2("cli/add-and-list.review.json"))).toBe(false);
   await expect(page.locator("#toast")).toContainText("Deleted c1");
   await page.locator('#toast button[aria-label="Dismiss"]').click();
@@ -344,8 +344,8 @@ test("tree filter narrows the tree; palette search jumps", async () => {
   await expect(page.locator(".tree .row")).toHaveCount(11);
 
   await page.keyboard.press("/");
-  await page.locator("#palette-input").fill("collision");
-  await expect(page.locator(".palette .result").first()).toContainText("collision");
+  await page.locator("[cmdk-input]").fill("collision");
+  await expect(page.locator("[cmdk-item][data-selected=true]")).toContainText("collision");
   await page.keyboard.press("Enter");
   await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",

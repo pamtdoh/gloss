@@ -345,4 +345,10 @@ usable release, not a fast-follow.
 - **Rich facts** (same): tables, code, diagrams, and in-snapshot images are
   encouraged where they clarify; the skills say so.
 - **Seen state is viewer-local** (same): progress tracking lives in the
-  browser, never in `.reviewkit/`.
+  browser, never in `.reviewkit/` — keyed by fact content, so it survives
+  snapshot iteration and clears exactly where a fact changed.
+- **Viewer stack** (round-2 audit, 2026-08-09): React 19 with the
+  owner-proven component layer from leetcoach — its design tokens
+  (light + dark), radix-ui primitives, cmdk palette, lucide icons,
+  Tailwind 4 compiled by its standalone CLI at build time. Well-tested
+  components over hand-rolled ones; the page stays self-contained.

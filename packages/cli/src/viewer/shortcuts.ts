@@ -1,5 +1,6 @@
-// One declarative table drives both key dispatch and the "?" overlay, so
-// the help can never drift from reality (Gerrit's shortcuts-config idea).
+// One declarative table drives both key dispatch and the "?" overlay
+// (client.tsx builds its tinykeys map from this array), so the help can
+// never drift from reality (Gerrit's shortcuts-config idea).
 export interface ShortcutDef {
   id: string;
   /** tinykeys binding(s) */
@@ -9,6 +10,8 @@ export interface ShortcutDef {
   section: "Navigate" | "Decide" | "Items" | "Everywhere";
   label: string;
   allowRepeat?: boolean;
+  /** fires even when a field has focus (palette toggle, escape) */
+  raw?: boolean;
 }
 
 export const SHORTCUTS: ShortcutDef[] = [
@@ -20,10 +23,11 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "prevQuestion", keys: ["p"], shown: "p", section: "Navigate", label: "Previous open question" },
   { id: "expand", keys: ["ArrowRight"], shown: "→", section: "Navigate", label: "Expand directory" },
   { id: "collapse", keys: ["ArrowLeft"], shown: "←", section: "Navigate", label: "Collapse directory" },
-  { id: "palette", keys: ["$mod+KeyK", "/"], shown: "⌘K or /", section: "Everywhere", label: "Search & commands" },
+  { id: "palette", keys: ["$mod+KeyK"], shown: "⌘K or /", section: "Everywhere", label: "Search & commands", raw: true },
+  { id: "paletteSlash", keys: ["/"], shown: "/", section: "Everywhere", label: "Search & commands" },
   { id: "filter", keys: ["f"], shown: "f", section: "Navigate", label: "Filter the fact tree" },
   { id: "help", keys: ["Shift+?"], shown: "?", section: "Everywhere", label: "Keyboard help" },
-  { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection" },
+  { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection", raw: true },
   { id: "notNeeded", keys: ["1"], shown: "1", section: "Decide", label: "Not needed (again to clear)" },
   { id: "simplify", keys: ["2"], shown: "2", section: "Decide", label: "Simplify (again to clear)" },
   { id: "defer", keys: ["3"], shown: "3", section: "Decide", label: "Defer (again to clear)" },

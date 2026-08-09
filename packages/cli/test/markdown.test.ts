@@ -36,10 +36,11 @@ describe("renderMarkdown safety", () => {
 });
 
 describe("renderMarkdown richness", () => {
-  test("GFM tables render with alignment", () => {
+  test("GFM tables render with alignment inside a scroll container", () => {
     const html = renderMarkdown("| a | b |\n|:--|--:|\n| 1 | 2 |");
+    expect(html).toContain(`<div class="tablewrap"`);
     expect(html).toContain("<table>");
-    expect(html).toContain(`<th style="text-align:left">`);
+    expect(html).toContain(`<th scope="col" style="text-align:left">`);
     expect(html).toContain("<tbody>");
   });
 

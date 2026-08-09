@@ -6,7 +6,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],

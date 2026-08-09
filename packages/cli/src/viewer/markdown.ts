@@ -145,14 +145,16 @@ function render(node: Node, opts: RenderOptions): string {
       const rows = table.children.map((row, r) => {
         const cells = row.children.map((cell, c) => {
           const tag = r === 0 ? "th" : "td";
+          const scope = r === 0 ? ` scope="col"` : "";
           const align = aligns[c] ? ` style="text-align:${aligns[c]}"` : "";
-          return `<${tag}${align}>${children(cell as Parent, opts)}</${tag}>`;
+          return `<${tag}${scope}${align}>${children(cell as Parent, opts)}</${tag}>`;
         }).join("");
         return `<tr>${cells}</tr>`;
       });
       const head = `<thead>${rows[0] ?? ""}</thead>`;
       const body = rows.length > 1 ? `<tbody>${rows.slice(1).join("\n")}</tbody>` : "";
-      return `<table>${head}${body}</table>\n`;
+      // wide tables scroll inside their own container, never the reading pane
+      return `<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>${head}${body}</table></div>\n`;
     }
     case "html":
       // raw HTML is never emitted — it renders as visible escaped text
