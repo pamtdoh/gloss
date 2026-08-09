@@ -8,8 +8,12 @@ const USAGE = `reviewkit — files-first design review
 Usage:
   reviewkit init          Scaffold .reviewkit/ in the current directory
   reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
+                    [--serve-host <host>]
                           Serve the viewer, block until the review is
-                          finished, then print a JSON summary
+                          finished, then print a JSON summary.
+                          --serve-host additionally accepts requests
+                          proxied from a private hostname (e.g.
+                          tailscale serve); binding stays loopback-only
   reviewkit skill install --agent claude|codex
                           Install the ReviewKit skills into this repo
   reviewkit help          Show this help
@@ -48,6 +52,10 @@ function parseSessionArgs(args: string[]): SessionOptions {
       const value = Number(args[++i]);
       if (!Number.isInteger(value)) fail("--snapshot expects a number");
       opts.snapshot = value;
+    } else if (arg === "--serve-host") {
+      const value = args[++i];
+      if (!value) fail("--serve-host expects a hostname");
+      opts.serveHost = value;
     } else if (arg.startsWith("-")) fail(`unknown flag: ${arg}`);
     else if (opts.review) fail("session takes one review name");
     else opts.review = arg;

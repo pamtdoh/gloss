@@ -32,6 +32,13 @@ export interface SessionOptions {
   snapshot?: number;
   events: boolean;
   noBrowser: boolean;
+  /**
+   * Extra hostname to accept in Host/Origin checks, for a private proxy
+   * that terminates in front of the loopback server (e.g. tailscale
+   * serve). The server still binds 127.0.0.1 only; the one-time token
+   * still gates the session.
+   */
+  serveHost?: string;
 }
 
 function jsonLine(value: unknown): string {
@@ -141,7 +148,11 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     };
     try {
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
-      if (req.headers.host !== `127.0.0.1:${port}`) return sendJson(400, { ok: false, error: "bad host" });
+      const hostOk =
+        req.headers.host === `127.0.0.1:${port}` ||
+        (opts.serveHost !== undefined &&
+          (req.headers.host === opts.serveHost || req.headers.host === `${opts.serveHost}:443`));
+      if (!hostOk) return sendJson(400, { ok: false, error: "bad host" });
 
       if (url.pathname === "/auth") {
         if (tokenUsed || url.searchParams.get("token") !== token) {
@@ -162,7 +173,10 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         res.writeHead(401, { "content-type": "text/html" });
         return res.end("<h1>Unauthorized</h1><p>Open the one-time URL printed by <code>reviewkit session</code>.</p>");
       }
-      if (req.method !== "GET" && req.headers.origin !== `http://127.0.0.1:${port}`) {
+      const originOk =
+        req.headers.origin === `http://127.0.0.1:${port}` ||
+        (opts.serveHost !== undefined && req.headers.origin === `https://${opts.serveHost}`);
+      if (req.method !== "GET" && !originOk) {
         return sendJson(403, { ok: false, error: "bad origin" });
       }
 
@@ -263,6 +277,11 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     const port = (server.address() as { port: number }).port;
     const url = `http://127.0.0.1:${port}/auth?token=${token}`;
     process.stderr.write(`reviewkit session: ${url}\n`);
+    if (opts.serveHost) {
+      process.stderr.write(
+        `reviewkit session (proxied): https://${opts.serveHost}/auth?token=${token}\n`,
+      );
+    }
     emit("session.started", { review: opts.review, snapshot: defaultSnapshot, url });
     if (!opts.noBrowser) {
       try {

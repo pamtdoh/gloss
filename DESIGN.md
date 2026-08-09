@@ -109,7 +109,11 @@ reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
   answering on the same event shape.
 
 Auth is one-shot: single token, single human session, loopback only,
-HttpOnly SameSite=Strict cookie, strict origin checks.
+HttpOnly SameSite=Strict cookie, strict origin checks. `--serve-host
+<host>` (owner decision, 2026-08-09) additionally accepts that hostname
+in the Host/Origin checks so a private proxy like `tailscale serve` can
+carry the session to the owner's other devices — the server still binds
+loopback and the one-time token still gates entry.
 
 ## 5. CLI surface (v1)
 
