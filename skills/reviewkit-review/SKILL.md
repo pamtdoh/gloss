@@ -36,8 +36,8 @@ ask, or state the scope you inferred when you present the review.
 
    - **One condensed, decidable fact per `.md` file.** A fact is a claim
      about the design that the human can judge on its own: let it stand
-     (silence is agreement) or annotate it (the viewer offers one-tap
-     quick-annotate presets like "Not needed." and "Simplify."). If they'd have to say
+     (silence is agreement) or comment on it (the viewer offers one-tap
+     quick-comment presets like "Not needed." and "Simplify."). If they'd have to say
      "well, parts of it…", split it.
    - **Small.** A `# Title` line stating the claim, then a few sentences.
      Reference file paths where they help.
@@ -78,7 +78,7 @@ reviewkit session <review> --events
 It serves the viewer on loopback, prints a one-time URL on stderr (share
 it with the human if their browser didn't open), and blocks until the
 human clicks **Finish review** or approves. The command exiting is your
-notification; the last stdout line is a JSON summary (annotation count,
+notification; the last stdout line is a JSON summary (comment count,
 open questions, approval status). With `--events`,
 stdout is JSONL: `session.started`, `question.asked`,
 `session.finished`.
@@ -108,7 +108,7 @@ When the session finishes with sidecars present:
 2. Copy the snapshot: `cp -r .reviewkit/<review>/<n> .reviewkit/<review>/<n+1>`.
    Snapshots are standalone copies — no links, no shared state.
 3. In the new snapshot, resolve what was raised: rewrite, amend, split, or
-   delete facts per the annotations; answer or settle questions. When you
+   delete facts per the comments; answer or settle questions. When you
    judge an item resolved, delete it from the sidecar; delete the sidecar
    file when nothing remains. Carry unresolved items forward untouched.
 4. Run another session on the new snapshot. A snapshot with no sidecars is
@@ -132,7 +132,7 @@ without it.
 ## Terminal-only review
 
 No browser is required at any step. The facts are ordinary Markdown: print
-them, let the human give annotations and questions in conversation, and either write sidecars yourself to keep the same record —
+them, let the human give comments and questions in conversation, and either write sidecars yourself to keep the same record —
 you own the files as much as the viewer does — or skip sidecars and
 iterate directly on what they said. Approval is the same `cp -r` either
 way.

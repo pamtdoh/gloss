@@ -335,7 +335,7 @@ body {
   background: transparent !important; border: none !important; padding: 0 !important;
   min-height: 140px; display: flex; justify-content: center;
 }
-.rk-mermaid svg { max-width: 100%; }
+.rk-mermaid svg { max-width: 100%; user-select: none; } /* svg text can't anchor */
 .rk-mermaid[data-error]::before {
   content: "diagram failed to render"; color: var(--red); font-size: 12px;
 }
@@ -435,9 +435,8 @@ body {
   border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px;
   transition: border-color var(--dur-hover) var(--ease-out);
 }
-.card.item-annotation { border-left-color: var(--amber); }
+.card.item-comment, .card.item-annotation { border-left-color: var(--accent); }
 .card.item-question { border-left-color: var(--blue); }
-.card.item-comment { border-left-color: var(--line); }
 .card:hover, .card:focus-visible, .card.focus { border-color: var(--accent); border-left-width: 3px; }
 .card .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; gap: 6px; align-items: center; font-weight: 650; }
 .card blockquote {

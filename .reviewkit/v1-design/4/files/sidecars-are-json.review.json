@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "quick annotate"
+      },
+      "text": "I think I still prefer renaming annotate to comment entirely throughout"
+    }
+  ]
+}

@@ -20,12 +20,13 @@ describe("summarize", () => {
       sidecars: [
         {
           items: [
-            { id: "a1", type: "annotation", text: "tighten" },
-            { id: "a2", type: "annotation", text: "Not needed." },
+            { id: "c1", type: "comment", text: "tighten" },
+            { id: "c2", type: "comment", text: "Not needed." },
             { id: "q1", type: "question", thread: [{ who: "human", text: "why?" }] },
           ],
         },
-        { items: [{ id: "c1", type: "comment", text: "nice" }] },
+        // legacy annotation items count as comments
+        { items: [{ id: "a1", type: "annotation", text: "nice" }] },
         undefined,
         undefined,
       ],
@@ -34,8 +35,7 @@ describe("summarize", () => {
       review: "r",
       snapshot: 2,
       facts: 4,
-      annotations: 2,
-      comments: 1,
+      comments: 3,
       openQuestions: 1,
       approved: true,
     });

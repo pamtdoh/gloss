@@ -42,6 +42,10 @@ const RICH_FACT = `# The design in one picture
 | facts | one claim per file |
 | sidecars | the human's review state |
 
+\`\`\`json
+{ "items": [ { "id": "c1", "type": "comment" } ] }
+\`\`\`
+
 \`\`\`mermaid
 flowchart LR
   A[facts] --> B[sidecars] --> C[approved/]
@@ -159,12 +163,12 @@ test("j/k walk the tree; a directory row shows its _index fact", async () => {
   );
 });
 
-test("quick-annotate keys write annotation items; u undoes them", async () => {
+test("quick-comment keys write comment items; u undoes them", async () => {
   await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.keyboard.press("1");
   await expect
     .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
   await expect(
     page.locator('.tree .row[data-path="http/create-link.md"] .chip.count'),
   ).toHaveText("1");
@@ -175,16 +179,16 @@ test("quick-annotate keys write annotation items; u undoes them", async () => {
   await page.keyboard.press("2");
   await expect
     .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Simplify." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });
 
   await page.keyboard.press("j");
   await page.keyboard.press("3");
   await expect
     .poll(() => existsSync(snap2("http/redirect.review.json")) && readSidecar("http/redirect.review.json"))
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Defer." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Defer." }] });
 });
 
-test("directory table: bulk quick-annotate with undo toast", async () => {
+test("directory table: bulk quick comments with undo toast", async () => {
   await page.locator('.tree .row[data-path="storage"]').click();
   await expect(page.locator("#fact-table .trow")).toHaveCount(2);
   for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
@@ -194,12 +198,12 @@ test("directory table: bulk quick-annotate with undo toast", async () => {
   await page.locator('#bulkbar button:has-text("Not needed")').click();
   await expect
     .poll(() => existsSync(snap2("storage/hit-counting.review.json")) && readSidecar("storage/hit-counting.review.json"))
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
   await expect
     .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")) && readSidecar("storage/whole-file-writes.review.json"))
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Not needed." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
 
-  await expect(page.locator("#toast")).toContainText("Annotated “Not needed” on 2 facts");
+  await expect(page.locator("#toast")).toContainText("Commented “Not needed” on 2 facts");
   await page.locator('#toast button:has-text("Undo")').click();
   await expect.poll(() => existsSync(snap2("storage/hit-counting.review.json"))).toBe(false);
   await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
@@ -218,7 +222,7 @@ test("reading a fact marks it seen automatically; v unmarks", async () => {
   ).toHaveCount(0);
 });
 
-test("selection annotation stores the verbatim quote and paints a highlight", async () => {
+test("selection comment stores the verbatim quote and paints a highlight", async () => {
   // make seen state deterministic for the screenshot below
   await page.keyboard.press("/");
   await page.locator("[cmdk-input]").fill("mark all facts");
@@ -228,9 +232,9 @@ test("selection annotation stores the verbatim quote and paints a highlight", as
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await selectText("last write wins");
   await expect(page.locator("#sel-bar")).toBeVisible();
-  await page.keyboard.press("a");
+  await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toBeVisible();
-  await expect(page.locator("#item-form-label")).toContainText("annotation");
+  await expect(page.locator("#item-form-label")).toContainText("comment");
   await page.locator("#item-input").fill("Consider write-through with an atomic rename.");
   await page.locator("#item-save").click();
 
@@ -240,13 +244,13 @@ test("selection annotation stores the verbatim quote and paints a highlight", as
   const sidecar = readSidecar("storage/whole-file-writes.review.json");
   expect(sidecar.items).toEqual([
     {
-      id: "a1",
-      type: "annotation",
+      id: "c1",
+      type: "comment",
       anchor: { quote: "last write wins" },
       text: "Consider write-through with an atomic rename.",
     },
   ]);
-  await expect(page.locator(".card.item-annotation blockquote")).toHaveText("last write wins");
+  await expect(page.locator(".card.item-comment blockquote")).toHaveText("last write wins");
   const highlights = await page.evaluate(() => [...(CSS as any).highlights.keys()]);
   expect(highlights).toContain("rk-anno");
   await expect(page).toHaveScreenshot("viewer-annotated.png");
@@ -307,14 +311,14 @@ test("the human replies in the same thread", async () => {
 
 test("notes can be edited and deleted from the card menu", async () => {
   await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
-  await page.keyboard.press("a"); // no selection = whole-fact annotation
+  await page.keyboard.press("c"); // no selection = whole-fact comment
   await page.locator("#item-input").fill("Nice.");
   await page.locator("#item-save").click();
   await expect
     .poll(() => existsSync(snap2("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
-    .toMatchObject({ items: [{ id: "a1", type: "annotation", text: "Nice." }] });
+    .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice." }] });
 
-  await page.locator('.card[data-id="a1"] .menu-btn').click();
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Edit" }).click();
   await page.locator("#item-input").fill("Nice and small.");
   await page.locator("#item-save").click();
@@ -322,17 +326,22 @@ test("notes can be edited and deleted from the card menu", async () => {
     .poll(() => readSidecar("cli/add-and-list.review.json").items[0].text)
     .toBe("Nice and small.");
 
-  await page.locator('.card[data-id="a1"] .menu-btn').click();
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await expect.poll(() => existsSync(snap2("cli/add-and-list.review.json"))).toBe(false);
-  await expect(page.locator("#toast")).toContainText("Deleted a1");
+  await expect(page.locator("#toast")).toContainText("Deleted c1");
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
-test("rich facts render: GFM table and a mermaid diagram", async () => {
+test("rich facts render: GFM table, mermaid, and code selections anchor", async () => {
   await page.locator('.tree .row[data-path="architecture.md"]').click();
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
+  // selecting inside a fenced code block must offer the comment bar
+  await selectText(`"type": "comment"`);
+  await expect(page.locator("#sel-bar")).toBeVisible();
+  await expect(page.locator("#sel-bar")).toContainText(`"type": "comment"`);
+  await page.keyboard.press("Escape");
 });
 
 test("tree filter narrows the tree; palette search jumps", async () => {
@@ -370,7 +379,7 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
     review: "design-review",
     snapshot: 2,
     facts: 10,
-    annotations: 3, // two quick-annotates + one selection annotation
+    comments: 3, // two quick comments + one selection comment
     openQuestions: 1,
     approved: false,
   };

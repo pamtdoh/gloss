@@ -82,10 +82,10 @@ const applyTheme = (): void => {
 applyTheme();
 darkQuery.addEventListener("change", applyTheme);
 
-// Quick Annotate — the old "decisions": one-tap whole-fact annotations
-// with canned text. One concept, simpler files.
-interface QuickAnnotation { key: string; label: string; text: string }
-const QUICK_ANNOTATIONS: QuickAnnotation[] = [
+// Quick Comment — the old "decisions": one-tap whole-fact comments with
+// canned text. One concept, simpler files.
+interface QuickComment { key: string; label: string; text: string }
+const QUICK_COMMENTS: QuickComment[] = [
   { key: "1", label: "Not needed", text: "Not needed." },
   { key: "2", label: "Simplify", text: "Simplify." },
   { key: "3", label: "Defer", text: "Defer." },
@@ -102,6 +102,10 @@ interface ToastState {
 }
 
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
+
+// mermaid render ids must be unique per call — reusing one (e.g. after a
+// re-render) makes mermaid throw and the block falls back to raw source
+let mermaidSeq = 0;
 
 // Dialogs restore focus on close; if that would land in a text field, the
 // single-key shortcuts die silently — drop the restore instead.
@@ -464,7 +468,7 @@ function App(): React.JSX.Element {
     });
   }
 
-  function applyQuickAnnotation(note: QuickAnnotation, paths?: string[]): void {
+  function applyQuickComment(note: QuickComment, paths?: string[]): void {
     if (!data) return;
     const bulk = !paths && selection.size > 0;
     const targets = paths ?? (bulk ? [...selection] : targetFact ? [targetFact.path] : []);
@@ -473,8 +477,8 @@ function App(): React.JSX.Element {
     for (const path of targets) {
       mutateFact(path, (sidecar) => {
         const items = (sidecar.items ??= []);
-        const id = nextId(items, "a");
-        items.push({ id, type: "annotation", text: note.text });
+        const id = nextId(items, "c");
+        items.push({ id, type: "comment", text: note.text });
         created.push({ path, id });
         if (!bulk) undoStack.current.push({ path, id });
       });
@@ -482,7 +486,7 @@ function App(): React.JSX.Element {
     if (bulk) {
       setSelection(new Set());
       setToast({
-        message: `Annotated “${note.label}” on ${targets.length} facts`,
+        message: `Commented “${note.label}” on ${targets.length} facts`,
         undo: () => {
           for (const c of created) {
             mutateFact(c.path, (sidecar) => {
@@ -497,19 +501,18 @@ function App(): React.JSX.Element {
 
   function beginItem(type: SidecarItem["type"]): void {
     if (!targetFact) return;
+    // both comments and questions anchor when text is selected;
+    // live selection first, then the pending (survives iOS collapse)
     let anchor: Anchor | undefined;
-    if (type !== "comment") {
-      // live selection first, then the pending (survives iOS collapse)
-      const sel = window.getSelection();
-      const container = readRef.current;
-      let span: { start: number; end: number } | null = null;
-      if (sel && !sel.isCollapsed && container && container.contains(sel.anchorNode)) {
-        span = sourceSpanForSelection(container as HTMLElement, sel);
-      }
-      if (!span && pendingSel?.path === targetFact.path) span = pendingSel;
-      if (!span && lastSpan.current?.path === targetFact.path) span = lastSpan.current;
-      if (span) anchor = describeAnchor(targetFact.content, span.start, span.end);
+    const sel = window.getSelection();
+    const container = readRef.current;
+    let span: { start: number; end: number } | null = null;
+    if (sel && !sel.isCollapsed && container && container.contains(sel.anchorNode)) {
+      span = sourceSpanForSelection(container as HTMLElement, sel);
     }
+    if (!span && pendingSel?.path === targetFact.path) span = pendingSel;
+    if (!span && lastSpan.current?.path === targetFact.path) span = lastSpan.current;
+    if (span) anchor = describeAnchor(targetFact.content, span.start, span.end);
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
@@ -526,7 +529,7 @@ function App(): React.JSX.Element {
     if (active.mode === "new") {
       mutateFact(active.path, (sidecar) => {
         const items = (sidecar.items ??= []);
-        const id = nextId(items, active.type[0]!);
+        const id = nextId(items, active.type === "question" ? "q" : "c");
         const item: SidecarItem = { id, type: active.type };
         if (active.anchor) item.anchor = active.anchor;
         if (active.type === "question") item.thread = [{ who: "human", text: body }];
@@ -691,13 +694,13 @@ function App(): React.JSX.Element {
         setCollapsed((c) => new Set(c).add(effectiveCursor.path));
       }
     },
-    notNeeded: () => applyQuickAnnotation(QUICK_ANNOTATIONS[0]!),
-    simplify: () => applyQuickAnnotation(QUICK_ANNOTATIONS[1]!),
-    defer: () => applyQuickAnnotation(QUICK_ANNOTATIONS[2]!),
+    notNeeded: () => applyQuickComment(QUICK_COMMENTS[0]!),
+    simplify: () => applyQuickComment(QUICK_COMMENTS[1]!),
+    defer: () => applyQuickComment(QUICK_COMMENTS[2]!),
     seen: () => toggleSeen(false),
     seenAdvance: () => toggleSeen(true),
     select: () => toggleSelect(),
-    annotate: () => beginItem("annotation"),
+    comment: () => beginItem("comment"),
     question: () => beginItem("question"),
     undo: () => undoLast(),
     help: () => setOverlay((o) => (o === "help" ? null : "help")),
@@ -809,7 +812,7 @@ function App(): React.JSX.Element {
       container.querySelectorAll("pre.rk-mermaid:not([data-done])").forEach((pre, i) => {
         pre.setAttribute("data-done", "1");
         void mermaid
-          .render(`rk-mmd-${i}-${(pre.textContent ?? "").length}`, pre.textContent ?? "")
+          .render(`rk-mmd-${++mermaidSeq}`, pre.textContent ?? "")
           .then(({ svg }) => {
             pre.innerHTML = svg;
           })
@@ -1042,7 +1045,7 @@ function App(): React.JSX.Element {
                     return next;
                   })
                 }
-                onQuickAnnotate={(path, note) => applyQuickAnnotation(note, [path])}
+                onQuickComment={(path, note) => applyQuickComment(note, [path])}
               />
             ) : renderedFact ? (
               <>
@@ -1091,12 +1094,12 @@ function App(): React.JSX.Element {
               </nav>
             )}
             {selection.size > 0 && (
-              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick annotate">
+              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick comments">
                 <span className="stat" aria-live="polite">
                   {selection.size} selected
                 </span>
-                {QUICK_ANNOTATIONS.map((note) => (
-                  <button key={note.key} onClick={() => applyQuickAnnotation(note)}>
+                {QUICK_COMMENTS.map((note) => (
+                  <button key={note.key} onClick={() => applyQuickComment(note)}>
                     <Kbd className="mr-1">{note.key}</Kbd>
                     {note.label}
                   </button>
@@ -1127,7 +1130,7 @@ function App(): React.JSX.Element {
               fact={targetFact}
               anchorStates={anchorStates}
               composer={composer}
-              onQuickAnnotate={(note) => applyQuickAnnotation(note)}
+              onQuickComment={(note) => applyQuickComment(note)}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
                 targetFact &&
@@ -1171,8 +1174,8 @@ function App(): React.JSX.Element {
           <span className="sel-bar-quote">
             “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
           </span>
-          <Button size="sm" onClick={() => beginItem("annotation")}>
-            Annotate
+          <Button size="sm" onClick={() => beginItem("comment")}>
+            Comment
           </Button>
           <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
             Ask
@@ -1382,7 +1385,7 @@ function DirView(props: {
   onOpen: (row: Row) => void;
   onToggleSelect: (path: string) => void;
   onSelectAll: (paths: string[], on: boolean) => void;
-  onQuickAnnotate: (path: string, note: QuickAnnotation) => void;
+  onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.data.facts, props.dir);
   const subdirs = childDirsOf(props.data.facts, props.dir);
@@ -1468,12 +1471,12 @@ function DirView(props: {
                 )}
               </span>
               <span className="decide" onClick={(e) => e.stopPropagation()}>
-                {QUICK_ANNOTATIONS.map((note) => (
+                {QUICK_COMMENTS.map((note) => (
                   <Button
                     key={note.key}
                     variant="outline"
                     size="xs"
-                    onClick={() => props.onQuickAnnotate(fact.path, note)}
+                    onClick={() => props.onQuickComment(fact.path, note)}
                   >
                     {note.label}
                   </Button>
@@ -1491,7 +1494,7 @@ function Panel(props: {
   fact: Fact | null;
   anchorStates: Map<string, "exact" | "drifted" | "detached">;
   composer: Composer | null;
-  onQuickAnnotate: (note: QuickAnnotation) => void;
+  onQuickComment: (note: QuickComment) => void;
   onFocusItem: (id: string | null) => void;
   onEdit: (item: SidecarItem) => void;
   onDelete: (id: string) => void;
@@ -1505,13 +1508,13 @@ function Panel(props: {
   return (
     <>
       <h2 className="flex items-center justify-between">
-        Quick annotate
+        Quick comment
         <Button variant="ghost" size="icon-xs" aria-label="Collapse panel" onClick={props.onCollapse}>
           <PanelRightClose />
         </Button>
       </h2>
-      <div id="quick-annotate" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick annotate">
-        {QUICK_ANNOTATIONS.map((note) => (
+      <div id="quick-comment" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick comment">
+        {QUICK_COMMENTS.map((note) => (
           <Button
             key={note.key}
             variant="outline"
@@ -1519,7 +1522,7 @@ function Panel(props: {
             data-quick={note.label}
             aria-keyshortcuts={note.key}
             disabled={!fact}
-            onClick={() => props.onQuickAnnotate(note)}
+            onClick={() => props.onQuickComment(note)}
           >
             <Kbd>{note.key}</Kbd>
             {note.label}
@@ -1542,7 +1545,7 @@ function Panel(props: {
               onBlur={() => props.onFocusItem(null)}
             >
               <span className="kind">
-                {item.type}
+                {item.type === "question" ? "question" : "comment"}
                 {anchorState === "drifted" && <span className="chip changed">drifted</span>}
                 {anchorState === "detached" && <span className="chip stale">detached</span>}
               </span>
@@ -1631,7 +1634,7 @@ function Panel(props: {
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 quick annotate · v seen · a/q raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
+        j/k move · 1–3 quick comment · v seen · c/q raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
       </p>
     </>
   );

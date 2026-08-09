@@ -28,6 +28,8 @@ export interface RenderOptions {
   assetBase?: string;
   /** Directory of the fact within the snapshot, for relative image paths. */
   factDir?: string;
+  /** set internally by renderMarkdown; used to locate code-block offsets */
+  sourceText?: string;
 }
 
 export function escapeHtml(text: string): string {
@@ -122,8 +124,16 @@ function render(node: Node, opts: RenderOptions): string {
       if (code.lang === "mermaid") {
         return `<pre class="rk-mermaid"${offsets(node)}><code>${escapeHtml(code.value)}</code></pre>\n`;
       }
+      // locate the raw value inside the fence so selections in code anchor
+      let attrs = "";
+      const start = code.position?.start.offset;
+      const end = code.position?.end.offset;
+      if (opts.sourceText && start !== undefined && end !== undefined && code.value) {
+        const idx = opts.sourceText.indexOf(code.value, start);
+        if (idx !== -1 && idx < end) attrs = ` data-s="${idx}" data-e="${idx + code.value.length}"`;
+      }
       const lang = code.lang ? ` class="lang-${escapeHtml(code.lang)}"` : "";
-      return `<pre><code${lang}>${escapeHtml(code.value)}</code></pre>\n`;
+      return `<pre><code${lang}${attrs}>${escapeHtml(code.value)}</code></pre>\n`;
     }
     case "link": {
       const url = (node as Link).url;
@@ -171,5 +181,6 @@ export function renderMarkdown(source: string, opts: RenderOptions = {}): string
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   });
-  return tree.children.map((child) => render(child, opts)).join("").trimEnd();
+  const withSource = { ...opts, sourceText: source };
+  return tree.children.map((child) => render(child, withSource)).join("").trimEnd();
 }

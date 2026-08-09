@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "id": "a1",
+      "type": "annotation",
+      "anchor": {
+        "quote": "Fenced code"
+      },
+      "text": "code annotation doesn't work"
+    }
+  ]
+}

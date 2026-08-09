@@ -92,18 +92,18 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
 test("the review panel opens as a bottom sheet; quick-annotate writes sidecars", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
-  await page.locator('#quick-annotate [data-quick="Simplify"]').tap();
+  await page.locator('#quick-comment [data-quick="Simplify"]').tap();
   await expect
     .poll(
       () =>
         existsSync(join(tmp, ".reviewkit/design-review/1/storage/whole-file-writes.review.json")) &&
         sidecar("storage/whole-file-writes.review.json"),
     )
-    .toEqual({ items: [{ id: "a1", type: "annotation", text: "Simplify." }] });
+    .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });
   await expect(page).toHaveScreenshot("mobile-panel.png");
 });
 
-test("selection popup annotates via touch (composer opens in the sheet)", async () => {
+test("selection popup comments via touch (composer opens in the sheet)", async () => {
   // close the sheet from the previous test so the popup is tappable
   await page.getByRole("button", { name: "Collapse panel" }).tap();
   await page.evaluate(() => {
@@ -138,7 +138,7 @@ test("selection popup annotates via touch (composer opens in the sheet)", async 
       }),
     )
     .toBeGreaterThan(0);
-  await page.locator('#sel-bar button:has-text("Annotate")').tap();
+  await page.locator('#sel-bar button:has-text("Comment")').tap();
   // the composer must be visible inside the (auto-opened) bottom sheet
   await expect(page.locator(".panel-col.panel #item-form")).toBeVisible();
   await page.locator("#item-input").fill("Atomic rename, please.");
@@ -150,8 +150,8 @@ test("selection popup annotates via touch (composer opens in the sheet)", async 
       ),
     )
     .toEqual({
-      id: "a2",
-      type: "annotation",
+      id: "c2",
+      type: "comment",
       anchor: { quote: "last write wins" },
       text: "Atomic rename, please.",
     });
