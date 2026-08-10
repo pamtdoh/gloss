@@ -1358,12 +1358,10 @@ function App(): React.JSX.Element {
               })),
               index: Math.max(0, imgs.indexOf(target)),
               wheelToZoom: true,
-              // quick fade, not the default zoom-from-thumbnail: images
-              // here are opened to inspect, many times a session — the
-              // productivity-app norm (X/Slack/Notion), not the showpiece
-              showHideAnimationType: "fade",
-              showAnimationDuration: 150,
-              hideAnimationDuration: 100,
+              // instant open/close (owner call, after trying zoom and
+              // fade): images here are opened to inspect, many times a
+              // session — any transition is one you end up watching
+              showHideAnimationType: "none",
             });
             pswp.on("destroy", () => {
               if (pswpRef.current === pswp) pswpRef.current = null;
