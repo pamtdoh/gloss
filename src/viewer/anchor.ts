@@ -1,4 +1,4 @@
-// W3C TextQuoteSelector anchoring (DESIGN.md §6): quote is the verbatim
+// W3C TextQuoteSelector anchoring (ARCHITECTURE.md): quote is the verbatim
 // selection; optional prefix/suffix (~32 chars) disambiguate. Resolution
 // tries exact matching first, then fuzzy (approx-string-match), and
 // reports drift/detachment instead of ever dropping an item.
