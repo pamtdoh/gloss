@@ -1,4 +1,4 @@
-// Shapes from DESIGN.md §6 — a shared convention, not a validated schema.
+// Shapes from ARCHITECTURE.md — a shared convention, not a validated schema.
 // Rounds 3-4 (owner): no decision field; items are comments and questions.
 // "Decisions" live on only as Quick Comment presets with canned text.
 

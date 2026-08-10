@@ -44,8 +44,8 @@ terminal with no browser works the same. Approving copies the revision
 to `approved/`, and the gloss-apply skill implements from it — refusing
 to start without it.
 
-[DESIGN.md](DESIGN.md) is the spec of record: file formats, the session
-protocol, and viewer behavior.
+[ARCHITECTURE.md](ARCHITECTURE.md) documents the conventions: the file
+layout, the sidecar schema, and the session protocol.
 
 ## Develop
 

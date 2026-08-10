@@ -38,7 +38,7 @@ function init(cwd: string): void {
   const root = resolve(cwd, ".gloss");
   const created = !existsSync(root);
   mkdirSync(root, { recursive: true });
-  // .local/ is reserved for tool session state (DESIGN.md §6); keep it out of git.
+  // .local/ is reserved for tool session state (ARCHITECTURE.md); keep it out of git.
   const gitignore = join(root, ".gitignore");
   if (!existsSync(gitignore)) writeFileSync(gitignore, ".local/\n");
   emit({ ok: true, path: root, created });

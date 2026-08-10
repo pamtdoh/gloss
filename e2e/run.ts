@@ -64,7 +64,7 @@ try {
     { recursive: true },
   );
 
-  // 4. Structural conventions from DESIGN.md §6.
+  // 4. Structural conventions from ARCHITECTURE.md.
   const revision = join(tmp, ".gloss/design-review/1");
   const files = walk(revision);
   const facts = files.map((f) => relative(revision, f));
