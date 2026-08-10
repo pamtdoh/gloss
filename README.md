@@ -19,12 +19,37 @@ bun install
 bun run build        # → packages/cli/dist/gloss.js
 ```
 
+## Install globally
+
+Two separate things: the `gloss` command on your `PATH`, and the skills
+your agent loads.
+
+```
+cd packages/cli && bun link          # or: npm i -g .
+gloss skill install --agent claude --global
+```
+
+`bun link` puts `gloss` on `PATH` via bun's global bin directory; `npm i
+-g .` uses the same `bin` entry. Both point at `dist/gloss.js`, which is
+a self-contained bundle — but `dist/` is gitignored and there is no
+prepack step, so run `bun run build` before linking and again after
+pulling changes. A plain symlink works too and needs no package manager:
+
+```
+ln -s "$PWD/packages/cli/dist/gloss.js" ~/.local/bin/gloss
+```
+
+`skill install --global` writes the skills to `~/.claude/skills/` (or
+`~/.agents/skills/` for `--agent codex`) instead of the current repo, so
+they are available in every repo. Re-run it after changing the skills —
+installing copies the files, it does not link them.
+
 ## CLI
 
 ```
 gloss init                       # scaffold .gloss/ in this repo
 gloss session <review> [--snapshot <n>] [--events] [--no-browser]
-gloss skill install --agent claude|codex
+gloss skill install --agent claude|codex [--global]
 ```
 
 `init` creates `.gloss/` (idempotent). `session` binds an ephemeral
@@ -33,9 +58,9 @@ reviewer clicks **Finish review** (or approves), then exits 0 and prints a
 JSON summary. `--events` additionally emits JSONL events on stdout
 (`session.started`, `decision.changed`, `question.asked`,
 `session.finished`). `skill install` writes the two Gloss skills into
-`.claude/skills/` or `.agents/skills/` of the current repo. Command results
-are single-line JSON; the CLI is small because everything else is agents
-reading and writing ordinary files.
+`.claude/skills/` or `.agents/skills/` of the current repo, or of `$HOME`
+with `--global`. Command results are single-line JSON; the CLI is small
+because everything else is agents reading and writing ordinary files.
 
 ## How a review works
 

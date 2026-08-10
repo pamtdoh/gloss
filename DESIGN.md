@@ -122,8 +122,12 @@ The CLI is small because agents work on the files directly:
 ```
 gloss init                       # scaffold .gloss/ in this repo
 gloss session <review> [...]     # serve the viewer, block, summarize
-gloss skill install --agent claude|codex
+gloss skill install --agent claude|codex [--global]
 ```
+
+`skill install` writes the two skills into the current repo
+(`.claude/skills/` or `.agents/skills/`); `--global` writes the same
+files under `$HOME` instead, so every repo on the machine gets them.
 
 Everything else — creating reviews, writing facts, reading annotations,
 copying snapshots, answering questions, promoting the approved snapshot —

@@ -14,8 +14,9 @@ Usage:
                           --serve-host additionally accepts requests
                           proxied from a private hostname (e.g.
                           tailscale serve); binding stays loopback-only
-  gloss skill install --agent claude|codex
-                          Install the Gloss skills into this repo
+  gloss skill install --agent claude|codex [--global]
+                          Install the Gloss skills into this repo, or
+                          with --global into $HOME for every repo
   gloss help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
@@ -74,15 +75,17 @@ switch (command) {
     runSession(process.cwd(), parseSessionArgs(rest));
     break;
   case "skill": {
-    const usage = "usage: gloss skill install --agent claude|codex";
+    const usage = "usage: gloss skill install --agent claude|codex [--global]";
     if (rest[0] !== "install") fail(usage);
     let agent = "";
+    let global = false;
     for (let i = 1; i < rest.length; i++) {
       if (rest[i] === "--agent") agent = rest[++i] ?? "";
+      else if (rest[i] === "--global") global = true;
       else fail(usage);
     }
     if (!isSkillAgent(agent)) fail(usage);
-    emit({ ok: true, agent, installed: installSkills(process.cwd(), agent) });
+    emit({ ok: true, agent, global, installed: installSkills(process.cwd(), agent, global) });
     break;
   }
   case undefined:
