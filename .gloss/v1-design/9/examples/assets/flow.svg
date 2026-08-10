@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="120" viewBox="0 0 520 120">
-  <rect x="10" y="35" width="130" height="50" rx="6" fill="#f0efed" stroke="#dcdad6"/>
-  <text x="75" y="64" text-anchor="middle" font-family="system-ui" font-size="14" fill="#1c1917">facts/*.md</text>
-  <rect x="195" y="35" width="130" height="50" rx="6" fill="#f0efed" stroke="#dcdad6"/>
-  <text x="260" y="64" text-anchor="middle" font-family="system-ui" font-size="14" fill="#1c1917">*.review.json</text>
-  <rect x="380" y="35" width="130" height="50" rx="6" fill="#9a5b00"/>
-  <text x="445" y="64" text-anchor="middle" font-family="system-ui" font-size="14" fill="#ffffff">approved/</text>
-  <path d="M140 60 h50 m-8 -5 8 5 -8 5 M325 60 h50 m-8 -5 8 5 -8 5" stroke="#57534e" fill="none" stroke-width="1.5"/>
-</svg>

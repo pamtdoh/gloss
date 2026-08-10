@@ -1,9 +1,0 @@
-{
-  "items": [
-    {
-      "id": "c1",
-      "type": "comment",
-      "text": "still feels buggy and slow, doesn't feel fluid that we attempt to highlight using css. i dont think we need the css highlight if we are using desktop. is there a open source library that handles this kind of stuff? maybe we can copy how it does it?"
-    }
-  ]
-}

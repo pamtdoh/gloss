@@ -1,9 +1,0 @@
-{
-  "items": [
-    {
-      "id": "c1",
-      "type": "comment",
-      "text": "the css higlight is still there. it also selected the wrong selection. only select a word, while in fact i selected a whole sentence. clicking the Comment / Ask also doesn't work sometimes."
-    }
-  ]
-}

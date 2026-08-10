@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
-*.gen.js
+*.gen.*
 test-results/
 .aliastest/
+.gloss/

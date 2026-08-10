@@ -1,9 +1,0 @@
-{
-  "items": [
-    {
-      "id": "c1",
-      "type": "comment",
-      "text": "the height and font size of the filter and search bar is diff. maybe we can update search component to match the filter height and font size? the icon on the search bar also looks weird"
-    }
-  ]
-}

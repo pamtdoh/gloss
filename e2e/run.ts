@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(repoRoot, "packages/cli/dist/gloss.js");
+const cli = join(repoRoot, "dist/gloss.js");
 
 let failures = 0;
 function check(ok: boolean, label: string): void {

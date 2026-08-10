@@ -24,7 +24,7 @@ import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(root, "packages/cli/dist/gloss.js");
+const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
 let proc: ChildProcessWithoutNullStreams;

@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(root, "packages/cli/dist/gloss.js");
+const cli = join(root, "dist/gloss.js");
 const PHONE = { width: 390, height: 844 };
 
 let tmp: string;
