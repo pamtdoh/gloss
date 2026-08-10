@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "gloss": "./dist/gloss.js"
+    "gloss": "dist/gloss.js"
   },
   "files": [
     "dist"
