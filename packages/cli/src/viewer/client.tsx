@@ -119,7 +119,7 @@ interface ToastState {
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
 
 // Tree scope, GitHub/GitLab-style but sharper: "changed" is what moved
-// since the previous snapshot (including facts the agent deleted, shown as
+// since the previous revision (including facts the agent deleted, shown as
 // read-only ghosts); "raised" is what the human commented or asked on.
 type Scope = "all" | "changed" | "raised";
 const SCOPES: Scope[] = ["all", "changed", "raised"];
@@ -189,14 +189,14 @@ function keepFocusOutOfFields(event: Event): void {
   }
 }
 
-async function fetchReview(snapshot?: number): Promise<ReviewData> {
-  const res = await fetch("/api/review" + (snapshot ? `?snapshot=${snapshot}` : ""));
+async function fetchReview(revision?: number): Promise<ReviewData> {
+  const res = await fetch("/api/review" + (revision ? `?revision=${revision}` : ""));
   if (!res.ok) throw new Error(`review fetch failed: ${res.status}`);
   return res.json();
 }
 
 // Seen is keyed by fact CONTENT per review (browser-local): an iterated
-// snapshot keeps its seen marks for unchanged facts and clears them exactly
+// revision keeps its seen marks for unchanged facts and clears them exactly
 // where the text changed — GitHub's "Viewed" semantic.
 function seenStore(review: string): Record<string, string> {
   try {
@@ -286,21 +286,21 @@ function App(): React.JSX.Element {
   stateRef.current = { data, composer, done: done !== null };
 
   // ---------- data ----------
-  async function load(snapshot?: number): Promise<void> {
-    const next = await fetchReview(snapshot);
-    const prior = next.snapshots.filter((s) => s < next.snapshot).pop();
+  async function load(revision?: number): Promise<void> {
+    const next = await fetchReview(revision);
+    const prior = next.revisions.filter((s) => s < next.revision).pop();
     setPrev(
       prior === undefined
         ? null
         : new Map((await fetchReview(prior)).facts.map((f) => [f.path, f.content])),
     );
     setData(next);
-    // deep links land on their page; snapshot switches keep the place
+    // deep links land on their page; revision switches keep the place
     setCursor(cursorFromHash(next.facts));
     setSelection(new Set());
     setComposer(null);
     setFilter("");
-    setScope("all"); // like the text filter: a new snapshot starts unscoped
+    setScope("all"); // like the text filter: a new revision starts unscoped
     autoMarked.current.clear();
   }
   useEffect(() => {
@@ -351,7 +351,7 @@ function App(): React.JSX.Element {
         !(window.getSelection()?.isCollapsed ?? true);
       if (!busy && st.data) {
         try {
-          const fresh = await fetchReview(st.data.snapshot);
+          const fresh = await fetchReview(st.data.revision);
           const now = Date.now();
           for (const fact of fresh.facts) {
             // recent local writes win over poll data (covers the GET-in-flight race)
@@ -478,8 +478,8 @@ function App(): React.JSX.Element {
   }, []);
 
   // ---------- derived ----------
-  // facts deleted since the previous snapshot, resurrected read-only from
-  // the previous snapshot's copy (prev already holds their content)
+  // facts deleted since the previous revision, resurrected read-only from
+  // the previous revision's copy (prev already holds their content)
   const ghosts = useMemo(() => {
     if (!prev || !data) return [];
     const live = new Set(data.facts.map((f) => f.path));
@@ -638,7 +638,7 @@ function App(): React.JSX.Element {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        snapshot: data.snapshot,
+        revision: data.revision,
         path: fact.path,
         sidecar: fact.sidecar ?? {},
       }),
@@ -774,14 +774,14 @@ function App(): React.JSX.Element {
       .find((f) => f.path === path)
       ?.sidecar?.items?.find((i) => i.id === id);
     if (!item) return;
-    const snapshot = structuredClone(item);
+    const revision = structuredClone(item);
     mutateFact(path, (sidecar) => {
       sidecar.items = sidecar.items?.filter((i) => i.id !== id);
     });
     setToast({
       message: `Deleted ${id}`,
       undo: () => {
-        mutateFact(path, (sidecar) => (sidecar.items ??= []).push(snapshot));
+        mutateFact(path, (sidecar) => (sidecar.items ??= []).push(revision));
         setToast(null);
       },
     });
@@ -864,7 +864,7 @@ function App(): React.JSX.Element {
       await fetch("/api/finish", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ snapshot: data?.snapshot }),
+        body: JSON.stringify({ revision: data?.revision }),
       });
     } catch {
       /* server exits as it answers */
@@ -877,7 +877,7 @@ function App(): React.JSX.Element {
       const res = await fetch("/api/approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ snapshot: data?.snapshot }),
+        body: JSON.stringify({ revision: data?.revision }),
       });
       if (!res.ok) {
         setToast({ message: `Approve failed: ${(await res.json()).error}` });
@@ -886,7 +886,7 @@ function App(): React.JSX.Element {
     } catch {
       /* as above */
     }
-    setDone(`Snapshot ${data?.snapshot} approved — promoted to approved/.`);
+    setDone(`Revision ${data?.revision} approved — promoted to approved/.`);
   }
 
   // ---------- keyboard: built from the SHORTCUTS table ----------
@@ -972,18 +972,18 @@ function App(): React.JSX.Element {
         ? indexFactOf(data?.facts ?? [], effectiveCursor.path)
         : null;
 
-  const prevSnapshot = data ? (data.snapshots.filter((s) => s < data.snapshot).pop() ?? null) : null;
+  const prevRevision = data ? (data.revisions.filter((s) => s < data.revision).pop() ?? null) : null;
 
   const factHtml = useMemo(() => {
     if (!renderedFact || !data) return "";
-    // a ghost's images live in the snapshot it was deleted from
-    const snapshot = renderedFact.ghost ? (prevSnapshot ?? data.snapshot) : data.snapshot;
+    // a ghost's images live in the revision it was deleted from
+    const revision = renderedFact.ghost ? (prevRevision ?? data.revision) : data.revision;
     return renderMarkdown(renderedFact.content, {
-      assetBase: `/asset/${snapshot}/`,
+      assetBase: `/asset/${revision}/`,
       factDir: dirOf(renderedFact.path),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedFact, data, prevSnapshot]);
+  }, [renderedFact, data, prevRevision]);
 
   const anchorStates = useMemo(() => {
     const states = new Map<string, "exact" | "drifted" | "detached">();
@@ -1110,7 +1110,7 @@ function App(): React.JSX.Element {
   }
 
   const yourTurn = openQuestions.answered;
-  const latestSnapshot = Math.max(...data.snapshots);
+  const latestRevision = Math.max(...data.revisions);
 
   return (
     <div className="app">
@@ -1170,31 +1170,31 @@ function App(): React.JSX.Element {
           {effectiveDark ? <Moon /> : <Sun />}
         </Button>
         <Select
-          value={String(data.snapshot)}
+          value={String(data.revision)}
           onValueChange={(value) => void load(Number(value))}
         >
           <SelectTrigger
             size="sm"
-            id="snapshot-select"
-            aria-label="Snapshot"
+            id="revision-select"
+            aria-label="Revision"
             title={
-              data.snapshot === Math.max(...data.snapshots)
+              data.revision === Math.max(...data.revisions)
                 ? undefined
-                : `Older snapshot — ${Math.max(...data.snapshots)} is latest`
+                : `Older revision — ${Math.max(...data.revisions)} is latest`
             }
-            className={`snapshot-select w-[140px] max-[560px]:w-[76px] ${
-              data.snapshot === Math.max(...data.snapshots) ? "" : "snapshot-stale"
+            className={`revision-select w-[140px] max-[560px]:w-[76px] ${
+              data.revision === Math.max(...data.revisions) ? "" : "revision-stale"
             }`}
           >
             <span className="max-[560px]:hidden">
               <SelectValue />
             </span>
-            <span className="hidden max-[560px]:inline">S{data.snapshot}</span>
+            <span className="hidden max-[560px]:inline">S{data.revision}</span>
           </SelectTrigger>
           <SelectContent>
-            {data.snapshots.map((s) => (
+            {data.revisions.map((s) => (
               <SelectItem key={s} value={String(s)}>
-                Snapshot {s}
+                Revision {s}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1204,10 +1204,10 @@ function App(): React.JSX.Element {
           <span className="hidden max-[560px]:inline">Finish</span>
         </Button>
       </header>
-      {data.snapshot !== latestSnapshot && (
+      {data.revision !== latestRevision && (
         <div className="stale-banner" id="stale-banner" role="status">
-          Viewing snapshot {data.snapshot} — latest is {latestSnapshot} ·{" "}
-          <button onClick={() => void load(latestSnapshot)}>Switch</button>
+          Viewing revision {data.revision} — latest is {latestRevision} ·{" "}
+          <button onClick={() => void load(latestRevision)}>Switch</button>
         </div>
       )}
 
@@ -1275,7 +1275,7 @@ function App(): React.JSX.Element {
                     scope !== "all" ? ` in ${SCOPE_LABEL[scope].toLowerCase()}` : ""
                   }`
                 : scope === "changed"
-                  ? `${scopeCounts.changed} changed since snapshot ${prevSnapshot ?? "—"}`
+                  ? `${scopeCounts.changed} changed since revision ${prevRevision ?? "—"}`
                   : `${scopeCounts.raised} with notes or questions`}
             </div>
           )}
@@ -1284,7 +1284,7 @@ function App(): React.JSX.Element {
               {filtering
                 ? `Nothing matches “${filter.trim()}”.`
                 : scope === "changed"
-                  ? "Nothing changed in this snapshot."
+                  ? "Nothing changed in this revision."
                   : "No facts with notes or questions."}
             </div>
           ) : (
@@ -1365,8 +1365,8 @@ function App(): React.JSX.Element {
                 </div>
                 {targetIsGhost && (
                   <div className="ghost-banner" id="ghost-banner" role="status">
-                    Removed in snapshot {data.snapshot} — shown as it was in snapshot{" "}
-                    {prevSnapshot}. Read-only.
+                    Removed in revision {data.revision} — shown as it was in revision{" "}
+                    {prevRevision}. Read-only.
                   </div>
                 )}
                 <article
@@ -1541,7 +1541,7 @@ function App(): React.JSX.Element {
         }}
         commands={[
           { label: "Finish review", run: () => setOverlay("finish") },
-          { label: "Approve snapshot…", run: () => setApproveOpen(true) },
+          { label: "Approve revision…", run: () => setApproveOpen(true) },
           {
             label: "Mark all facts seen",
             run: () => {
@@ -1564,9 +1564,9 @@ function App(): React.JSX.Element {
             label: `Scope: ${s === "all" ? "all facts" : `${s} only`}`,
             run: () => setScope(s),
           })),
-          ...data.snapshots
-            .filter((s) => s !== data.snapshot)
-            .map((s) => ({ label: `Switch to snapshot ${s}`, run: () => void load(s) })),
+          ...data.revisions
+            .filter((s) => s !== data.revision)
+            .map((s) => ({ label: `Switch to revision ${s}`, run: () => void load(s) })),
         ]}
       />
       <FinishSheet
@@ -1582,9 +1582,9 @@ function App(): React.JSX.Element {
       <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
         <AlertDialogContent id="approve-confirm">
           <AlertDialogHeader>
-            <AlertDialogTitle>Approve snapshot {data.snapshot}?</AlertDialogTitle>
+            <AlertDialogTitle>Approve revision {data.revision}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The snapshot is copied to approved/ — that directory existing is the approval —
+              The revision is copied to approved/ — that directory existing is the approval —
               and this session ends. Implementation starts from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2261,7 +2261,7 @@ function FinishSheet(props: {
     <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
       <DialogContent id="finish-sheet" className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>Finish review — snapshot {props.data.snapshot}</DialogTitle>
+          <DialogTitle>Finish review — revision {props.data.revision}</DialogTitle>
         </DialogHeader>
         <p className="text-muted-foreground stat text-[13px]">
           {props.progress.seen} of {props.progress.total} facts seen ·{" "}
@@ -2292,7 +2292,7 @@ function FinishSheet(props: {
         </ul>
         <DialogFooter>
           <Button variant="outline" size="sm" id="confirm-approve" onClick={props.onApprove}>
-            Approve snapshot…
+            Approve revision…
           </Button>
           <Button size="sm" id="confirm-finish" onClick={props.onFinish}>
             Finish review

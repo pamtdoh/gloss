@@ -7,10 +7,11 @@ const USAGE = `gloss — files-first design review
 
 Usage:
   gloss init          Scaffold .gloss/ in the current directory
-  gloss session <review> [--snapshot <n>] [--events] [--no-browser]
+  gloss session <review> [--rev <n>] [--no-browser]
                     [--serve-host <host>]
-                          Serve the viewer, block until the review is
-                          finished, then print a JSON summary.
+                          Serve the viewer, emit JSONL events on stdout,
+                          block until the review is finished, then print
+                          a JSON summary.
                           --serve-host additionally accepts requests
                           proxied from a private hostname (e.g.
                           tailscale serve); binding stays loopback-only
@@ -44,15 +45,14 @@ function init(cwd: string): void {
 }
 
 function parseSessionArgs(args: string[]): SessionOptions {
-  const opts: SessionOptions = { review: "", events: false, noBrowser: false };
+  const opts: SessionOptions = { review: "", noBrowser: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg === "--events") opts.events = true;
-    else if (arg === "--no-browser") opts.noBrowser = true;
-    else if (arg === "--snapshot") {
+    if (arg === "--no-browser") opts.noBrowser = true;
+    else if (arg === "--rev") {
       const value = Number(args[++i]);
-      if (!Number.isInteger(value)) fail("--snapshot expects a number");
-      opts.snapshot = value;
+      if (!Number.isInteger(value)) fail("--rev expects a number");
+      opts.revision = value;
     } else if (arg === "--serve-host") {
       const value = args[++i];
       if (!value) fail("--serve-host expects a hostname");
@@ -61,7 +61,7 @@ function parseSessionArgs(args: string[]): SessionOptions {
     else if (opts.review) fail("session takes one review name");
     else opts.review = arg;
   }
-  if (!opts.review) fail("usage: gloss session <review> [--snapshot <n>] [--events] [--no-browser]");
+  if (!opts.review) fail("usage: gloss session <review> [--rev <n>] [--no-browser]");
   return opts;
 }
 

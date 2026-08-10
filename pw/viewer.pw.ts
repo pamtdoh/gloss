@@ -85,7 +85,7 @@ test.beforeAll(async ({ browser }) => {
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
-  // snapshot 2 = iterated copy: one changed fact, one new rich fact
+  // revision 2 = iterated copy: one changed fact, one new rich fact
   cpSync(join(tmp, ".gloss/design-review/1"), snap2(), { recursive: true });
   appendFileSync(
     snap2("storage/whole-file-writes.md"),
@@ -95,10 +95,10 @@ test.beforeAll(async ({ browser }) => {
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
   writeFileSync(
     join(tmp, ".gloss/design-review/1/slugs/legacy-dedupe.md"),
-    "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in snapshot 2.\n",
+    "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in revision 2.\n",
   );
 
-  proc = spawn("node", [cli, "session", "design-review", "--events", "--no-browser"], {
+  proc = spawn("node", [cli, "session", "design-review", "--no-browser"], {
     cwd: tmp,
   });
   exited = new Promise((resolve) => proc.on("exit", (code) => resolve(code ?? -1)));
@@ -136,7 +136,7 @@ test("initial render: nested tree, directory view for the first row", async () =
   await expect(page.locator(".tree .row").first()).toHaveAttribute("data-kind", "dir");
   await expect(page.locator("#dir-view")).toBeVisible();
   await expect(page.locator("#fact-table .trow")).toHaveCount(1);
-  // interdiff badges from snapshot 1 -> 2 (14px glyphs in the tree)
+  // interdiff badges from revision 1 -> 2 (14px glyphs in the tree)
   await expect(
     page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .gbadge.changed'),
   ).toBeVisible();
@@ -429,7 +429,7 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
 
   // the ghost opens read-only: banner shown, no composer, no seen mark
   await page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]').click();
-  await expect(page.locator("#ghost-banner")).toContainText("Removed in snapshot 2");
+  await expect(page.locator("#ghost-banner")).toContainText("Removed in revision 2");
   await expect(page.locator("#fact-content h1")).toHaveText(
     "Slugs are deduplicated by a nightly job",
   );
@@ -495,11 +495,11 @@ test("theme button toggles dark/light and persists; system is a palette command"
   expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe(null);
 });
 
-test("older snapshots show a banner with a switch back to latest", async () => {
+test("older revisions show a banner with a switch back to latest", async () => {
   await page.keyboard.press("/");
-  await page.locator("[cmdk-input]").fill("switch to snapshot 1");
+  await page.locator("[cmdk-input]").fill("switch to revision 1");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#stale-banner")).toContainText("Viewing snapshot 1 — latest is 2");
+  await expect(page.locator("#stale-banner")).toContainText("Viewing revision 1 — latest is 2");
   await page.locator("#stale-banner button").click();
   await expect(page.locator("#stale-banner")).toHaveCount(0);
 });
@@ -514,7 +514,7 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
 
   const expectedSummary = {
     review: "design-review",
-    snapshot: 2,
+    revision: 2,
     facts: 10,
     comments: 3, // two quick comments + one selection comment
     openQuestions: 1,

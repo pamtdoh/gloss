@@ -1,6 +1,6 @@
 // M3 end-to-end check: the full review lifecycle as file operations on a
 // disposable fixture — human review state written the way the viewer writes
-// it, iteration as a plain snapshot copy, resolution as deletion, approval
+// it, iteration as a plain revision copy, resolution as deletion, approval
 // as promotion to approved/, and the implement skill's precondition. Also
 // covers `gloss skill install` for both agents.
 import { execFileSync } from "node:child_process";
@@ -51,7 +51,7 @@ try {
   );
   const review = join(tmp, ".gloss/design-review");
 
-  // 1. The human reviews snapshot 1 — sidecars exactly as the viewer writes them.
+  // 1. The human reviews revision 1 — sidecars exactly as the viewer writes them.
   writeFileSync(
     join(review, "1/storage/whole-file-writes.review.json"),
     JSON.stringify(
@@ -97,12 +97,12 @@ try {
     ) + "\n",
   );
 
-  // 2. Iterate: snapshot 2 is a plain standalone copy of snapshot 1.
+  // 2. Iterate: revision 2 is a plain standalone copy of revision 1.
   cpSync(join(review, "1"), join(review, "2"), { recursive: true });
   check(existsSync(join(review, "2/storage/whole-file-writes.review.json")),
-    "sidecars travel with the snapshot copy");
+    "sidecars travel with the revision copy");
 
-  // 3. Resolve in snapshot 2: address the annotation by amending the fact,
+  // 3. Resolve in revision 2: address the annotation by amending the fact,
   //    then delete the item; delete addressed decisions; keep the open question.
   const fact = join(review, "2/storage/whole-file-writes.md");
   writeFileSync(
@@ -116,7 +116,7 @@ try {
   check(existsSync(openQuestion), "unresolved question carries forward");
 
   // 4. The human settles the question in the next session; the agent then
-  //    deletes it — a snapshot with no sidecars has addressed everything.
+  //    deletes it — a revision with no sidecars has addressed everything.
   unlinkSync(openQuestion);
   const remainingSidecars = walk(join(review, "2")).filter((f) => f.endsWith(".review.json"));
   check(remainingSidecars.length === 0, "resolution is deletion — no sidecars remain");
@@ -124,20 +124,20 @@ try {
   // 5. Implement precondition before approval: approved/ must not exist.
   check(!existsSync(join(review, "approved")), "no approved/ before promotion");
 
-  // 6. Approval is promotion: copy the accepted snapshot to approved/.
+  // 6. Approval is promotion: copy the accepted revision to approved/.
   cpSync(join(review, "2"), join(review, "approved"), { recursive: true });
   const approvedFacts = walk(join(review, "approved")).map((f) =>
     relative(join(review, "approved"), f),
   );
-  const snapshotFacts = walk(join(review, "2")).map((f) => relative(join(review, "2"), f));
+  const revisionFacts = walk(join(review, "2")).map((f) => relative(join(review, "2"), f));
   check(
-    JSON.stringify(approvedFacts) === JSON.stringify(snapshotFacts) &&
+    JSON.stringify(approvedFacts) === JSON.stringify(revisionFacts) &&
       approvedFacts.every(
         (f) =>
           readFileSync(join(review, "approved", f), "utf8") ===
           readFileSync(join(review, "2", f), "utf8"),
       ),
-    "approved/ is a faithful copy of the accepted snapshot",
+    "approved/ is a faithful copy of the accepted revision",
   );
   check(
     readFileSync(join(review, "approved/storage/whole-file-writes.md"), "utf8").includes(

@@ -39,7 +39,7 @@ test.beforeAll(async ({ browser }) => {
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
-  proc = spawn("node", [cli, "session", "design-review", "--events", "--no-browser"], {
+  proc = spawn("node", [cli, "session", "design-review", "--no-browser"], {
     cwd: tmp,
   });
   url = await new Promise((resolve) => {
@@ -77,7 +77,7 @@ test("phone layout: no horizontal scroll, compact header, panel closed", async (
 test("hamburger opens the tree drawer; tapping a fact navigates and closes it", async () => {
   await page.locator("#btn-tree").tap();
   await expect(page.locator(".tree-col")).toHaveAttribute("data-open", "");
-  // snapshot switcher + search live in the drawer on mobile
+  // revision switcher + search live in the drawer on mobile
   await expect(page.locator(".drawer-tools")).toBeVisible();
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').tap();
   await expect(page.locator(".tree-col")).not.toHaveAttribute("data-open", "");

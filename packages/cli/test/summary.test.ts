@@ -15,7 +15,7 @@ describe("summarize", () => {
   test("counts items by type across facts", () => {
     const summary = summarize({
       review: "r",
-      snapshot: 2,
+      revision: 2,
       approved: true,
       sidecars: [
         {
@@ -33,7 +33,7 @@ describe("summarize", () => {
     });
     expect(summary).toEqual({
       review: "r",
-      snapshot: 2,
+      revision: 2,
       facts: 4,
       comments: 3,
       openQuestions: 1,

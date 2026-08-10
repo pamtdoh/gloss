@@ -287,8 +287,8 @@ body {
 }
 .filter-clear[data-show] { opacity: 1; pointer-events: auto; }
 .filter-count { padding: 0 12px 6px; font-size: 12px; color: var(--muted); }
-.snapshot-stale, .snapshot-stale * { color: var(--amber) !important; }
-.snapshot-stale { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)) !important; }
+.revision-stale, .revision-stale * { color: var(--amber) !important; }
+.revision-stale { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)) !important; }
 .drawer-tools { display: none; }
 @media (max-width: 860px) {
   .drawer-tools { display: flex; gap: 8px; padding: 0 10px 8px; }

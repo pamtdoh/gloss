@@ -4,14 +4,14 @@ export interface Fact {
   path: string;
   content: string;
   sidecar: Sidecar | null;
-  /** deleted since the previous snapshot; resurrected read-only from its copy */
+  /** deleted since the previous revision; resurrected read-only from its copy */
   ghost?: true;
 }
 
 export interface ReviewData {
   review: string;
-  snapshot: number;
-  snapshots: number[];
+  revision: number;
+  revisions: number[];
   facts: Fact[];
 }
 

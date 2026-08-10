@@ -24,9 +24,9 @@ import type {
 } from "mdast";
 
 export interface RenderOptions {
-  /** URL prefix for in-snapshot images, e.g. "/asset/1/". */
+  /** URL prefix for in-revision images, e.g. "/asset/1/". */
   assetBase?: string;
-  /** Directory of the fact within the snapshot, for relative image paths. */
+  /** Directory of the fact within the revision, for relative image paths. */
   factDir?: string;
   /** set internally by renderMarkdown; used to locate code-block offsets */
   sourceText?: string;
@@ -54,7 +54,7 @@ function resolveAsset(opts: RenderOptions, url: string): string | null {
   for (const seg of `${opts.factDir ?? ""}/${url}`.split("/")) {
     if (!seg || seg === ".") continue;
     if (seg === "..") {
-      if (!parts.length) return null; // escaping the snapshot is not a thing
+      if (!parts.length) return null; // escaping the revision is not a thing
       parts.pop();
     } else parts.push(seg);
   }

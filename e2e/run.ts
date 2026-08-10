@@ -1,5 +1,5 @@
 // M1 end-to-end check: on a disposable copy of the fixture repo, initialize
-// Gloss, plant the agent-generated snapshot-1 fact tree (agents write
+// Gloss, plant the agent-generated revision-1 fact tree (agents write
 // files directly — planting IS the write path), then verify the review is
 // structurally sound and readable entirely from the terminal.
 import { execFileSync } from "node:child_process";
@@ -57,7 +57,7 @@ try {
     "reserved .local/ is git-ignored",
   );
 
-  // 3. The agent writes snapshot 1 (plain file writes of the generated tree).
+  // 3. The agent writes revision 1 (plain file writes of the generated tree).
   cpSync(
     join(repoRoot, "e2e/generated-review/design-review"),
     join(tmp, ".gloss/design-review"),
@@ -65,11 +65,11 @@ try {
   );
 
   // 4. Structural conventions from DESIGN.md §6.
-  const snapshot = join(tmp, ".gloss/design-review/1");
-  const files = walk(snapshot);
-  const facts = files.map((f) => relative(snapshot, f));
-  check(facts.length >= 5, `snapshot 1 holds a real tree (${facts.length} files)`);
-  check(facts.every((f) => f.endsWith(".md")), "snapshot 1 is facts only — all .md");
+  const revision = join(tmp, ".gloss/design-review/1");
+  const files = walk(revision);
+  const facts = files.map((f) => relative(revision, f));
+  check(facts.length >= 5, `revision 1 holds a real tree (${facts.length} files)`);
+  check(facts.every((f) => f.endsWith(".md")), "revision 1 is facts only — all .md");
   check(!facts.some((f) => f.endsWith(".review.json")), "no sidecars at generation");
   check(facts.some((f) => f.endsWith("_index.md")), "at least one _index.md group fact");
   check(
@@ -85,7 +85,7 @@ try {
   console.log("\n=== .gloss/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {
-    console.log(`\n--- ${relative(snapshot, f)} ---`);
+    console.log(`\n--- ${relative(revision, f)} ---`);
     console.log(readFileSync(f, "utf8").trimEnd());
   }
 

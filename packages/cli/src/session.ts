@@ -29,8 +29,7 @@ const IMAGE_TYPES: Record<string, string> = {
 
 export interface SessionOptions {
   review: string;
-  snapshot?: number;
-  events: boolean;
+  revision?: number;
   noBrowser: boolean;
   /**
    * Extra hostname to accept in Host/Origin checks, for a private proxy
@@ -45,29 +44,29 @@ function jsonLine(value: unknown): string {
   return JSON.stringify(value) + "\n";
 }
 
-function listSnapshots(reviewDir: string): number[] {
+function listRevisions(reviewDir: string): number[] {
   return readdirSync(reviewDir)
     .filter((name) => /^\d+$/.test(name) && statSync(join(reviewDir, name)).isDirectory())
     .map(Number)
     .sort((a, b) => a - b);
 }
 
-function walkFacts(snapshotDir: string, dir = snapshotDir): string[] {
+function walkFacts(revisionDir: string, dir = revisionDir): string[] {
   const facts: string[] = [];
   for (const name of readdirSync(dir).sort()) {
     const path = join(dir, name);
-    if (statSync(path).isDirectory()) facts.push(...walkFacts(snapshotDir, path));
-    else if (name.endsWith(".md")) facts.push(relative(snapshotDir, path));
+    if (statSync(path).isDirectory()) facts.push(...walkFacts(revisionDir, path));
+    else if (name.endsWith(".md")) facts.push(relative(revisionDir, path));
   }
   return facts.sort();
 }
 
-function sidecarPath(snapshotDir: string, factPath: string): string {
-  return join(snapshotDir, factPath.replace(/\.md$/, ".review.json"));
+function sidecarPath(revisionDir: string, factPath: string): string {
+  return join(revisionDir, factPath.replace(/\.md$/, ".review.json"));
 }
 
-function readSidecar(snapshotDir: string, factPath: string): Sidecar | undefined {
-  const path = sidecarPath(snapshotDir, factPath);
+function readSidecar(revisionDir: string, factPath: string): Sidecar | undefined {
+  const path = sidecarPath(revisionDir, factPath);
   if (!existsSync(path)) return undefined;
   try {
     return JSON.parse(readFileSync(path, "utf8"));
@@ -96,38 +95,38 @@ export function runSession(cwd: string, opts: SessionOptions): void {
 
   const reviewDir = join(cwd, ".gloss", opts.review);
   if (!existsSync(reviewDir)) fail(`no such review: ${opts.review}`);
-  const snapshots = listSnapshots(reviewDir);
-  if (snapshots.length === 0) fail(`review ${opts.review} has no snapshots`);
-  const defaultSnapshot = opts.snapshot ?? snapshots[snapshots.length - 1]!;
-  if (!snapshots.includes(defaultSnapshot)) fail(`no such snapshot: ${defaultSnapshot}`);
+  const revisions = listRevisions(reviewDir);
+  if (revisions.length === 0) fail(`review ${opts.review} has no revisions`);
+  const defaultRevision = opts.revision ?? revisions[revisions.length - 1]!;
+  if (!revisions.includes(defaultRevision)) fail(`no such revision: ${defaultRevision}`);
 
-  const snapshotDir = (n: number) => join(reviewDir, String(n));
+  const revisionDir = (n: number) => join(reviewDir, String(n));
   const token = randomBytes(32).toString("hex");
   const sessionCookie = randomBytes(32).toString("hex");
   let tokenUsed = false;
   let finishing = false;
 
   const emit = (event: string, data: Record<string, unknown>): void => {
-    if (opts.events) process.stdout.write(jsonLine({ event, ...data }));
+    process.stdout.write(jsonLine({ event, ...data }));
   };
 
-  const computeSummary = (snapshot: number) => {
-    const dir = snapshotDir(snapshot);
+  const computeSummary = (revision: number) => {
+    const dir = revisionDir(revision);
     const facts = walkFacts(dir);
     return summarize({
       review: opts.review,
-      snapshot,
+      revision,
       sidecars: facts.map((factPath) => readSidecar(dir, factPath)),
       approved: existsSync(join(reviewDir, "approved")),
     });
   };
 
-  const finishSession = (res: ServerResponse, payload: object, snapshot: number): void => {
+  const finishSession = (res: ServerResponse, payload: object, revision: number): void => {
     if (finishing) return;
     finishing = true;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(payload), () => {
-      const summary = computeSummary(snapshot);
+      const summary = computeSummary(revision);
       emit("session.finished", { summary });
       process.stdout.write(jsonLine(summary));
       process.exit(0);
@@ -222,36 +221,36 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         return res.end(mermaidJs);
       }
       if (req.method === "GET" && url.pathname.startsWith("/asset/")) {
-        // /asset/<snapshot>/<path> — images stored inside the snapshot
-        const [, , snap, ...restPath] = url.pathname.split("/");
-        const snapshot = Number(snap);
+        // /asset/<revision>/<path> — images stored inside the revision
+        const [, , ver, ...restPath] = url.pathname.split("/");
+        const revision = Number(ver);
         const ext = ("." + (restPath[restPath.length - 1] ?? "").split(".").pop()).toLowerCase();
         const type = IMAGE_TYPES[ext];
-        if (!snapshots.includes(snapshot) || !type) return sendJson(404, { ok: false, error: "not found" });
-        const dir = snapshotDir(snapshot);
+        if (!revisions.includes(revision) || !type) return sendJson(404, { ok: false, error: "not found" });
+        const dir = revisionDir(revision);
         const abs = resolve(dir, restPath.map(decodeURIComponent).join("/"));
         if (!abs.startsWith(dir + sep) || !existsSync(abs)) return sendJson(404, { ok: false, error: "not found" });
         res.writeHead(200, { "content-type": type });
         return res.end(readFileSync(abs));
       }
       if (req.method === "GET" && url.pathname === "/api/review") {
-        const snapshot = url.searchParams.has("snapshot")
-          ? Number(url.searchParams.get("snapshot"))
-          : defaultSnapshot;
-        if (!snapshots.includes(snapshot)) return sendJson(404, { ok: false, error: "no such snapshot" });
-        const dir = snapshotDir(snapshot);
+        const revision = url.searchParams.has("revision")
+          ? Number(url.searchParams.get("revision"))
+          : defaultRevision;
+        if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
+        const dir = revisionDir(revision);
         const facts = walkFacts(dir).map((factPath) => ({
           path: factPath,
           content: readFileSync(join(dir, factPath), "utf8"),
           sidecar: readSidecar(dir, factPath) ?? null,
         }));
-        return sendJson(200, { review: opts.review, snapshot, snapshots, facts });
+        return sendJson(200, { review: opts.review, revision, revisions, facts });
       }
       if (req.method === "PUT" && url.pathname === "/api/sidecar") {
         const body = JSON.parse(await readBody(req));
-        const snapshot: number = body.snapshot ?? defaultSnapshot;
-        if (!snapshots.includes(snapshot)) return sendJson(404, { ok: false, error: "no such snapshot" });
-        const dir = snapshotDir(snapshot);
+        const revision: number = body.revision ?? defaultRevision;
+        if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
+        const dir = revisionDir(revision);
         const factAbs = resolve(dir, String(body.path));
         if (!factAbs.startsWith(dir + sep) || !factAbs.endsWith(".md") || !existsSync(factAbs)) {
           return sendJson(404, { ok: false, error: "no such fact" });
@@ -277,16 +276,16 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       }
       if (req.method === "POST" && url.pathname === "/api/finish") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        return finishSession(res, { ok: true }, body.snapshot ?? defaultSnapshot);
+        return finishSession(res, { ok: true }, body.revision ?? defaultRevision);
       }
       if (req.method === "POST" && url.pathname === "/api/approve") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        const snapshot: number = body.snapshot ?? defaultSnapshot;
-        if (!snapshots.includes(snapshot)) return sendJson(404, { ok: false, error: "no such snapshot" });
+        const revision: number = body.revision ?? defaultRevision;
+        if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
         const approvedDir = join(reviewDir, "approved");
         if (existsSync(approvedDir)) return sendJson(409, { ok: false, error: "approved/ already exists" });
-        cpSync(snapshotDir(snapshot), approvedDir, { recursive: true });
-        return finishSession(res, { ok: true }, snapshot);
+        cpSync(revisionDir(revision), approvedDir, { recursive: true });
+        return finishSession(res, { ok: true }, revision);
       }
       return sendJson(404, { ok: false, error: "not found" });
     } catch (error) {
@@ -303,7 +302,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         `gloss session (proxied): https://${opts.serveHost}/auth?token=${token}\n`,
       );
     }
-    emit("session.started", { review: opts.review, snapshot: defaultSnapshot, url });
+    emit("session.started", { review: opts.review, revision: defaultRevision, url });
     if (!opts.noBrowser) {
       try {
         spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {

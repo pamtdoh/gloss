@@ -16,7 +16,7 @@ Whatever the user asked to have reviewed *is* the scope. Gloss has no
 scoping semantics of its own — don't invent any. If the prompt is ambiguous,
 ask, or state the scope you inferred when you present the review.
 
-## Generate snapshot 1
+## Generate revision 1
 
 1. **Ensure the repo is initialized.** Run `gloss init` at the repo
    root. It is idempotent and prints a JSON result.
@@ -28,7 +28,7 @@ ask, or state the scope you inferred when you present the review.
 
 3. **Create the review directory.** Pick a short kebab-case review name
    from the user's prompt (e.g. `checkout-flow`, `design-review`) and
-   create `.gloss/<review>/1/`. Snapshot `1` is the fact tree you are
+   create `.gloss/<review>/1/`. Revision `1` is the fact tree you are
    about to write.
 
 4. **Write the facts.** Shape the tree yourself — it should mirror the
@@ -44,7 +44,7 @@ ask, or state the scope you inferred when you present the review.
    - **Rich where richness clarifies.** Use a GFM table for an
      enumeration, a fenced code block when the exact shape *is* the claim
      (a schema, a config, a wire format), a Mermaid diagram for a flow,
-     and images saved inside the snapshot directory (referenced
+     and images saved inside the revision directory (referenced
      relatively, so they travel with copies). Never paste code the human
      would have to review line-by-line — that defeats the point.
    - **Kebab-case filenames** named for the subject
@@ -60,35 +60,37 @@ ask, or state the scope you inferred when you present the review.
    - **State the design; don't review it yourself.** Facts describe what
      the design does, including its sharp edges, in neutral terms. The
      verdict belongs to the human.
-   - **Snapshot 1 is facts only.** Sidecar files (`*.review.json`) are the
+   - **Revision 1 is facts only.** Sidecar files (`*.review.json`) are the
      human's review state, written during review — never at generation.
 
 5. **Hand it to the human.** Show the tree of `.gloss/<review>/1/`,
    then run the session (below) — or, for terminal-only review, print the
    facts themselves and take decisions in conversation.
 
-## Run the session and wait
+## Run the session under one monitor
 
-Run as a background task:
+Start the session as a single background monitor whose event stream is
+the command's stdout:
 
 ```
-gloss session <review> --events
+gloss session <review>
 ```
 
-It serves the viewer on loopback, prints a one-time URL on stderr (share
-it with the human if their browser didn't open), and blocks until the
-human clicks **Finish review** or approves. The command exiting is your
-notification; the last stdout line is a JSON summary (comment count,
-open questions, approval status). With `--events`,
-stdout is JSONL: `session.started`, `question.asked`,
-`session.finished`.
+It serves the viewer on loopback and blocks until the human clicks
+**Finish review** or approves. Stdout is JSONL, one event per line:
+`session.started` (includes the one-time viewer `url` — share it if the
+human's browser didn't open), `question.asked`, `session.finished`, then
+a final JSON summary (comment count, open questions, approval status).
+
+One listener covers everything — in Claude Code, run the command via the
+Monitor tool with `persistent: true` (reviews outlast default timeouts).
+Each stdout line wakes you; the process exiting is the completion
+signal. Don't add a second watcher or a poll loop on top.
 
 ## Answer questions live, while the session runs
 
-**Watch the session's output while it runs** — as a background task, poll
-or monitor its stream; an agent that only wakes when the command exits
-answers nothing live. When a `question.asked` event arrives, answer
-without waiting for the review to finish:
+When a `question.asked` event arrives, answer without waiting for the
+review to finish:
 
 1. Read the fact's `<fact>.review.json`, find the question item by `id`.
 2. Append `{ "who": "agent", "text": "…" }` to its `thread` and write the
@@ -103,21 +105,21 @@ and resolution happens during iteration.
 
 When the session finishes with sidecars present:
 
-1. Read every `*.review.json` in the snapshot wholesale, then propose next
+1. Read every `*.review.json` in the revision wholesale, then propose next
    steps to the human before rewriting anything they'd rather discuss.
-2. Copy the snapshot: `cp -r .gloss/<review>/<n> .gloss/<review>/<n+1>`.
-   Snapshots are standalone copies — no links, no shared state.
-3. In the new snapshot, resolve what was raised: rewrite, amend, split, or
+2. Copy the revision: `cp -r .gloss/<review>/<n> .gloss/<review>/<n+1>`.
+   Revisions are standalone copies — no links, no shared state.
+3. In the new revision, resolve what was raised: rewrite, amend, split, or
    delete facts per the comments; answer or settle questions. When you
    judge an item resolved, delete it from the sidecar; delete the sidecar
    file when nothing remains. Carry unresolved items forward untouched.
-4. Run another session on the new snapshot. A snapshot with no sidecars is
+4. Run another session on the new revision. A revision with no sidecars is
    one where everything the human raised has been addressed — silence is
    agreement.
 
 ## Approval
 
-Approval is one act, at the end: the accepted snapshot copied to
+Approval is one act, at the end: the accepted revision copied to
 `.gloss/<review>/approved/`. The viewer's Approve button does this
 itself; if the human instead approves in conversation, copy it yourself:
 

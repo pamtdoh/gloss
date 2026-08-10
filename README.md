@@ -48,16 +48,15 @@ installing copies the files, it does not link them.
 
 ```
 gloss init                       # scaffold .gloss/ in this repo
-gloss session <review> [--snapshot <n>] [--events] [--no-browser]
+gloss session <review> [--rev <n>] [--no-browser]
 gloss skill install --agent claude|codex [--global]
 ```
 
 `init` creates `.gloss/` (idempotent). `session` binds an ephemeral
-loopback port, prints a one-time-token URL for the viewer, blocks until the
-reviewer clicks **Finish review** (or approves), then exits 0 and prints a
-JSON summary. `--events` additionally emits JSONL events on stdout
-(`session.started`, `decision.changed`, `question.asked`,
-`session.finished`). `skill install` writes the two Gloss skills into
+loopback port, prints a one-time-token URL for the viewer, emits JSONL
+events on stdout as the review happens (`session.started`,
+`question.asked`, `session.finished`), blocks until the reviewer clicks
+**Finish review** (or approves), then exits 0 and prints a JSON summary. `skill install` writes the two Gloss skills into
 `.claude/skills/` or `.agents/skills/` of the current repo, or of `$HOME`
 with `--global`. Command results are single-line JSON; the CLI is small
 because everything else is agents reading and writing ordinary files.
@@ -68,11 +67,11 @@ The `gloss` skill (`skills/gloss/SKILL.md`) is the
 entry point: from a conversation, the agent condenses the requested scope
 into one fact per Markdown file under `.gloss/<review>/1/`, with
 optional `_index.md` group facts — rich Markdown (GFM tables, code,
-Mermaid diagrams, in-snapshot images) encouraged where it clarifies. The
+Mermaid diagrams, in-revision images) encouraged where it clarifies. The
 human reviews in the viewer — a keyboard-driven review surface (press `?`
 for the full map) with a nested fact tree, per-directory table view for
 bulk quick comments, ⌘K search palette, seen-tracking with progress, and
-changed/new badges against the previous snapshot. j/k to navigate, 1–3
+changed/new badges against the previous revision. j/k to navigate, 1–3
 for quick comments (one-tap whole-fact comments like "Not needed."), text
 selections become anchored comments and questions — which writes
 `<fact>.review.json` sidecars next to the facts. Items are comments and
@@ -80,8 +79,8 @@ questions — no decision field; a fact with no sidecar stands as
 written. Questions are live: the
 agent answers by appending to the sidecar's thread while the session runs,
 and the viewer picks it up within seconds. A fact with no sidecar means
-agreement; resolving an item deletes it; approval is the accepted snapshot
-copied to `approved/`. To iterate, the agent copies the snapshot, resolves
+agreement; resolving an item deletes it; approval is the accepted revision
+copied to `approved/`. To iterate, the agent copies the revision, resolves
 what was raised, and runs another session. The `gloss-apply` skill
 implements from `approved/` and refuses to start without it.
 

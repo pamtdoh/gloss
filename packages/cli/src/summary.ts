@@ -27,7 +27,7 @@ export function isEmptySidecar(sidecar: Sidecar): boolean {
 
 export interface Summary {
   review: string;
-  snapshot: number;
+  revision: number;
   facts: number;
   comments: number;
   openQuestions: number;
@@ -36,7 +36,7 @@ export interface Summary {
 
 export function summarize(input: {
   review: string;
-  snapshot: number;
+  revision: number;
   sidecars: (Sidecar | undefined)[]; // one slot per fact; undefined = no sidecar
   approved: boolean;
 }): Summary {
@@ -50,7 +50,7 @@ export function summarize(input: {
   }
   return {
     review: input.review,
-    snapshot: input.snapshot,
+    revision: input.revision,
     facts: input.sidecars.length,
     comments,
     openQuestions,
