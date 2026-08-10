@@ -443,9 +443,9 @@ test("images open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
 
   await box.locator(".pswp__button--arrow--next").click();
   await expect(box.locator(".pswp__counter")).toHaveText("2 / 2");
-  // PhotoSwipe binds its keyboard handler at openingAnimationEnd (220ms
+  // PhotoSwipe binds its keyboard handler at openingAnimationEnd (150ms
   // showAnimationDuration) — only a test presses keys that fast
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
   await page.keyboard.press("ArrowLeft"); // must page the lightbox, not collapse a tree dir
   await expect(box.locator(".pswp__counter")).toHaveText("1 / 2");
 

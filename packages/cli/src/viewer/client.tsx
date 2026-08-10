@@ -1353,17 +1353,17 @@ function App(): React.JSX.Element {
                 width: el.naturalWidth || 1600,
                 height: el.naturalHeight || 1200,
                 alt: el.alt,
-                // zoom the open/close animation from the image's spot on
-                // the page, with the already-loaded pixels as placeholder
-                element: el,
+                // already-loaded pixels as placeholder while full decodes
                 msrc: el.currentSrc || el.src,
               })),
               index: Math.max(0, imgs.indexOf(target)),
               wheelToZoom: true,
-              // match the app's motion tokens (--dur-med enter, faster
-              // exit) — the 333ms defaults read sluggish next to them
-              showAnimationDuration: 220,
-              hideAnimationDuration: 150,
+              // quick fade, not the default zoom-from-thumbnail: images
+              // here are opened to inspect, many times a session — the
+              // productivity-app norm (X/Slack/Notion), not the showpiece
+              showHideAnimationType: "fade",
+              showAnimationDuration: 150,
+              hideAnimationDuration: 100,
             });
             pswp.on("destroy", () => {
               if (pswpRef.current === pswp) pswpRef.current = null;
