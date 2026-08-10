@@ -36,7 +36,7 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
-  onCloseAutoFocus, // ReviewKit addition: passthrough to Content
+  onCloseAutoFocus, // Gloss addition: passthrough to Content
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
@@ -56,7 +56,7 @@ function CommandDialog({
           only the exit fades (fast, ease-in). Top-anchored so the input row
           stays bolted while the list grows below it — no re-centering. */}
       <DialogPortal data-slot="dialog-portal">
-        {/* ReviewKit: exit animation removed — a stuck animationend left the
+        {/* Gloss: exit animation removed — a stuck animationend left the
             closed dialog mounted with focus trapped in the input, killing
             every global shortcut. High-frequency surfaces cut both ways. */}
         <DialogPrimitive.Overlay

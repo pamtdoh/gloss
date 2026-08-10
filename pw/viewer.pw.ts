@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(root, "packages/cli/dist/reviewkit.js");
+const cli = join(root, "packages/cli/dist/gloss.js");
 
 let tmp: string;
 let proc: ChildProcessWithoutNullStreams;
@@ -32,7 +32,7 @@ let context: BrowserContext;
 let page: Page;
 const stdoutLines: Record<string, unknown>[] = [];
 
-const snap2 = (...parts: string[]) => join(tmp, ".reviewkit/design-review/2", ...parts);
+const snap2 = (...parts: string[]) => join(tmp, ".gloss/design-review/2", ...parts);
 const readSidecar = (relative: string) => JSON.parse(readFileSync(snap2(relative), "utf8"));
 
 const RICH_FACT = `# The design in one picture
@@ -77,16 +77,16 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   execFileSync("bun", ["run", "build"], { cwd: root });
-  tmp = mkdtempSync(join(tmpdir(), "reviewkit-pw-"));
+  tmp = mkdtempSync(join(tmpdir(), "gloss-pw-"));
   cpSync(join(root, "e2e/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });
   cpSync(
     join(root, "e2e/generated-review/design-review"),
-    join(tmp, ".reviewkit/design-review"),
+    join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
   // snapshot 2 = iterated copy: one changed fact, one new rich fact
-  cpSync(join(tmp, ".reviewkit/design-review/1"), snap2(), { recursive: true });
+  cpSync(join(tmp, ".gloss/design-review/1"), snap2(), { recursive: true });
   appendFileSync(
     snap2("storage/whole-file-writes.md"),
     "A write-through cache was considered and rejected for v1.\n",
@@ -94,7 +94,7 @@ test.beforeAll(async ({ browser }) => {
   writeFileSync(snap2("architecture.md"), RICH_FACT);
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
   writeFileSync(
-    join(tmp, ".reviewkit/design-review/1/slugs/legacy-dedupe.md"),
+    join(tmp, ".gloss/design-review/1/slugs/legacy-dedupe.md"),
     "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in snapshot 2.\n",
   );
 

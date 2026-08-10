@@ -1,5 +1,5 @@
 // M1 end-to-end check: on a disposable copy of the fixture repo, initialize
-// ReviewKit, plant the agent-generated snapshot-1 fact tree (agents write
+// Gloss, plant the agent-generated snapshot-1 fact tree (agents write
 // files directly — planting IS the write path), then verify the review is
 // structurally sound and readable entirely from the terminal.
 import { execFileSync } from "node:child_process";
@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(repoRoot, "packages/cli/dist/reviewkit.js");
+const cli = join(repoRoot, "packages/cli/dist/gloss.js");
 
 let failures = 0;
 function check(ok: boolean, label: string): void {
@@ -36,36 +36,36 @@ function walk(dir: string): string[] {
 
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
-const tmp = mkdtempSync(join(tmpdir(), "reviewkit-e2e-"));
+const tmp = mkdtempSync(join(tmpdir(), "gloss-e2e-"));
 try {
   // 1. Disposable fixture repo.
   cpSync(join(repoRoot, "e2e/fixture"), tmp, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: tmp });
 
-  // 2. reviewkit init — fresh, then idempotent.
+  // 2. gloss init — fresh, then idempotent.
   const first = JSON.parse(
     execFileSync("node", [cli, "init"], { cwd: tmp, encoding: "utf8" }),
   );
-  check(first.ok === true && first.created === true, "init scaffolds .reviewkit/");
-  check(first.path === join(tmp, ".reviewkit"), "init reports the scaffolded path");
+  check(first.ok === true && first.created === true, "init scaffolds .gloss/");
+  check(first.path === join(tmp, ".gloss"), "init reports the scaffolded path");
   const again = JSON.parse(
     execFileSync("node", [cli, "init"], { cwd: tmp, encoding: "utf8" }),
   );
   check(again.ok === true && again.created === false, "init is idempotent");
   check(
-    readFileSync(join(tmp, ".reviewkit/.gitignore"), "utf8").includes(".local/"),
+    readFileSync(join(tmp, ".gloss/.gitignore"), "utf8").includes(".local/"),
     "reserved .local/ is git-ignored",
   );
 
   // 3. The agent writes snapshot 1 (plain file writes of the generated tree).
   cpSync(
     join(repoRoot, "e2e/generated-review/design-review"),
-    join(tmp, ".reviewkit/design-review"),
+    join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
 
   // 4. Structural conventions from DESIGN.md §6.
-  const snapshot = join(tmp, ".reviewkit/design-review/1");
+  const snapshot = join(tmp, ".gloss/design-review/1");
   const files = walk(snapshot);
   const facts = files.map((f) => relative(snapshot, f));
   check(facts.length >= 5, `snapshot 1 holds a real tree (${facts.length} files)`);
@@ -82,7 +82,7 @@ try {
   );
 
   // 5. The terminal reading path: the whole review, printed.
-  console.log("\n=== .reviewkit/design-review/1 ===");
+  console.log("\n=== .gloss/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {
     console.log(`\n--- ${relative(snapshot, f)} ---`);

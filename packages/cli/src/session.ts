@@ -94,7 +94,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     process.exit(1);
   };
 
-  const reviewDir = join(cwd, ".reviewkit", opts.review);
+  const reviewDir = join(cwd, ".gloss", opts.review);
   if (!existsSync(reviewDir)) fail(`no such review: ${opts.review}`);
   const snapshots = listSnapshots(reviewDir);
   if (snapshots.length === 0) fail(`review ${opts.review} has no snapshots`);
@@ -297,10 +297,10 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   server.listen(0, "127.0.0.1", () => {
     const port = (server.address() as { port: number }).port;
     const url = `http://127.0.0.1:${port}/auth?token=${token}`;
-    process.stderr.write(`reviewkit session: ${url}\n`);
+    process.stderr.write(`gloss session: ${url}\n`);
     if (opts.serveHost) {
       process.stderr.write(
-        `reviewkit session (proxied): https://${opts.serveHost}/auth?token=${token}\n`,
+        `gloss session (proxied): https://${opts.serveHost}/auth?token=${token}\n`,
       );
     }
     emit("session.started", { review: opts.review, snapshot: defaultSnapshot, url });

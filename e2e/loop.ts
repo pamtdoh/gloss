@@ -2,7 +2,7 @@
 // disposable fixture — human review state written the way the viewer writes
 // it, iteration as a plain snapshot copy, resolution as deletion, approval
 // as promotion to approved/, and the implement skill's precondition. Also
-// covers `reviewkit skill install` for both agents.
+// covers `gloss skill install` for both agents.
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -20,7 +20,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(repoRoot, "packages/cli/dist/reviewkit.js");
+const cli = join(repoRoot, "packages/cli/dist/gloss.js");
 
 let failures = 0;
 function check(ok: boolean, label: string): void {
@@ -40,16 +40,16 @@ function walk(dir: string): string[] {
 
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
-const tmp = mkdtempSync(join(tmpdir(), "reviewkit-loop-"));
+const tmp = mkdtempSync(join(tmpdir(), "gloss-loop-"));
 try {
   cpSync(join(repoRoot, "e2e/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });
   cpSync(
     join(repoRoot, "e2e/generated-review/design-review"),
-    join(tmp, ".reviewkit/design-review"),
+    join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
-  const review = join(tmp, ".reviewkit/design-review");
+  const review = join(tmp, ".gloss/design-review");
 
   // 1. The human reviews snapshot 1 — sidecars exactly as the viewer writes them.
   writeFileSync(
@@ -158,7 +158,7 @@ try {
       }),
     );
     check(out.ok === true && out.installed.length === 2, `skill install --agent ${agent}`);
-    for (const name of ["reviewkit-review", "reviewkit-implement"]) {
+    for (const name of ["gloss-review", "gloss-implement"]) {
       const path = join(tmp, dest, name, "SKILL.md");
       check(
         existsSync(path) && readFileSync(path, "utf8").includes(`name: ${name}`),
@@ -167,8 +167,8 @@ try {
     }
   }
   check(
-    readFileSync(join(tmp, ".claude/skills/reviewkit-review/SKILL.md"), "utf8") ===
-      readFileSync(join(tmp, ".agents/skills/reviewkit-review/SKILL.md"), "utf8"),
+    readFileSync(join(tmp, ".claude/skills/gloss-review/SKILL.md"), "utf8") ===
+      readFileSync(join(tmp, ".agents/skills/gloss-review/SKILL.md"), "utf8"),
     "claude and codex get identical skill content",
   );
 

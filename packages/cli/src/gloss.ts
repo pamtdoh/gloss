@@ -3,24 +3,24 @@ import { join, resolve } from "node:path";
 import { runSession, type SessionOptions } from "./session.js";
 import { installSkills, isSkillAgent } from "./skills.js";
 
-const USAGE = `reviewkit — files-first design review
+const USAGE = `gloss — files-first design review
 
 Usage:
-  reviewkit init          Scaffold .reviewkit/ in the current directory
-  reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
+  gloss init          Scaffold .gloss/ in the current directory
+  gloss session <review> [--snapshot <n>] [--events] [--no-browser]
                     [--serve-host <host>]
                           Serve the viewer, block until the review is
                           finished, then print a JSON summary.
                           --serve-host additionally accepts requests
                           proxied from a private hostname (e.g.
                           tailscale serve); binding stays loopback-only
-  reviewkit skill install --agent claude|codex
-                          Install the ReviewKit skills into this repo
-  reviewkit help          Show this help
+  gloss skill install --agent claude|codex
+                          Install the Gloss skills into this repo
+  gloss help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
 JSON on stderr with exit code 1. State lives in plain files under
-.reviewkit/ — agents read and write them directly.
+.gloss/ — agents read and write them directly.
 `;
 
 function emit(result: object): void {
@@ -33,7 +33,7 @@ function fail(error: string): never {
 }
 
 function init(cwd: string): void {
-  const root = resolve(cwd, ".reviewkit");
+  const root = resolve(cwd, ".gloss");
   const created = !existsSync(root);
   mkdirSync(root, { recursive: true });
   // .local/ is reserved for tool session state (DESIGN.md §6); keep it out of git.
@@ -60,7 +60,7 @@ function parseSessionArgs(args: string[]): SessionOptions {
     else if (opts.review) fail("session takes one review name");
     else opts.review = arg;
   }
-  if (!opts.review) fail("usage: reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]");
+  if (!opts.review) fail("usage: gloss session <review> [--snapshot <n>] [--events] [--no-browser]");
   return opts;
 }
 
@@ -74,7 +74,7 @@ switch (command) {
     runSession(process.cwd(), parseSessionArgs(rest));
     break;
   case "skill": {
-    const usage = "usage: reviewkit skill install --agent claude|codex";
+    const usage = "usage: gloss skill install --agent claude|codex";
     if (rest[0] !== "install") fail(usage);
     let agent = "";
     for (let i = 1; i < rest.length; i++) {

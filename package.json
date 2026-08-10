@@ -1,5 +1,5 @@
 {
-  "name": "reviewkit-workspace",
+  "name": "gloss-workspace",
   "private": true,
   "type": "module",
   "workspaces": [

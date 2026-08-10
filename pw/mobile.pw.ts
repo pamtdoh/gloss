@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const cli = join(root, "packages/cli/dist/reviewkit.js");
+const cli = join(root, "packages/cli/dist/gloss.js");
 const PHONE = { width: 390, height: 844 };
 
 let tmp: string;
@@ -25,18 +25,18 @@ let context: BrowserContext;
 let page: Page;
 
 const sidecar = (relative: string) =>
-  JSON.parse(readFileSync(join(tmp, ".reviewkit/design-review/1", relative), "utf8"));
+  JSON.parse(readFileSync(join(tmp, ".gloss/design-review/1", relative), "utf8"));
 
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async ({ browser }) => {
   execFileSync("bun", ["run", "build"], { cwd: root });
-  tmp = mkdtempSync(join(tmpdir(), "reviewkit-pwm-"));
+  tmp = mkdtempSync(join(tmpdir(), "gloss-pwm-"));
   cpSync(join(root, "e2e/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });
   cpSync(
     join(root, "e2e/generated-review/design-review"),
-    join(tmp, ".reviewkit/design-review"),
+    join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
   proc = spawn("node", [cli, "session", "design-review", "--events", "--no-browser"], {
@@ -97,7 +97,7 @@ test("the review panel opens as a bottom sheet; quick comments write and close i
   await expect
     .poll(
       () =>
-        existsSync(join(tmp, ".reviewkit/design-review/1/storage/whole-file-writes.review.json")) &&
+        existsSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json")) &&
         sidecar("storage/whole-file-writes.review.json"),
     )
     .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });

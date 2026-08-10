@@ -1,8 +1,8 @@
-# ReviewKit
+# Gloss
 
 Review the *design* of a codebase — as small, condensed, decidable facts —
 without reading source, then hand the reviewed design to a coding agent for
-implementation. Everything is plain files under `.reviewkit/` in the target
+implementation. Everything is plain files under `.gloss/` in the target
 repo: human-readable, agent-readable, git-committable. Agents read and write
 those files directly; nothing validates, hashes, or mediates them.
 
@@ -16,32 +16,32 @@ Requires [Bun](https://bun.sh) to build; the CLI itself runs on Node.
 
 ```
 bun install
-bun run build        # → packages/cli/dist/reviewkit.js
+bun run build        # → packages/cli/dist/gloss.js
 ```
 
 ## CLI
 
 ```
-reviewkit init                       # scaffold .reviewkit/ in this repo
-reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
-reviewkit skill install --agent claude|codex
+gloss init                       # scaffold .gloss/ in this repo
+gloss session <review> [--snapshot <n>] [--events] [--no-browser]
+gloss skill install --agent claude|codex
 ```
 
-`init` creates `.reviewkit/` (idempotent). `session` binds an ephemeral
+`init` creates `.gloss/` (idempotent). `session` binds an ephemeral
 loopback port, prints a one-time-token URL for the viewer, blocks until the
 reviewer clicks **Finish review** (or approves), then exits 0 and prints a
 JSON summary. `--events` additionally emits JSONL events on stdout
 (`session.started`, `decision.changed`, `question.asked`,
-`session.finished`). `skill install` writes the two ReviewKit skills into
+`session.finished`). `skill install` writes the two Gloss skills into
 `.claude/skills/` or `.agents/skills/` of the current repo. Command results
 are single-line JSON; the CLI is small because everything else is agents
 reading and writing ordinary files.
 
 ## How a review works
 
-The `reviewkit-review` skill (`skills/reviewkit-review/SKILL.md`) is the
+The `gloss-review` skill (`skills/gloss-review/SKILL.md`) is the
 entry point: from a conversation, the agent condenses the requested scope
-into one fact per Markdown file under `.reviewkit/<review>/1/`, with
+into one fact per Markdown file under `.gloss/<review>/1/`, with
 optional `_index.md` group facts — rich Markdown (GFM tables, code,
 Mermaid diagrams, in-snapshot images) encouraged where it clarifies. The
 human reviews in the viewer — a keyboard-driven review surface (press `?`
@@ -57,7 +57,7 @@ agent answers by appending to the sidecar's thread while the session runs,
 and the viewer picks it up within seconds. A fact with no sidecar means
 agreement; resolving an item deletes it; approval is the accepted snapshot
 copied to `approved/`. To iterate, the agent copies the snapshot, resolves
-what was raised, and runs another session. The `reviewkit-implement` skill
+what was raised, and runs another session. The `gloss-implement` skill
 implements from `approved/` and refuses to start without it.
 
 Reading the files in the terminal and replying in conversation — no browser

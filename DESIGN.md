@@ -1,7 +1,7 @@
-# ReviewKit
+# Gloss
 
 Status: revised 2026-08-09 after the owner's review, and again the same day
-after the owner's round-1 ReviewKit self-review (viewer scope in section 8,
+after the owner's round-1 Gloss self-review (viewer scope in section 8,
 decision set in section 6). This is the only design document. The
 review-state schema in section 6 is a real, settled convention — it's what
 the viewer and skills share — but nothing enforces it; agents follow it by
@@ -36,7 +36,7 @@ integration — it exists to be a great review surface, nothing else.
 
 - **Files are the single source of truth.** Everything — facts,
   annotations, questions, answers, approval — is plain files under
-  `.reviewkit/` in the target repo: human-readable, agent-readable,
+  `.gloss/` in the target repo: human-readable, agent-readable,
   git-committable. Git history is the audit trail.
 - **Agents read and write those files directly.** No hashing, no validators,
   no CLI mediation for state. The agent's judgment is the interface.
@@ -92,7 +92,7 @@ skill reads `approved/` and refuses to start if it doesn't exist.
 The skill's "wait for the human" step is a blocking CLI command:
 
 ```
-reviewkit session <review> [--snapshot <n>] [--events] [--no-browser]
+gloss session <review> [--snapshot <n>] [--events] [--no-browser]
 ```
 
 - Binds an ephemeral loopback port, prints/opens a one-time-token URL, and
@@ -120,9 +120,9 @@ loopback and the one-time token still gates entry.
 The CLI is small because agents work on the files directly:
 
 ```
-reviewkit init                       # scaffold .reviewkit/ in this repo
-reviewkit session <review> [...]     # serve the viewer, block, summarize
-reviewkit skill install --agent claude|codex
+gloss init                       # scaffold .gloss/ in this repo
+gloss session <review> [...]     # serve the viewer, block, summarize
+gloss skill install --agent claude|codex
 ```
 
 Everything else — creating reviews, writing facts, reading annotations,
@@ -131,12 +131,12 @@ is agents reading and writing ordinary files, guided by the skills.
 
 ## 6. File conventions and the review-state schema
 
-The layout is flat: reviews sit directly under `.reviewkit/`, snapshots are
+The layout is flat: reviews sit directly under `.gloss/`, snapshots are
 numbered directories directly under the review. Names starting with `.` at
 the top level are reserved for the tool (e.g. `.local/` for session state).
 
 ```
-.reviewkit/
+.gloss/
   checkout-flow/              # one review
     1/                        # first snapshot: the fact tree
     2/                        # a copy of 1/, then iterated
@@ -235,15 +235,15 @@ skills share, and it can evolve as building the viewer teaches us more.
 Installed into the target repo; identical content under `.claude/skills/` and
 `.agents/skills/` so codex drives the same flow. No protocol work.
 
-- **`reviewkit-review`** — the primary entry point. From conversation:
+- **`gloss-review`** — the primary entry point. From conversation:
   understand what the user wants reviewed (their prompt *is* the scope);
   inspect the repo with normal read tools; write the fact files for
   snapshot `1`; run `session` and wait; on finish, read the sidecars and
   propose next steps. To iterate: copy the snapshot, resolve sidecar items
   by editing facts, delete what's resolved, run another session. On
   approval, copy the accepted snapshot to `approved/`.
-- **`reviewkit-implement`** — require `approved/` to exist; read its facts;
-  implement them; don't modify `.reviewkit/`. If there is no `approved/`
+- **`gloss-implement`** — require `approved/` to exist; read its facts;
+  implement them; don't modify `.gloss/`. If there is no `approved/`
   directory, stop and say so.
 
 ## 8. Viewer scope (rich as a review surface, thin on integration)
@@ -270,7 +270,7 @@ progress, no agent access to its API):
   ends the session and wakes the agent, and an approve action that
   promotes the snapshot to `approved/`.
 - A local-only "seen" mark per fact with a progress readout — kept in the
-  browser (localStorage), never written into `.reviewkit/`, so files stay
+  browser (localStorage), never written into `.gloss/`, so files stay
   the only source of review truth.
 - Facts that differ from the previous snapshot carry a "changed" badge,
   computed by plain text comparison of the two standalone copies — no
@@ -307,8 +307,8 @@ session on loopback.
 v1 comprises all four milestones — mid-review Q&A is in scope for the first
 usable release, not a fast-follow.
 
-1. **M1 — Files + review generation.** `reviewkit init`, the conventions in
-   section 6, and the `reviewkit-review` skill far enough to generate a
+1. **M1 — Files + review generation.** `gloss init`, the conventions in
+   section 6, and the `gloss-review` skill far enough to generate a
    snapshot of facts an agent and human can both read. Exit: a review can be
    generated and read entirely from the terminal.
 2. **M2 — Session + viewer.** The `session` command and the thin viewer:
@@ -316,7 +316,7 @@ usable release, not a fast-follow.
    JSON summary, `session.finished` event. Exit: the blocking review loop
    works end to end by hand.
 3. **M3 — Iteration + approval + implement.** Snapshot copying, sidecar
-   resolution, promotion to `approved/`, and the `reviewkit-implement`
+   resolution, promotion to `approved/`, and the `gloss-implement`
    skill, plus `skill install` and documentation of the terminal-only path.
    Exit: the full conversational loop — review, annotate, iterate, approve,
    implement — runs on a real repo, including one real conversational run,
@@ -327,11 +327,14 @@ usable release, not a fast-follow.
 
 ## 11. Decisions (settled by the owner, 2026-08-08/09)
 
-- **Name**: `reviewkit` — folder, CLI binary, and `.reviewkit/` directory.
+- **Name**: `gloss` — folder, CLI binary, and `.gloss/` directory. Renamed
+  from `reviewkit` (owner, 2026-08-10): a gloss is a marginal note explaining
+  a text, which is what a review item is. Historical snapshots under
+  `.gloss/` keep the old name in their contents; only the directory moved.
 - **Runtime**: Bun workspace, TypeScript, Node runtime target.
 - **Files over enforcement**: agents write state directly; no integrity or
   validation machinery anywhere.
-- **Flat layout**: `.reviewkit/<review>/<n>/`; snapshots are standalone
+- **Flat layout**: `.gloss/<review>/<n>/`; snapshots are standalone
   copies; silence is agreement.
 - **Approval by promotion**: copying the accepted snapshot to `approved/`
   is the approval — no approval metadata file.
@@ -359,7 +362,7 @@ usable release, not a fast-follow.
   `comment` and `question`; a comment may carry an anchor or cover the
   whole fact. Legacy `annotation` items render as comments. The presets
   are "Quick Comment".
-- **Ink & Moss theme** (rounds 3-4): ReviewKit's own palette — warm ink
+- **Ink & Moss theme** (rounds 3-4): Gloss's own palette — warm ink
   neutrals with a muted Everforest-green accent (the owner asked for
   something more neutral than the first amber pick, inspired by terminal
   schemes), squarer radii. Amber survives as the changed/stale semantic.
@@ -370,7 +373,7 @@ usable release, not a fast-follow.
 - **Rich facts** (same): tables, code, diagrams, and in-snapshot images are
   encouraged where they clarify; the skills say so.
 - **Seen state is viewer-local** (same): progress tracking lives in the
-  browser, never in `.reviewkit/` — keyed by fact content, so it survives
+  browser, never in `.gloss/` — keyed by fact content, so it survives
   snapshot iteration and clears exactly where a fact changed.
 - **Three-way tree scope with deletion ghosts** (owner picked in-thread,
   2026-08-09, from the GitHub/GitLab file-filtering research): All |

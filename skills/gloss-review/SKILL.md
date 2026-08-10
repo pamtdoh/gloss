@@ -1,24 +1,24 @@
 ---
-name: reviewkit-review
-description: Generate a files-first design review of a repository as small, decidable facts under .reviewkit/, for a human to review. Use when the user asks for a design review of their codebase or any part of it.
+name: gloss-review
+description: Generate a files-first design review of a repository as small, decidable facts under .gloss/, for a human to review. Use when the user asks for a design review of their codebase or any part of it.
 ---
 
-# reviewkit-review
+# gloss-review
 
-ReviewKit condenses the design of a codebase into small facts — one Markdown
+Gloss condenses the design of a codebase into small facts — one Markdown
 file each — that a human can review without reading source. Everything is
-plain files under `.reviewkit/` in the target repo. You read and write those
+plain files under `.gloss/` in the target repo. You read and write those
 files directly with your normal tools; no command mediates state.
 
 ## The scope is the user's prompt
 
-Whatever the user asked to have reviewed *is* the scope. ReviewKit has no
+Whatever the user asked to have reviewed *is* the scope. Gloss has no
 scoping semantics of its own — don't invent any. If the prompt is ambiguous,
 ask, or state the scope you inferred when you present the review.
 
 ## Generate snapshot 1
 
-1. **Ensure the repo is initialized.** Run `reviewkit init` at the repo
+1. **Ensure the repo is initialized.** Run `gloss init` at the repo
    root. It is idempotent and prints a JSON result.
 
 2. **Read the code.** Inspect the repository with normal read tools until
@@ -28,7 +28,7 @@ ask, or state the scope you inferred when you present the review.
 
 3. **Create the review directory.** Pick a short kebab-case review name
    from the user's prompt (e.g. `checkout-flow`, `design-review`) and
-   create `.reviewkit/<review>/1/`. Snapshot `1` is the fact tree you are
+   create `.gloss/<review>/1/`. Snapshot `1` is the fact tree you are
    about to write.
 
 4. **Write the facts.** Shape the tree yourself — it should mirror the
@@ -63,7 +63,7 @@ ask, or state the scope you inferred when you present the review.
    - **Snapshot 1 is facts only.** Sidecar files (`*.review.json`) are the
      human's review state, written during review — never at generation.
 
-5. **Hand it to the human.** Show the tree of `.reviewkit/<review>/1/`,
+5. **Hand it to the human.** Show the tree of `.gloss/<review>/1/`,
    then run the session (below) — or, for terminal-only review, print the
    facts themselves and take decisions in conversation.
 
@@ -72,7 +72,7 @@ ask, or state the scope you inferred when you present the review.
 Run as a background task:
 
 ```
-reviewkit session <review> --events
+gloss session <review> --events
 ```
 
 It serves the viewer on loopback, prints a one-time URL on stderr (share
@@ -105,7 +105,7 @@ When the session finishes with sidecars present:
 
 1. Read every `*.review.json` in the snapshot wholesale, then propose next
    steps to the human before rewriting anything they'd rather discuss.
-2. Copy the snapshot: `cp -r .reviewkit/<review>/<n> .reviewkit/<review>/<n+1>`.
+2. Copy the snapshot: `cp -r .gloss/<review>/<n> .gloss/<review>/<n+1>`.
    Snapshots are standalone copies — no links, no shared state.
 3. In the new snapshot, resolve what was raised: rewrite, amend, split, or
    delete facts per the comments; answer or settle questions. When you
@@ -118,15 +118,15 @@ When the session finishes with sidecars present:
 ## Approval
 
 Approval is one act, at the end: the accepted snapshot copied to
-`.reviewkit/<review>/approved/`. The viewer's Approve button does this
+`.gloss/<review>/approved/`. The viewer's Approve button does this
 itself; if the human instead approves in conversation, copy it yourself:
 
 ```
-cp -r .reviewkit/<review>/<n> .reviewkit/<review>/approved
+cp -r .gloss/<review>/<n> .gloss/<review>/approved
 ```
 
 The directory existing *is* the approval — no metadata, no ceremony. The
-`reviewkit-implement` skill starts from `approved/` and refuses to run
+`gloss-implement` skill starts from `approved/` and refuses to run
 without it.
 
 ## Terminal-only review

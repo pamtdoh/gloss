@@ -1,19 +1,19 @@
 ---
-name: reviewkit-implement
-description: Implement the approved design facts of a ReviewKit review. Use when the user asks to implement a design that went through a ReviewKit review. Refuses to start unless the review has an approved/ snapshot.
+name: gloss-implement
+description: Implement the approved design facts of a Gloss review. Use when the user asks to implement a design that went through a Gloss review. Refuses to start unless the review has an approved/ snapshot.
 ---
 
-# reviewkit-implement
+# gloss-implement
 
-Turn an approved ReviewKit design into code. The contract is the
+Turn an approved Gloss design into code. The contract is the
 `approved/` snapshot: plain Markdown facts under
-`.reviewkit/<review>/approved/`, readable with no server running.
+`.gloss/<review>/approved/`, readable with no server running.
 
 ## Preconditions
 
 1. Identify the review — from the user's prompt, or by listing
-   `.reviewkit/` if there is only one candidate.
-2. **Require `.reviewkit/<review>/approved/` to exist.** The directory is
+   `.gloss/` if there is only one candidate.
+2. **Require `.gloss/<review>/approved/` to exist.** The directory is
    the approval; there is no other marker. If it does not exist, stop and
    tell the user the review has not been approved yet — offer to run or
    resume the review instead. Do not implement from a numbered snapshot.
@@ -27,7 +27,7 @@ Turn an approved ReviewKit design into code. The contract is the
    project's conventions. Where a fact is silent, use your judgment; where
    code you're writing would contradict a fact, stop and raise it with the
    human rather than quietly diverging.
-3. **Do not modify `.reviewkit/`.** The approved snapshot is the record of
+3. **Do not modify `.gloss/`.** The approved snapshot is the record of
    what was agreed, not a working document. If implementation reveals the
    design needs changing, say so — a new review iteration is the place for
    that, not an edit to `approved/`.

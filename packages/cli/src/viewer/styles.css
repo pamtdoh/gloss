@@ -11,7 +11,7 @@
    animate interaction, never data; exits ride --ease-in, faster than
    their enters; hover changes paint only. */
 :root {
-  /* Ink & Moss — ReviewKit's own palette (owner picks, rounds 3-4): warm
+  /* Ink & Moss — Gloss's own palette (owner picks, rounds 3-4): warm
      near-monochrome ink neutrals, one muted Everforest-green accent,
      squarer corners. Amber survives as the "changed/stale" semantic. */
   --bg: #fafaf9;
