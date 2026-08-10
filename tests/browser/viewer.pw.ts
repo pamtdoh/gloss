@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+const root = fileURLToPath(new URL("../..", import.meta.url));
 const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
@@ -116,10 +116,10 @@ test.describe.configure({ mode: "serial" });
 test.beforeAll(async ({ browser }) => {
   execFileSync("bun", ["run", "build"], { cwd: root });
   tmp = mkdtempSync(join(tmpdir(), "gloss-pw-"));
-  cpSync(join(root, "e2e/fixture"), tmp, { recursive: true });
+  cpSync(join(root, "tests/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });
   cpSync(
-    join(root, "e2e/generated-review/design-review"),
+    join(root, "tests/generated-review/design-review"),
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );

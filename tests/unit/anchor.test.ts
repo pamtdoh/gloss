@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { describeAnchor, resolveAnchor } from "../src/viewer/anchor.js";
+import { describeAnchor, resolveAnchor } from "../../src/viewer/anchor.js";
 
 const source =
   "The store loads the file, and the store saves the file back to disk.";

@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cli = join(repoRoot, "dist/gloss.js");
 
 let failures = 0;
@@ -39,7 +39,7 @@ execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 const tmp = mkdtempSync(join(tmpdir(), "gloss-e2e-"));
 try {
   // 1. Disposable fixture repo.
-  cpSync(join(repoRoot, "e2e/fixture"), tmp, { recursive: true });
+  cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: tmp });
 
   // 2. gloss init — fresh, then idempotent.
@@ -59,7 +59,7 @@ try {
 
   // 3. The agent writes revision 1 (plain file writes of the generated tree).
   cpSync(
-    join(repoRoot, "e2e/generated-review/design-review"),
+    join(repoRoot, "tests/generated-review/design-review"),
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );

@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cli = join(repoRoot, "dist/gloss.js");
 
 let failures = 0;
@@ -42,10 +42,10 @@ execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
 const tmp = mkdtempSync(join(tmpdir(), "gloss-loop-"));
 try {
-  cpSync(join(repoRoot, "e2e/fixture"), tmp, { recursive: true });
+  cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });
   cpSync(
-    join(repoRoot, "e2e/generated-review/design-review"),
+    join(repoRoot, "tests/generated-review/design-review"),
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
