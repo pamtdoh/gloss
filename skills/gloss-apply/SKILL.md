@@ -1,9 +1,9 @@
 ---
-name: gloss-implement
+name: gloss-apply
 description: Implement the approved design facts of a Gloss review. Use when the user asks to implement a design that went through a Gloss review. Refuses to start unless the review has an approved/ snapshot.
 ---
 
-# gloss-implement
+# gloss-apply
 
 Turn an approved Gloss design into code. The contract is the
 `approved/` snapshot: plain Markdown facts under

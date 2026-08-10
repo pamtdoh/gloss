@@ -1,9 +1,9 @@
 ---
-name: gloss-review
+name: gloss
 description: Generate a files-first design review of a repository as small, decidable facts under .gloss/, for a human to review. Use when the user asks for a design review of their codebase or any part of it.
 ---
 
-# gloss-review
+# gloss
 
 Gloss condenses the design of a codebase into small facts — one Markdown
 file each — that a human can review without reading source. Everything is
@@ -126,7 +126,7 @@ cp -r .gloss/<review>/<n> .gloss/<review>/approved
 ```
 
 The directory existing *is* the approval — no metadata, no ceremony. The
-`gloss-implement` skill starts from `approved/` and refuses to run
+`gloss-apply` skill starts from `approved/` and refuses to run
 without it.
 
 ## Terminal-only review

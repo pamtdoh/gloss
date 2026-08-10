@@ -39,7 +39,7 @@ reading and writing ordinary files.
 
 ## How a review works
 
-The `gloss-review` skill (`skills/gloss-review/SKILL.md`) is the
+The `gloss` skill (`skills/gloss/SKILL.md`) is the
 entry point: from a conversation, the agent condenses the requested scope
 into one fact per Markdown file under `.gloss/<review>/1/`, with
 optional `_index.md` group facts — rich Markdown (GFM tables, code,
@@ -57,7 +57,7 @@ agent answers by appending to the sidecar's thread while the session runs,
 and the viewer picks it up within seconds. A fact with no sidecar means
 agreement; resolving an item deletes it; approval is the accepted snapshot
 copied to `approved/`. To iterate, the agent copies the snapshot, resolves
-what was raised, and runs another session. The `gloss-implement` skill
+what was raised, and runs another session. The `gloss-apply` skill
 implements from `approved/` and refuses to start without it.
 
 Reading the files in the terminal and replying in conversation — no browser

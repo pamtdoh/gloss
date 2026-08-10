@@ -235,14 +235,14 @@ skills share, and it can evolve as building the viewer teaches us more.
 Installed into the target repo; identical content under `.claude/skills/` and
 `.agents/skills/` so codex drives the same flow. No protocol work.
 
-- **`gloss-review`** — the primary entry point. From conversation:
+- **`gloss`** — the primary entry point. From conversation:
   understand what the user wants reviewed (their prompt *is* the scope);
   inspect the repo with normal read tools; write the fact files for
   snapshot `1`; run `session` and wait; on finish, read the sidecars and
   propose next steps. To iterate: copy the snapshot, resolve sidecar items
   by editing facts, delete what's resolved, run another session. On
   approval, copy the accepted snapshot to `approved/`.
-- **`gloss-implement`** — require `approved/` to exist; read its facts;
+- **`gloss-apply`** — require `approved/` to exist; read its facts;
   implement them; don't modify `.gloss/`. If there is no `approved/`
   directory, stop and say so.
 
@@ -308,7 +308,7 @@ v1 comprises all four milestones — mid-review Q&A is in scope for the first
 usable release, not a fast-follow.
 
 1. **M1 — Files + review generation.** `gloss init`, the conventions in
-   section 6, and the `gloss-review` skill far enough to generate a
+   section 6, and the `gloss` skill far enough to generate a
    snapshot of facts an agent and human can both read. Exit: a review can be
    generated and read entirely from the terminal.
 2. **M2 — Session + viewer.** The `session` command and the thin viewer:
@@ -316,7 +316,7 @@ usable release, not a fast-follow.
    JSON summary, `session.finished` event. Exit: the blocking review loop
    works end to end by hand.
 3. **M3 — Iteration + approval + implement.** Snapshot copying, sidecar
-   resolution, promotion to `approved/`, and the `gloss-implement`
+   resolution, promotion to `approved/`, and the `gloss-apply`
    skill, plus `skill install` and documentation of the terminal-only path.
    Exit: the full conversational loop — review, annotate, iterate, approve,
    implement — runs on a real repo, including one real conversational run,

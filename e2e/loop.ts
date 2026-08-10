@@ -158,7 +158,7 @@ try {
       }),
     );
     check(out.ok === true && out.installed.length === 2, `skill install --agent ${agent}`);
-    for (const name of ["gloss-review", "gloss-implement"]) {
+    for (const name of ["gloss", "gloss-apply"]) {
       const path = join(tmp, dest, name, "SKILL.md");
       check(
         existsSync(path) && readFileSync(path, "utf8").includes(`name: ${name}`),
@@ -167,8 +167,8 @@ try {
     }
   }
   check(
-    readFileSync(join(tmp, ".claude/skills/gloss-review/SKILL.md"), "utf8") ===
-      readFileSync(join(tmp, ".agents/skills/gloss-review/SKILL.md"), "utf8"),
+    readFileSync(join(tmp, ".claude/skills/gloss/SKILL.md"), "utf8") ===
+      readFileSync(join(tmp, ".agents/skills/gloss/SKILL.md"), "utf8"),
     "claude and codex get identical skill content",
   );
 
