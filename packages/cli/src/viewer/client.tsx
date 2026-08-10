@@ -1360,6 +1360,10 @@ function App(): React.JSX.Element {
               })),
               index: Math.max(0, imgs.indexOf(target)),
               wheelToZoom: true,
+              // match the app's motion tokens (--dur-med enter, faster
+              // exit) — the 333ms defaults read sluggish next to them
+              showAnimationDuration: 220,
+              hideAnimationDuration: 150,
             });
             pswp.on("destroy", () => {
               if (pswpRef.current === pswp) pswpRef.current = null;
