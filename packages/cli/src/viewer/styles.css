@@ -1,5 +1,6 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
+@import "photoswipe/dist/photoswipe.css";
 @source "./";
 
 /* dark: class on <html>, set from prefers-color-scheme by client.tsx */

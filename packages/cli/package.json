@@ -29,6 +29,7 @@
     "mdast-util-gfm": "^3.1.0",
     "mermaid": "^11.16.1",
     "micromark-extension-gfm": "^3.0.0",
+    "photoswipe": "^5.4.4",
     "radix-ui": "1.6.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",

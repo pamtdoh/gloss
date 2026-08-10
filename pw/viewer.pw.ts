@@ -20,6 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -56,11 +57,38 @@ flowchart LR
 ![review loop](loop.png)
 `;
 
-// 1x1 png — enough for the lightbox to have something real to load
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
+// minimal solid-color PNG encoder — the images must be larger than the
+// viewport for PhotoSwipe to offer a secondary zoom level
+function png(width: number, height: number, [r, g, b]: [number, number, number]): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) crc = crcTable[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+    const wrap = Buffer.alloc(8);
+    wrap.writeUInt32BE(data.length, 0);
+    wrap.writeUInt32BE((crc ^ 0xffffffff) >>> 0, 4);
+    return Buffer.concat([wrap.subarray(0, 4), body, wrap.subarray(4)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolor rgb
+  const row = Buffer.alloc(1 + width * 3);
+  for (let x = 0; x < width; x++) row.set([r, g, b], 1 + x * 3);
+  const idat = deflateSync(Buffer.concat(Array.from({ length: height }, () => row)));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idat),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 async function selectText(needle: string): Promise<void> {
   await page.evaluate((text) => {
@@ -102,8 +130,8 @@ test.beforeAll(async ({ browser }) => {
     "A write-through cache was considered and rejected for v1.\n",
   );
   writeFileSync(snap2("architecture.md"), RICH_FACT);
-  writeFileSync(snap2("tree.png"), PNG);
-  writeFileSync(snap2("loop.png"), PNG);
+  writeFileSync(snap2("tree.png"), png(1600, 1000, [122, 140, 118]));
+  writeFileSync(snap2("loop.png"), png(1600, 1000, [70, 82, 104]));
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
   writeFileSync(
     join(tmp, ".gloss/design-review/1/slugs/legacy-dedupe.md"),
@@ -406,27 +434,26 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await expect(page.locator("#sel-pop")).toHaveCount(0);
 });
 
-test("images open a lightbox: navigate between the fact's images, zoom, close", async () => {
+test("images open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
   await page.locator('.tree .row[data-path="architecture.md"]').click();
   await page.locator('#fact-content img[alt="fact tree"]').click();
-  const box = page.locator("#lightbox");
+  const box = page.locator(".pswp");
   await expect(box).toBeVisible();
-  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "fact tree");
-  await expect(box.locator("#lightbox-count")).toHaveText("1 / 2");
+  await expect(box.locator(".pswp__counter")).toHaveText("1 / 2");
 
-  await box.locator("#lightbox-next").click();
-  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "review loop");
+  await box.locator(".pswp__button--arrow--next").click();
+  await expect(box.locator(".pswp__counter")).toHaveText("2 / 2");
+  // PhotoSwipe binds its keyboard handler at openingAnimationEnd (333ms
+  // fixed animation) — only a test presses keys that fast
+  await page.waitForTimeout(600);
   await page.keyboard.press("ArrowLeft"); // must page the lightbox, not collapse a tree dir
-  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "fact tree");
+  await expect(box.locator(".pswp__counter")).toHaveText("1 / 2");
 
-  await box.locator("#lightbox-zoom-in").click();
-  await expect(box.locator("#lightbox-zoom")).toHaveText("150%");
-  await expect(box.locator("#lightbox-image")).toHaveCSS("cursor", "grab");
-  await page.keyboard.press("0");
-  await expect(box.locator("#lightbox-zoom")).toHaveText("100%");
+  await box.locator(".pswp__button--zoom").click();
+  await expect(box).toHaveClass(/pswp--zoomed-in/);
 
   await page.keyboard.press("Escape");
-  await expect(box).toHaveCount(0);
+  await expect(page.locator(".pswp")).toHaveCount(0);
   // Escape stayed inside the lightbox — the fact page is still up
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
 });
