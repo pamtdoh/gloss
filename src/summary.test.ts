@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isEmptySidecar, summarize } from "../../src/summary.js";
+import { isEmptySidecar, summarize } from "./summary.js";
 
 describe("isEmptySidecar", () => {
   test("empty when nothing remains", () => {

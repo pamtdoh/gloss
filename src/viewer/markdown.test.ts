@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { escapeHtml, renderMarkdown } from "../../src/viewer/markdown.js";
+import { escapeHtml, renderMarkdown } from "./markdown.js";
 
 describe("escapeHtml", () => {
   test("neutralizes markup", () => {
