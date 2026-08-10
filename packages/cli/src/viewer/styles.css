@@ -356,6 +356,7 @@ body {
 .fact-body h3 { font-size: 15px; margin: 16px 0 8px; font-weight: 650; }
 .fact-body h4 { font-size: 14px; margin: 14px 0 6px; font-weight: 650; color: var(--muted); }
 .fact-body p { margin: 0 0 12px; }
+.fact-body img { max-width: 100%; cursor: zoom-in; }
 .fact-body ul, .fact-body ol { margin: 0 0 12px; padding-inline-start: 22px; }
 .fact-body a { color: var(--accent); text-underline-offset: 3px; }
 .fact-body code {

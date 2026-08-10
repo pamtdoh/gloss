@@ -5,6 +5,7 @@ import { tinykeys } from "tinykeys";
 import { DropdownMenu as DM } from "radix-ui";
 import {
   Check,
+  ChevronLeft,
   ChevronRight,
   ListTodo,
   Menu,
@@ -19,6 +20,8 @@ import {
   SquarePlus,
   Sun,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import type { Sidecar, SidecarItem } from "../summary.js";
 import { describeAnchor, resolveAnchor, type Anchor } from "./anchor.js";
@@ -219,6 +222,10 @@ function App(): React.JSX.Element {
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState<Composer | null>(null);
   const [overlay, setOverlay] = useState<"help" | "palette" | "finish" | null>(null);
+  const [lightbox, setLightbox] = useState<{
+    images: { src: string; alt: string }[];
+    index: number;
+  } | null>(null);
   const [approveOpen, setApproveOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -974,6 +981,8 @@ function App(): React.JSX.Element {
 
   const prevRevision = data ? (data.revisions.filter((s) => s < data.revision).pop() ?? null) : null;
 
+  useEffect(() => setLightbox(null), [renderedFact?.path]);
+
   const factHtml = useMemo(() => {
     if (!renderedFact || !data) return "";
     // a ghost's images live in the revision it was deleted from
@@ -1327,7 +1336,23 @@ function App(): React.JSX.Element {
           )}
         </nav>
 
-        <main className="read-col" ref={readColRef as React.RefObject<HTMLElement>}>
+        <main
+          className="read-col"
+          ref={readColRef as React.RefObject<HTMLElement>}
+          onClick={(e) => {
+            // delegated: fact HTML is innerHTML-injected, so images can't
+            // carry their own React handlers
+            const target = e.target as HTMLElement;
+            if (!(target instanceof HTMLImageElement)) return;
+            const body = target.closest(".fact-body");
+            if (!body) return;
+            const imgs = Array.from(body.querySelectorAll("img"));
+            setLightbox({
+              images: imgs.map((el) => ({ src: el.currentSrc || el.src, alt: el.alt })),
+              index: Math.max(0, imgs.indexOf(target)),
+            });
+          }}
+        >
           <div className="read-inner">
             {effectiveCursor?.kind === "dir" ? (
               <DirView
@@ -1597,6 +1622,15 @@ function App(): React.JSX.Element {
         </AlertDialogContent>
       </AlertDialog>
 
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onNavigate={(index) => setLightbox((l) => (l ? { ...l, index } : l))}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+
       {toast && (
         <div
           className="toast"
@@ -1707,6 +1741,202 @@ function SelBubble(props: {
 // Markdown rendered behind a stable {__html} object — see factHtmlProp:
 // React 19 diffs dangerouslySetInnerHTML by object identity, so an inline
 // object re-writes the DOM (and re-parses the markdown) on every render.
+// ---------- image lightbox ----------
+// A plain fixed overlay, deliberately not a radix Dialog (exit animations
+// kept closed overlays mounted and swallowing keys — see the stack notes).
+// Keys bind window-capture so they win over the app's tinykeys handlers,
+// and stopPropagation keeps Escape from also clearing tree state.
+const ZOOM_STEP = 1.5;
+const ZOOM_WHEEL_STEP = 1.2;
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 8;
+
+function ImageLightbox(props: {
+  images: { src: string; alt: string }[];
+  index: number;
+  onNavigate: (index: number) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ id: number; x: number; y: number; panX: number; panY: number } | null>(
+    null,
+  );
+
+  const image = props.images[props.index]!;
+  const many = props.images.length > 1;
+  const reset = (): void => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+  const zoomBy = (factor: number): void =>
+    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * factor)));
+  const nav = (delta: number): void => {
+    if (many) props.onNavigate((props.index + delta + props.images.length) % props.images.length);
+  };
+
+  // effect-based handlers read through this ref, never a stale closure
+  const actions = useRef({ nav, zoomBy, reset, onClose: props.onClose });
+  actions.current = { nav, zoomBy, reset, onClose: props.onClose };
+
+  useEffect(reset, [props.index]);
+  // focus lives inside [role=dialog] so the app's single-key shortcuts pause
+  useEffect(() => overlayRef.current?.focus(), []);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const a = actions.current;
+      const run: Record<string, () => void> = {
+        Escape: a.onClose,
+        ArrowLeft: () => a.nav(-1),
+        ArrowRight: () => a.nav(1),
+        "+": () => a.zoomBy(ZOOM_STEP),
+        "=": () => a.zoomBy(ZOOM_STEP),
+        "-": () => a.zoomBy(1 / ZOOM_STEP),
+        "0": a.reset,
+      };
+      const handler = run[event.key];
+      if (!handler) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handler();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
+  // React registers wheel listeners passively; zooming must preventDefault
+  // the page scroll, so bind directly.
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      actions.current.zoomBy(event.deltaY < 0 ? ZOOM_WHEEL_STEP : 1 / ZOOM_WHEEL_STEP);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const endDrag = (e: React.PointerEvent): void => {
+    if (drag.current?.id === e.pointerId) drag.current = null;
+  };
+  const glass =
+    "rounded-full bg-black/60 p-2 text-white hover:bg-white/20 focus-visible:outline focus-visible:outline-white/60";
+
+  return (
+    <div
+      id="lightbox"
+      ref={overlayRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={image.alt || "Image viewer"}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 outline-none"
+      onClick={props.onClose}
+    >
+      <img
+        id="lightbox-image"
+        src={image.src}
+        alt={image.alt}
+        draggable={false}
+        className="max-h-[92vh] max-w-[94vw] select-none"
+        style={{
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          cursor: zoom > 1 ? "grab" : "zoom-in",
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={() => (zoom > 1 ? reset() : setZoom(2.5))}
+        onPointerDown={(e) => {
+          if (zoom <= 1) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (d && d.id === e.pointerId)
+            setPan({ x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) });
+        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      />
+      <button
+        id="lightbox-close"
+        className={`absolute right-3 top-3 ${glass}`}
+        aria-label="Close image viewer"
+        onClick={(e) => {
+          e.stopPropagation();
+          props.onClose();
+        }}
+      >
+        <X className="lucide size-5" size={20} />
+      </button>
+      {many && (
+        <>
+          <button
+            id="lightbox-prev"
+            className={`absolute left-3 top-1/2 -translate-y-1/2 ${glass}`}
+            aria-label="Previous image"
+            onClick={(e) => {
+              e.stopPropagation();
+              nav(-1);
+            }}
+          >
+            <ChevronLeft className="lucide size-6" size={24} />
+          </button>
+          <button
+            id="lightbox-next"
+            className={`absolute right-3 top-1/2 -translate-y-1/2 ${glass}`}
+            aria-label="Next image"
+            onClick={(e) => {
+              e.stopPropagation();
+              nav(1);
+            }}
+          >
+            <ChevronRight className="lucide size-6" size={24} />
+          </button>
+        </>
+      )}
+      <div
+        className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-white"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          id="lightbox-zoom-out"
+          className="rounded-full p-1.5 hover:bg-white/20"
+          aria-label="Zoom out"
+          onClick={() => zoomBy(1 / ZOOM_STEP)}
+        >
+          <ZoomOut className="lucide size-4.5" size={18} />
+        </button>
+        <button
+          id="lightbox-zoom"
+          className="min-w-12 rounded-full px-1 py-0.5 text-center text-xs tabular-nums hover:bg-white/20"
+          aria-label="Reset zoom"
+          title="Reset zoom (0)"
+          onClick={reset}
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          id="lightbox-zoom-in"
+          className="rounded-full p-1.5 hover:bg-white/20"
+          aria-label="Zoom in"
+          onClick={() => zoomBy(ZOOM_STEP)}
+        >
+          <ZoomIn className="lucide size-4.5" size={18} />
+        </button>
+        {many && (
+          <span id="lightbox-count" className="mx-1.5 text-xs text-white/75 tabular-nums">
+            {props.index + 1} / {props.images.length}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Md(props: { text: string; block?: boolean; className?: string }): React.JSX.Element {
   const html = useMemo(() => ({ __html: renderMarkdown(props.text) }), [props.text]);
   return props.block ? (

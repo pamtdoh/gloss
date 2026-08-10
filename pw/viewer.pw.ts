@@ -50,7 +50,17 @@ const RICH_FACT = `# The design in one picture
 flowchart LR
   A[facts] --> B[sidecars] --> C[approved/]
 \`\`\`
+
+![fact tree](tree.png)
+
+![review loop](loop.png)
 `;
+
+// 1x1 png — enough for the lightbox to have something real to load
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 async function selectText(needle: string): Promise<void> {
   await page.evaluate((text) => {
@@ -92,6 +102,8 @@ test.beforeAll(async ({ browser }) => {
     "A write-through cache was considered and rejected for v1.\n",
   );
   writeFileSync(snap2("architecture.md"), RICH_FACT);
+  writeFileSync(snap2("tree.png"), PNG);
+  writeFileSync(snap2("loop.png"), PNG);
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
   writeFileSync(
     join(tmp, ".gloss/design-review/1/slugs/legacy-dedupe.md"),
@@ -392,6 +404,31 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await expect(page.locator("#sel-pop")).toHaveAttribute("data-quote", `"type": "comment"`);
   await page.keyboard.press("Escape");
   await expect(page.locator("#sel-pop")).toHaveCount(0);
+});
+
+test("images open a lightbox: navigate between the fact's images, zoom, close", async () => {
+  await page.locator('.tree .row[data-path="architecture.md"]').click();
+  await page.locator('#fact-content img[alt="fact tree"]').click();
+  const box = page.locator("#lightbox");
+  await expect(box).toBeVisible();
+  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "fact tree");
+  await expect(box.locator("#lightbox-count")).toHaveText("1 / 2");
+
+  await box.locator("#lightbox-next").click();
+  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "review loop");
+  await page.keyboard.press("ArrowLeft"); // must page the lightbox, not collapse a tree dir
+  await expect(box.locator("#lightbox-image")).toHaveAttribute("alt", "fact tree");
+
+  await box.locator("#lightbox-zoom-in").click();
+  await expect(box.locator("#lightbox-zoom")).toHaveText("150%");
+  await expect(box.locator("#lightbox-image")).toHaveCSS("cursor", "grab");
+  await page.keyboard.press("0");
+  await expect(box.locator("#lightbox-zoom")).toHaveText("100%");
+
+  await page.keyboard.press("Escape");
+  await expect(box).toHaveCount(0);
+  // Escape stayed inside the lightbox — the fact page is still up
+  await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
 });
 
 test("tree filter narrows the tree; palette search jumps", async () => {
