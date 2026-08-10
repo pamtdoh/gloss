@@ -13,16 +13,10 @@ the files.
 
 ## Install
 
-Requires [Bun](https://bun.sh) to build; the CLI itself runs on Node.
-
 ```sh
-bun install && bun run build
-bun link                                     # `gloss` on PATH
+npm install -g gloss-review                  # `gloss` on PATH (Node 18+)
 gloss skill install --agent claude --global  # agent skills (claude | codex)
 ```
-
-Re-run `bun run build` after pulling changes; `skill install` copies the
-skill files, so re-run it after changing them.
 
 ## Use
 
@@ -49,8 +43,14 @@ layout, the sidecar schema, and the session protocol.
 
 ## Develop
 
+Building from source requires [Bun](https://bun.sh):
+
 ```sh
-bun test                # unit tests
-bunx playwright test    # drives a real session in chromium, incl. visual baselines
-bun run e2e             # scripted end-to-end on a disposable fixture repo
+bun install && bun run build     # → dist/gloss.js (self-contained)
+bun link                         # use your working copy as `gloss`
+bun test                         # unit tests
+bunx playwright test             # drives a real session in chromium, incl. visual baselines
+bun run e2e                      # scripted end-to-end on a disposable fixture repo
 ```
+
+MIT licensed.
