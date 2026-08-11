@@ -16,10 +16,7 @@ export interface ShortcutDef {
 
 // tinykeys resolves $mod to Meta on Apple platforms and Control everywhere
 // else; every printed label must say the key the user actually has.
-export const MOD =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
-    ? "⌘"
-    : "Ctrl+";
+export const MOD = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
 export const SHORTCUTS: ShortcutDef[] = [
   { id: "next", keys: ["j"], shown: "j", section: "Navigate", label: "Next fact", allowRepeat: true },

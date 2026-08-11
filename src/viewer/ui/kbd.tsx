@@ -10,9 +10,9 @@
  *
  * Deliberately NOT a client component: it holds no state and no handler, so it
  * renders inside server components with no island. The one thing that IS
- * platform-dependent — whether the modifier prints as `Ctrl` or `⌘` — stays at
- * the call site, because resolving it needs an effect and this file should not
- * force one on every consumer.
+ * platform-dependent — whether the modifier prints as `Ctrl` or `⌘` — is the
+ * `MOD` constant in `shortcuts.ts`, the module that owns display forms; call
+ * sites interpolate it rather than hardcoding a glyph.
  *
  * `.stat` (the instrument mono) rather than the sans: a key cap is a token you
  * press, not a word you read. Note the shipped JetBrains Mono subset is the
