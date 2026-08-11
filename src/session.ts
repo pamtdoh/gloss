@@ -8,10 +8,10 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { emitLine, failJson, toProtocolPath } from "./protocol.js";
 import { type Sidecar, isEmptySidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
@@ -41,10 +41,6 @@ export interface SessionOptions {
   serveHost?: string;
 }
 
-function jsonLine(value: unknown): string {
-  return JSON.stringify(value) + "\n";
-}
-
 function listRevisions(reviewDir: string): number[] {
   return readdirSync(reviewDir)
     .filter((name) => /^\d+$/.test(name) && statSync(join(reviewDir, name)).isDirectory())
@@ -52,18 +48,14 @@ function listRevisions(reviewDir: string): number[] {
     .sort((a, b) => a - b);
 }
 
-// Fact paths are protocol strings shared with the viewer and sidecar API:
-// always "/"-separated, even on Windows where relative() yields "\".
-function toFactPath(nativeRelative: string): string {
-  return nativeRelative.split(sep).join("/");
-}
-
-// Facts and sidecars are written by agents, possibly on Windows: strip a
-// UTF-8 BOM and normalize CRLF so the offsets the viewer stamps into
-// sidecar anchors index the same string the browser's HTML parser yields
-// (its input preprocessing folds CRLF to LF).
-function normalizeText(raw: string): string {
-  return raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+// Every text read from the review tree flows through here. Facts and
+// sidecars are written by agents, possibly on Windows: strip a UTF-8 BOM
+// (PowerShell's default, breaks JSON.parse and CommonMark headings) and
+// normalize CRLF so the offsets the viewer stamps into sidecar anchors
+// index the same string the browser's HTML parser yields (its input
+// preprocessing folds CRLF to LF).
+function readText(path: string): string {
+  return readFileSync(path, "utf8").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
 }
 
 // resolve() must land strictly inside base. startsWith(base + sep) is not
@@ -79,7 +71,7 @@ function walkFacts(revisionDir: string, dir = revisionDir): string[] {
   for (const name of readdirSync(dir).sort()) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) facts.push(...walkFacts(revisionDir, path));
-    else if (name.endsWith(".md")) facts.push(toFactPath(relative(revisionDir, path)));
+    else if (name.endsWith(".md")) facts.push(toProtocolPath(relative(revisionDir, path)));
   }
   return facts.sort();
 }
@@ -92,7 +84,7 @@ function readSidecar(revisionDir: string, factPath: string): Sidecar | undefined
   const path = sidecarPath(revisionDir, factPath);
   if (!existsSync(path)) return undefined;
   try {
-    return JSON.parse(normalizeText(readFileSync(path, "utf8")));
+    return JSON.parse(readText(path));
   } catch {
     return undefined; // unreadable sidecar = treat as absent; never police files
   }
@@ -111,19 +103,12 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 export function runSession(cwd: string, opts: SessionOptions): void {
-  const fail = (error: string): never => {
-    // writeSync: stdio is async for pipes on Windows and process.exit()
-    // would drop the unflushed line.
-    writeSync(2, jsonLine({ ok: false, error }));
-    process.exit(1);
-  };
-
   const reviewDir = join(cwd, ".gloss", opts.review);
-  if (!existsSync(reviewDir)) fail(`no such review: ${opts.review}`);
+  if (!existsSync(reviewDir)) failJson(`no such review: ${opts.review}`);
   const revisions = listRevisions(reviewDir);
-  if (revisions.length === 0) fail(`review ${opts.review} has no revisions`);
+  if (revisions.length === 0) failJson(`review ${opts.review} has no revisions`);
   const defaultRevision = opts.revision ?? revisions[revisions.length - 1]!;
-  if (!revisions.includes(defaultRevision)) fail(`no such revision: ${defaultRevision}`);
+  if (!revisions.includes(defaultRevision)) failJson(`no such revision: ${defaultRevision}`);
 
   const revisionDir = (n: number) => join(reviewDir, String(n));
   const token = randomBytes(32).toString("hex");
@@ -132,7 +117,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   let finishing = false;
 
   const emit = (event: string, data: Record<string, unknown>): void => {
-    process.stdout.write(jsonLine({ event, ...data }));
+    emitLine({ event, ...data });
   };
 
   const computeSummary = (revision: number) => {
@@ -153,9 +138,8 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     res.end(JSON.stringify(payload), () => {
       const summary = computeSummary(revision);
       emit("session.finished", { summary });
-      // Exit only once the summary line has flushed: stdout pipes are
-      // async on Windows and process.exit() would truncate the JSONL.
-      process.stdout.write(jsonLine(summary), () => process.exit(0));
+      emitLine(summary);
+      process.exit(0);
     });
   };
 
@@ -267,7 +251,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         const dir = revisionDir(revision);
         const facts = walkFacts(dir).map((factPath) => ({
           path: factPath,
-          content: normalizeText(readFileSync(join(dir, factPath), "utf8")),
+          content: readText(join(dir, factPath)),
           sidecar: readSidecar(dir, factPath) ?? null,
         }));
         return sendJson(200, { review: opts.review, revision, revisions, facts });
@@ -281,7 +265,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         if (escapesDir(dir, factAbs) || !factAbs.endsWith(".md") || !existsSync(factAbs)) {
           return sendJson(404, { ok: false, error: "no such fact" });
         }
-        const factPath = toFactPath(relative(dir, factAbs));
+        const factPath = toProtocolPath(relative(dir, factAbs));
         const previous = readSidecar(dir, factPath);
         const sidecar: Sidecar = body.sidecar ?? {};
         const target = sidecarPath(dir, factPath);

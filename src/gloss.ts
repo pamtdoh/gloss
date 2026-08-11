@@ -1,5 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync, writeSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { emitLine, failJson as fail } from "./protocol.js";
 import { runSession, type SessionOptions } from "./session.js";
 import { installSkills, isSkillAgent } from "./skills.js";
 
@@ -26,17 +27,6 @@ JSON on stderr with exit code 1. State lives in plain files under
 .gloss/ — agents read and write them directly.
 `;
 
-function emit(result: object): void {
-  process.stdout.write(JSON.stringify(result) + "\n");
-}
-
-function fail(error: string): never {
-  // writeSync: stdio is async for pipes on Windows and process.exit()
-  // would drop the unflushed line.
-  writeSync(2, JSON.stringify({ ok: false, error }) + "\n");
-  process.exit(1);
-}
-
 function init(cwd: string): void {
   const root = resolve(cwd, ".gloss");
   const created = !existsSync(root);
@@ -44,7 +34,7 @@ function init(cwd: string): void {
   // .local/ is reserved for tool session state (ARCHITECTURE.md); keep it out of git.
   const gitignore = join(root, ".gitignore");
   if (!existsSync(gitignore)) writeFileSync(gitignore, ".local/\n");
-  emit({ ok: true, path: root, created });
+  emitLine({ ok: true, path: root, created });
 }
 
 function parseSessionArgs(args: string[]): SessionOptions {
@@ -88,7 +78,7 @@ switch (command) {
       else fail(usage);
     }
     if (!isSkillAgent(agent)) fail(usage);
-    emit({ ok: true, agent, global, installed: installSkills(process.cwd(), agent, global) });
+    emitLine({ ok: true, agent, global, installed: installSkills(process.cwd(), agent, global) });
     break;
   }
   case undefined:

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
+import { toProtocolPath } from "./protocol.js";
 // Skill content is embedded at build time; installing is just writing files.
 import reviewSkill from "../skills/gloss/SKILL.md" with { type: "text" };
 import implementSkill from "../skills/gloss-apply/SKILL.md" with { type: "text" };
@@ -30,10 +31,8 @@ export function installSkills(cwd: string, agent: SkillAgent, global = false): s
     mkdirSync(dir, { recursive: true });
     const path = join(dir, "SKILL.md");
     writeFileSync(path, content);
-    // Relative paths in the JSON result are protocol strings like fact
-    // paths: "/"-separated on every platform. Absolute --global paths
-    // stay native.
-    installed.push(global ? path : relative(cwd, path).split(sep).join("/"));
+    // Absolute --global paths stay native; they name a real location.
+    installed.push(global ? path : toProtocolPath(relative(cwd, path)));
   }
   return installed;
 }
