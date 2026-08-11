@@ -274,12 +274,23 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         } else {
           writeFileSync(target, JSON.stringify(sidecar, null, 2) + "\n");
         }
-        const knownQuestions = new Set(
-          (previous?.items ?? []).filter((i) => i.type === "question").map((i) => i.id),
+        const knownThreads = new Map(
+          (previous?.items ?? [])
+            .filter((i) => i.type === "question")
+            .map((i) => [i.id, i.thread?.length ?? 0]),
         );
         for (const item of sidecar.items ?? []) {
-          if (item.type === "question" && !knownQuestions.has(item.id)) {
-            emit("question.asked", { path: factPath, id: item.id, text: item.thread?.[0]?.text ?? "" });
+          if (item.type !== "question") continue;
+          const thread = item.thread ?? [];
+          if (!knownThreads.has(item.id)) {
+            emit("question.asked", { path: factPath, id: item.id, text: thread[0]?.text ?? "" });
+            continue;
+          }
+          // a human turn appended to a known thread is a reply the agent
+          // must hear about — edits in place change no length and stay silent
+          const last = thread[thread.length - 1];
+          if (thread.length > (knownThreads.get(item.id) ?? 0) && last?.who === "human") {
+            emit("question.replied", { path: factPath, id: item.id, text: last.text ?? "" });
           }
         }
         return sendJson(200, { ok: true });

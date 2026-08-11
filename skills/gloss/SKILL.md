@@ -81,8 +81,9 @@ gloss session <review>
 It serves the viewer on loopback and blocks until the human clicks
 **Finish review** or approves. Stdout is JSONL, one event per line:
 `session.started` (includes the one-time viewer `url` — share it if the
-human's browser didn't open), `question.asked`, `session.finished`, then
-a final JSON summary (comment count, open questions, approval status).
+human's browser didn't open), `question.asked`, `question.replied` (the
+human replied in an existing thread), `session.finished`, then a final
+JSON summary (comment count, open questions, approval status).
 
 One listener covers everything — in Claude Code, run the command via the
 Monitor tool with `persistent: true` (reviews outlast default timeouts).
@@ -91,8 +92,8 @@ signal. Don't add a second watcher or a poll loop on top.
 
 ## Answer questions live, while the session runs
 
-When a `question.asked` event arrives, answer without waiting for the
-review to finish:
+When a `question.asked` or `question.replied` event arrives, answer
+without waiting for the review to finish:
 
 1. Read the fact's `<fact>.review.json`, find the question item by `id`.
 2. Append `{ "who": "agent", "text": "…" }` to its `thread` and write the

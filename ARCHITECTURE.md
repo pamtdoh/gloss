@@ -87,6 +87,7 @@ All review state for a fact lives in a sidecar next to it —
 one-time-token URL, serves the viewer over the revision's files, and
 blocks until the reviewer clicks Finish review (or approves). Stdout is
 JSONL events — `session.started` (with the URL), `question.asked`,
+`question.replied` (a human turn appended to an existing thread),
 `session.finished` — followed by a final JSON summary line; the process
 exiting is the completion signal, so one stdout monitor covers live Q&A
 and completion. Auth is one-shot: single token, single session cookie,
