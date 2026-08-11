@@ -32,9 +32,9 @@ ask, or state the scope you inferred when you present the review.
    about to write.
 
 4. **Write the facts.** Shape the tree yourself — it should mirror the
-   design's shape. How to *write* each fact — the cold-reader rule,
-   story shape, rationale callouts, tables and diagrams, screenshots —
-   is the contract in
+   design's shape. How to *write* each fact — what-first openings, the
+   six genres, elaboration only as answers to questions the reviewer
+   would ask — is the contract in
    [references/writing-facts.md](references/writing-facts.md),
    installed next to this file. Read it before the first fact; its core
    is that **the reviewer never opens the code**: everything needed to
@@ -53,8 +53,8 @@ ask, or state the scope you inferred when you present the review.
      doesn't matter.
    - **Group related facts in directories.** When a group forms a coherent
      whole, add an `_index.md` — a fact about the group itself that also
-     sets the scene for its children, so no child fact starts from zero.
-     Skip it where it would be boilerplate.
+     carries the group's shared context, so no child fact needs a
+     preamble. Skip it where it would be boilerplate.
    - **State the design; don't review it yourself.** Facts describe what
      the design does, including its sharp edges, in neutral terms. The
      verdict belongs to the human.
@@ -62,10 +62,12 @@ ask, or state the scope you inferred when you present the review.
      human's review state, written during review — never at generation.
 
 5. **Re-read, then hand it to the human.** Re-read the whole revision
-   in tree order, as the reviewer will (the contract lists what only
-   shows at that altitude). Then show the tree of `.gloss/<review>/1/`
-   and run the session (below) — or, for terminal-only review, print
-   the facts themselves and take decisions in conversation.
+   in tree order, as the reviewer will, and fix what only shows at
+   that altitude: two facts that contradict each other, a term used
+   before the fact that introduces it, a load-bearing fact buried
+   last. Then show the tree of `.gloss/<review>/1/` and run the
+   session (below) — or, for terminal-only review, print the facts
+   themselves and take decisions in conversation.
 
 ## Run the session under one monitor
 
