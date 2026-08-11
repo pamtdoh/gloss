@@ -105,6 +105,9 @@ private proxy hostname).
 Both are plain instruction files installed by `gloss skill install`
 (identically for claude and codex); the CLI stays small because
 everything except the session is agents reading and writing files.
+The gloss skill ships with one reference file,
+`references/writing-facts.md` — the writing contract for fact files,
+which SKILL.md tells the agent to read before writing facts.
 
 ## Deliberately not built
 

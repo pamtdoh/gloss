@@ -158,7 +158,7 @@ try {
         encoding: "utf8",
       }),
     );
-    check(out.ok === true && out.installed.length === 2, `skill install --agent ${agent}`);
+    check(out.ok === true && out.installed.length === 3, `skill install --agent ${agent}`);
     for (const name of ["gloss", "gloss-apply"]) {
       const path = join(tmp, dest, name, "SKILL.md");
       check(
@@ -166,6 +166,10 @@ try {
         `${dest}/${name}/SKILL.md installed`,
       );
     }
+    check(
+      existsSync(join(tmp, dest, "gloss/references/writing-facts.md")),
+      `${dest}/gloss/references/writing-facts.md installed`,
+    );
   }
   check(
     readFileSync(join(tmp, ".claude/skills/gloss/SKILL.md"), "utf8") ===
