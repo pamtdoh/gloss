@@ -49,6 +49,9 @@ function offsets(node: Node): string {
 }
 
 function resolveAsset(opts: RenderOptions, url: string): string | null {
+  // Agents authoring facts on Windows may emit backslash image paths;
+  // fold them before the "/" split so ".." handling still applies.
+  url = url.replace(/\\/g, "/");
   if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(url) || url.startsWith("/")) return null;
   const parts: string[] = [];
   for (const seg of `${opts.factDir ?? ""}/${url}`.split("/")) {

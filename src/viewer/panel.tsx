@@ -6,6 +6,7 @@ import type { SidecarItem } from "../summary.js";
 import { QUICK_COMMENTS, type Composer, type QuickComment } from "./common.js";
 import { Md } from "./components.js";
 import { answeredByAgent, type Fact } from "./model.js";
+import { MOD } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
 import { Kbd } from "./ui/kbd.js";
 import { Textarea } from "./ui/textarea.js";
@@ -152,7 +153,7 @@ export function Panel(props: {
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 quick comment · v seen · c/q raise · <Kbd>?</Kbd> help · <Kbd>⌘K</Kbd> search
+        j/k move · 1–3 quick comment · v seen · c/q raise · <Kbd>?</Kbd> help · <Kbd>{MOD}K</Kbd> search
       </p>
     </>
   );
@@ -209,7 +210,7 @@ export function ComposerBox(props: {
         <Button type="button" variant="outline" size="sm" id="item-cancel" onClick={props.onCancel}>
           Cancel
         </Button>
-        <span className="text-muted-foreground ml-auto text-[11px]">⌘↵ save · esc cancel</span>
+        <span className="text-muted-foreground ml-auto text-[11px]">{MOD}↵ save · esc cancel</span>
       </div>
     </form>
   );

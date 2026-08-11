@@ -1,0 +1,4 @@
+# Checkout with LF everywhere: fact fixtures and the embedded SKILL.md
+# text are byte-compared and offset-indexed at runtime, so CRLF working
+# trees (git-for-windows autocrlf default) must not leak into them.
+* text=auto eol=lf

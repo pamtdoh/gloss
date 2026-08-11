@@ -8,9 +8,10 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type Sidecar, isEmptySidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
@@ -51,12 +52,34 @@ function listRevisions(reviewDir: string): number[] {
     .sort((a, b) => a - b);
 }
 
+// Fact paths are protocol strings shared with the viewer and sidecar API:
+// always "/"-separated, even on Windows where relative() yields "\".
+function toFactPath(nativeRelative: string): string {
+  return nativeRelative.split(sep).join("/");
+}
+
+// Facts and sidecars are written by agents, possibly on Windows: strip a
+// UTF-8 BOM and normalize CRLF so the offsets the viewer stamps into
+// sidecar anchors index the same string the browser's HTML parser yields
+// (its input preprocessing folds CRLF to LF).
+function normalizeText(raw: string): string {
+  return raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+// resolve() must land strictly inside base. startsWith(base + sep) is not
+// enough on Windows, where trailing dots/spaces in a segment (".. ") survive
+// resolve() but are trimmed by the filesystem.
+function escapesDir(baseDir: string, abs: string): boolean {
+  const rel = relative(baseDir, abs);
+  return rel === "" || rel.startsWith("..") || isAbsolute(rel);
+}
+
 function walkFacts(revisionDir: string, dir = revisionDir): string[] {
   const facts: string[] = [];
   for (const name of readdirSync(dir).sort()) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) facts.push(...walkFacts(revisionDir, path));
-    else if (name.endsWith(".md")) facts.push(relative(revisionDir, path));
+    else if (name.endsWith(".md")) facts.push(toFactPath(relative(revisionDir, path)));
   }
   return facts.sort();
 }
@@ -69,7 +92,7 @@ function readSidecar(revisionDir: string, factPath: string): Sidecar | undefined
   const path = sidecarPath(revisionDir, factPath);
   if (!existsSync(path)) return undefined;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    return JSON.parse(normalizeText(readFileSync(path, "utf8")));
   } catch {
     return undefined; // unreadable sidecar = treat as absent; never police files
   }
@@ -89,7 +112,9 @@ async function readBody(req: IncomingMessage): Promise<string> {
 
 export function runSession(cwd: string, opts: SessionOptions): void {
   const fail = (error: string): never => {
-    process.stderr.write(jsonLine({ ok: false, error }));
+    // writeSync: stdio is async for pipes on Windows and process.exit()
+    // would drop the unflushed line.
+    writeSync(2, jsonLine({ ok: false, error }));
     process.exit(1);
   };
 
@@ -128,8 +153,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     res.end(JSON.stringify(payload), () => {
       const summary = computeSummary(revision);
       emit("session.finished", { summary });
-      process.stdout.write(jsonLine(summary));
-      process.exit(0);
+      // Exit only once the summary line has flushed: stdout pipes are
+      // async on Windows and process.exit() would truncate the JSONL.
+      process.stdout.write(jsonLine(summary), () => process.exit(0));
     });
   };
 
@@ -229,7 +255,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         if (!revisions.includes(revision) || !type) return sendJson(404, { ok: false, error: "not found" });
         const dir = revisionDir(revision);
         const abs = resolve(dir, restPath.map(decodeURIComponent).join("/"));
-        if (!abs.startsWith(dir + sep) || !existsSync(abs)) return sendJson(404, { ok: false, error: "not found" });
+        if (escapesDir(dir, abs) || !existsSync(abs)) return sendJson(404, { ok: false, error: "not found" });
         res.writeHead(200, { "content-type": type });
         return res.end(readFileSync(abs));
       }
@@ -241,7 +267,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         const dir = revisionDir(revision);
         const facts = walkFacts(dir).map((factPath) => ({
           path: factPath,
-          content: readFileSync(join(dir, factPath), "utf8"),
+          content: normalizeText(readFileSync(join(dir, factPath), "utf8")),
           sidecar: readSidecar(dir, factPath) ?? null,
         }));
         return sendJson(200, { review: opts.review, revision, revisions, facts });
@@ -252,10 +278,10 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
         const dir = revisionDir(revision);
         const factAbs = resolve(dir, String(body.path));
-        if (!factAbs.startsWith(dir + sep) || !factAbs.endsWith(".md") || !existsSync(factAbs)) {
+        if (escapesDir(dir, factAbs) || !factAbs.endsWith(".md") || !existsSync(factAbs)) {
           return sendJson(404, { ok: false, error: "no such fact" });
         }
-        const factPath = relative(dir, factAbs);
+        const factPath = toFactPath(relative(dir, factAbs));
         const previous = readSidecar(dir, factPath);
         const sidecar: Sidecar = body.sidecar ?? {};
         const target = sidecarPath(dir, factPath);
@@ -305,9 +331,18 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     emit("session.started", { review: opts.review, revision: defaultRevision, url });
     if (!opts.noBrowser) {
       try {
-        spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {
+        // "start" needs cmd; the empty arg is its window-title slot. The URL
+        // is loopback + hex token, so it contains no cmd metacharacters.
+        const [opener, args]: [string, string[]] =
+          process.platform === "darwin"
+            ? ["open", [url]]
+            : process.platform === "win32"
+              ? ["cmd", ["/c", "start", "", url]]
+              : ["xdg-open", [url]];
+        spawn(opener, args, {
           stdio: "ignore",
           detached: true,
+          windowsHide: true,
         }).unref();
       } catch {
         // no opener available; the printed URL is enough

@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import {
   cpSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -13,7 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cli = join(repoRoot, "dist/gloss.js");
@@ -36,7 +37,7 @@ function walk(dir: string): string[] {
 
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
-const tmp = mkdtempSync(join(tmpdir(), "gloss-e2e-"));
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), "gloss-e2e-")));
 try {
   // 1. Disposable fixture repo.
   cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
@@ -67,7 +68,7 @@ try {
   // 4. Structural conventions from ARCHITECTURE.md.
   const revision = join(tmp, ".gloss/design-review/1");
   const files = walk(revision);
-  const facts = files.map((f) => relative(revision, f));
+  const facts = files.map((f) => relative(revision, f).split(sep).join("/"));
   check(facts.length >= 5, `revision 1 holds a real tree (${facts.length} files)`);
   check(facts.every((f) => f.endsWith(".md")), "revision 1 is facts only — all .md");
   check(!facts.some((f) => f.endsWith(".review.json")), "no sidecars at generation");

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, writeSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { runSession, type SessionOptions } from "./session.js";
 import { installSkills, isSkillAgent } from "./skills.js";
@@ -17,7 +17,8 @@ Usage:
                           tailscale serve); binding stays loopback-only
   gloss skill install --agent claude|codex [--global]
                           Install the Gloss skills into this repo, or
-                          with --global into $HOME for every repo
+                          with --global into your home directory for
+                          every repo
   gloss help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
@@ -30,7 +31,9 @@ function emit(result: object): void {
 }
 
 function fail(error: string): never {
-  process.stderr.write(JSON.stringify({ ok: false, error }) + "\n");
+  // writeSync: stdio is async for pipes on Windows and process.exit()
+  // would drop the unflushed line.
+  writeSync(2, JSON.stringify({ ok: false, error }) + "\n");
   process.exit(1);
 }
 
