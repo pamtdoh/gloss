@@ -14,6 +14,13 @@ export interface ShortcutDef {
   raw?: boolean;
 }
 
+// tinykeys resolves $mod to Meta on Apple platforms and Control everywhere
+// else; every printed label must say the key the user actually has.
+export const MOD =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+    ? "⌘"
+    : "Ctrl+";
+
 export const SHORTCUTS: ShortcutDef[] = [
   { id: "next", keys: ["j"], shown: "j", section: "Navigate", label: "Next fact", allowRepeat: true },
   { id: "prev", keys: ["k"], shown: "k", section: "Navigate", label: "Previous fact", allowRepeat: true },
@@ -23,7 +30,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "prevQuestion", keys: ["p"], shown: "p", section: "Navigate", label: "Previous open question" },
   { id: "expand", keys: ["ArrowRight"], shown: "→", section: "Navigate", label: "Expand directory" },
   { id: "collapse", keys: ["ArrowLeft"], shown: "←", section: "Navigate", label: "Collapse directory" },
-  { id: "palette", keys: ["$mod+KeyK"], shown: "⌘K or /", section: "Everywhere", label: "Search & commands", raw: true },
+  { id: "palette", keys: ["$mod+KeyK"], shown: `${MOD}K or /`, section: "Everywhere", label: "Search & commands", raw: true },
   { id: "paletteSlash", keys: ["/"], shown: "/", section: "Everywhere", label: "Search & commands" },
   { id: "filter", keys: ["f"], shown: "f", section: "Navigate", label: "Filter the fact tree" },
   { id: "scope", keys: ["d"], shown: "d", section: "Navigate", label: "Cycle scope: all / changed / raised" },

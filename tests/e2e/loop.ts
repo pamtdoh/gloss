@@ -8,6 +8,7 @@ import {
   cpSync,
   existsSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -40,7 +41,7 @@ function walk(dir: string): string[] {
 
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
-const tmp = mkdtempSync(join(tmpdir(), "gloss-loop-"));
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), "gloss-loop-")));
 try {
   cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
   execFileSync("node", [cli, "init"], { cwd: tmp });

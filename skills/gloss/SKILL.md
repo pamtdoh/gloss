@@ -107,8 +107,10 @@ When the session finishes with sidecars present:
 
 1. Read every `*.review.json` in the revision wholesale, then propose next
    steps to the human before rewriting anything they'd rather discuss.
-2. Copy the revision: `cp -r .gloss/<review>/<n> .gloss/<review>/<n+1>`.
-   Revisions are standalone copies — no links, no shared state.
+2. Copy the revision directory recursively: `.gloss/<review>/<n>` to
+   `.gloss/<review>/<n+1>` (`cp -r` on POSIX, `Copy-Item -Recurse` on
+   Windows, or your own file tools). Revisions are standalone copies —
+   no links, no shared state.
 3. In the new revision, resolve what was raised: rewrite, amend, split, or
    delete facts per the comments; answer or settle questions. When you
    judge an item resolved, delete it from the sidecar; delete the sidecar
@@ -122,10 +124,9 @@ When the session finishes with sidecars present:
 Approval is one act, at the end: the accepted revision copied to
 `.gloss/<review>/approved/`. The viewer's Approve button does this
 itself; if the human instead approves in conversation, copy it yourself:
-
-```
-cp -r .gloss/<review>/<n> .gloss/<review>/approved
-```
+the revision directory `.gloss/<review>/<n>` copied recursively to
+`.gloss/<review>/approved` (`cp -r` on POSIX, `Copy-Item -Recurse` on
+Windows).
 
 The directory existing *is* the approval — no metadata, no ceremony. The
 `gloss-apply` skill starts from `approved/` and refuses to run
@@ -136,5 +137,5 @@ without it.
 No browser is required at any step. The facts are ordinary Markdown: print
 them, let the human give comments and questions in conversation, and either write sidecars yourself to keep the same record —
 you own the files as much as the viewer does — or skip sidecars and
-iterate directly on what they said. Approval is the same `cp -r` either
-way.
+iterate directly on what they said. Approval is the same recursive copy
+either way.
