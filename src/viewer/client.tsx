@@ -4,9 +4,11 @@ import { createRoot } from "react-dom/client";
 import { tinykeys } from "tinykeys";
 import {
   Check,
+  CircleHelp,
   ListTodo,
   Menu,
   MessageCircleQuestion,
+  MessageSquare,
   Moon,
   PanelRightOpen,
   Search,
@@ -33,20 +35,10 @@ import {
 } from "./model.js";
 import { QUICK_COMMENTS, keepFocusOutOfFields, type Composer, type QuickComment } from "./common.js";
 import { ChangeBadge, DirView, SelBubble, TreeRow, rowLabel } from "./components.js";
-import { Help, Palette, FinishSheet } from "./overlays.js";
+import { Help, FinishSheet } from "./overlays.js";
 import { Panel } from "./panel.js";
 import { SHORTCUTS } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "./ui/alert-dialog.js";
 import { Input } from "./ui/input.js";
 import { Kbd } from "./ui/kbd.js";
 import {
@@ -161,6 +153,48 @@ function writeSeenStore(review: string, store: Record<string, string>): void {
   localStorage.setItem(`rk-seen2:${review}`, JSON.stringify(store));
 }
 
+// Desktop-only drag handle between the reading pane and the review panel.
+// It owns --panel-w on the root (the width .panel-col already reads);
+// double-click resets to the stylesheet default. Hidden below 1101px,
+// where the panel is a fixed overlay with its own width.
+const PANEL_W_KEY = "rk-panel-w";
+const savedPanelW = Number(localStorage.getItem(PANEL_W_KEY));
+if (savedPanelW) document.documentElement.style.setProperty("--panel-w", `${savedPanelW}px`);
+
+function PanelResizer(): React.JSX.Element {
+  const [active, setActive] = useState(false);
+  return (
+    <button
+      className="col-resizer"
+      id="panel-resizer"
+      aria-orientation="vertical"
+      aria-label="Resize review panel (double-click to reset)"
+      title="Drag to resize · double-click resets"
+      data-active={active ? "" : undefined}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setActive(true);
+      }}
+      onPointerMove={(e) => {
+        if (!active) return;
+        const max = Math.min(640, window.innerWidth * 0.5);
+        const width = Math.round(Math.min(Math.max(window.innerWidth - e.clientX, 240), max));
+        document.documentElement.style.setProperty("--panel-w", `${width}px`);
+        localStorage.setItem(PANEL_W_KEY, String(width));
+      }}
+      onPointerUp={(e) => {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        setActive(false);
+      }}
+      onDoubleClick={() => {
+        document.documentElement.style.removeProperty("--panel-w");
+        localStorage.removeItem(PANEL_W_KEY);
+      }}
+    />
+  );
+}
+
 function App(): React.JSX.Element {
   const [data, setData] = useState<ReviewData | null>(null);
   const [prev, setPrev] = useState<Map<string, string> | null>(null);
@@ -169,9 +203,8 @@ function App(): React.JSX.Element {
   const [seenVersion, setSeenVersion] = useState(0);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState<Composer | null>(null);
-  const [overlay, setOverlay] = useState<"help" | "palette" | "finish" | null>(null);
+  const [overlay, setOverlay] = useState<"help" | "finish" | null>(null);
   const pswpRef = useRef<PhotoSwipe | null>(null);
-  const [approveOpen, setApproveOpen] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [panelOpen, setPanelOpen] = useState(
@@ -874,8 +907,6 @@ function App(): React.JSX.Element {
     question: () => beginItem("question"),
     undo: () => undoLast(),
     help: () => setOverlay((o) => (o === "help" ? null : "help")),
-    palette: () => setOverlay((o) => (o === "palette" ? null : "palette")),
-    paletteSlash: () => setOverlay("palette"),
     filter: () => document.getElementById("tree-filter")?.focus(),
     scope: () =>
       setScope((s) => {
@@ -952,48 +983,6 @@ function App(): React.JSX.Element {
     return states;
   }, [renderedFact]);
 
-  useEffect(() => {
-    const highlights = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
-    const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown })
-      .Highlight;
-    if (!highlights || !HighlightCtor || !readRef.current || !renderedFact) return;
-    const buckets: Record<string, Range[]> = {
-      "rk-anno": [],
-      "rk-question": [],
-      "rk-focused": [],
-      "rk-pending": [],
-    };
-    for (const item of renderedFact.sidecar?.items ?? []) {
-      if (!item.anchor) continue;
-      const resolved = resolveAnchor(renderedFact.content, item.anchor);
-      if (!resolved) continue;
-      const range = rangeForSourceSpan(readRef.current as HTMLElement, resolved.start, resolved.end);
-      if (!range) continue;
-      if (item.id === focusItemId) buckets["rk-focused"]!.push(range);
-      else if (item.type === "question") buckets["rk-question"]!.push(range);
-      else buckets["rk-anno"]!.push(range);
-    }
-    // On fine pointers the native selection IS the highlight while it is
-    // live (every studied implementation — Hypothesis, medium-editor,
-    // Plate, tiptap — relies on it); rk-pending paints only once the
-    // composer owns the screen and the native selection is free to
-    // collapse. Touch paints throughout — iOS collapses on any tap.
-    if (pendingSel && pendingSel.path === renderedFact.path && (COARSE || composer)) {
-      const range = rangeForSourceSpan(
-        readRef.current as HTMLElement,
-        pendingSel.start,
-        pendingSel.end,
-      );
-      if (range) buckets["rk-pending"]!.push(range);
-    }
-    for (const [name, ranges] of Object.entries(buckets)) {
-      highlights.set(name, new HighlightCtor(...ranges));
-    }
-    return () => {
-      for (const name of Object.keys(buckets)) highlights.delete(name);
-    };
-  }, [factHtml, renderedFact, focusItemId, pendingSel, composer]);
-
   const [diagramVersion, setDiagramVersion] = useState(0);
   useEffect(() => {
     const sources = [...factHtml.matchAll(MERMAID_BLOCK)].map((m) => unescapeHtml(m[1]!));
@@ -1036,6 +1025,55 @@ function App(): React.JSX.Element {
       return `<div class="rk-mermaid">${svg}</div>`;
     });
   }, [factHtml, diagramVersion]);
+
+  useEffect(() => {
+    const highlights = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown })
+      .Highlight;
+    if (!highlights || !HighlightCtor || !readRef.current || !renderedFact) return;
+    const buckets: Record<string, Range[]> = {
+      "rk-anno": [],
+      "rk-question": [],
+      "rk-focused-anno": [],
+      "rk-focused-q": [],
+      "rk-pending": [],
+    };
+    for (const item of renderedFact.sidecar?.items ?? []) {
+      if (!item.anchor) continue;
+      const resolved = resolveAnchor(renderedFact.content, item.anchor);
+      if (!resolved) continue;
+      const range = rangeForSourceSpan(readRef.current as HTMLElement, resolved.start, resolved.end);
+      if (!range) continue;
+      const question = item.type === "question";
+      if (item.id === focusItemId) {
+        buckets[question ? "rk-focused-q" : "rk-focused-anno"]!.push(range);
+      } else {
+        buckets[question ? "rk-question" : "rk-anno"]!.push(range);
+      }
+    }
+    // On fine pointers the native selection IS the highlight while it is
+    // live (every studied implementation — Hypothesis, medium-editor,
+    // Plate, tiptap — relies on it); rk-pending paints only once the
+    // composer owns the screen and the native selection is free to
+    // collapse. Touch paints throughout — iOS collapses on any tap.
+    if (pendingSel && pendingSel.path === renderedFact.path && (COARSE || composer)) {
+      const range = rangeForSourceSpan(
+        readRef.current as HTMLElement,
+        pendingSel.start,
+        pendingSel.end,
+      );
+      if (range) buckets["rk-pending"]!.push(range);
+    }
+    for (const [name, ranges] of Object.entries(buckets)) {
+      highlights.set(name, new HighlightCtor(...ranges));
+    }
+    return () => {
+      for (const name of Object.keys(buckets)) highlights.delete(name);
+    };
+    // keyed on processedHtml, NOT factHtml: the mermaid splice rewrites
+    // innerHTML without changing factHtml, detaching every Range the
+    // highlights hold — they must rebuild against the new DOM
+  }, [processedHtml, renderedFact, focusItemId, pendingSel, composer]);
 
   // React 19 diffs dangerouslySetInnerHTML by OBJECT identity, not by the
   // __html string: a fresh {__html} object every render rewrites innerHTML
@@ -1116,6 +1154,16 @@ function App(): React.JSX.Element {
         <span className="spacer" />
         {/* owner: "just a simple toggle" — flips light/dark; the palette
             still offers "Theme: system" to hand control back to the OS */}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          id="btn-help"
+          aria-label="Help"
+          title="Shortcuts & concepts (?)"
+          onClick={() => setOverlay((o) => (o === "help" ? null : "help"))}
+        >
+          <CircleHelp />
+        </Button>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -1431,6 +1479,7 @@ function App(): React.JSX.Element {
             )}
           </button>
         )}
+        {panelOpen && <PanelResizer />}
         {panelOpen ? (
           <aside className="panel-col panel" aria-label="Review panel">
             <Panel
@@ -1492,9 +1541,11 @@ function App(): React.JSX.Element {
                 “{targetFact.content.slice(pendingSel.start, pendingSel.end)}”
               </span>
               <Button size="sm" onClick={() => beginItem("comment")}>
+                <MessageSquare className="lucide size-3.5" size={14} aria-hidden="true" />
                 Comment
               </Button>
               <Button size="sm" variant="outline" onClick={() => beginItem("question")}>
+                <MessageCircleQuestion className="lucide size-3.5" size={14} aria-hidden="true" />
                 Ask
               </Button>
               <Button
@@ -1523,44 +1574,6 @@ function App(): React.JSX.Element {
           )}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
-      <Palette
-        open={overlay === "palette"}
-        data={data}
-        onClose={() => setOverlay(null)}
-        onJump={(path) => {
-          setOverlay(null);
-          openRow({ kind: "fact", path, depth: 0 });
-        }}
-        commands={[
-          { label: "Finish review", run: () => setOverlay("finish") },
-          { label: "Approve revision…", run: () => setApproveOpen(true) },
-          {
-            label: "Mark all facts seen",
-            run: () => {
-              if (!data) return;
-              const store = seenStore(data.review);
-              for (const fact of data.facts) store[fact.path] = fact.content;
-              writeSeenStore(data.review, store);
-              setSeenVersion((v) => v + 1);
-            },
-          },
-          { label: "Toggle review panel", run: () => setPanelOpen((open) => !open) },
-          { label: "Keyboard help", run: () => setOverlay("help") },
-          ...(["light", "dark", "system"] as const)
-            .filter((mode) => mode !== theme)
-            .map((mode) => ({
-              label: `Theme: ${mode}`,
-              run: () => setTheme(mode),
-            })),
-          ...SCOPES.filter((s) => s !== scope && (s !== "changed" || prev !== null)).map((s) => ({
-            label: `Scope: ${s === "all" ? "all facts" : `${s} only`}`,
-            run: () => setScope(s),
-          })),
-          ...data.revisions
-            .filter((s) => s !== data.revision)
-            .map((s) => ({ label: `Switch to revision ${s}`, run: () => void load(s) })),
-        ]}
-      />
       <FinishSheet
         open={overlay === "finish"}
         data={data}
@@ -1568,26 +1581,9 @@ function App(): React.JSX.Element {
         openQuestions={openQuestions.total}
         raisedFacts={raisedFacts}
         onFinish={() => void finish()}
-        onApprove={() => setApproveOpen(true)}
+        onApprove={() => void approve()}
         onClose={() => setOverlay(null)}
       />
-      <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
-        <AlertDialogContent id="approve-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Approve revision {data.revision}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The revision is copied to approved/ — that directory existing is the approval —
-              and this session ends. Implementation starts from it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction id="approve-go" onClick={() => void approve()}>
-              Approve
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {toast && (
         <div

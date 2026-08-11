@@ -51,22 +51,32 @@ export function allDirs(facts: Fact[]): string[] {
   return [...dirs].sort();
 }
 
-/** Depth-first visible rows: directories first, then facts, alphabetical. */
+/** Directories and facts of one parent, interleaved by name — numeric
+ * prefixes order the reading, so a dir must not jump its siblings. */
+export function childEntries(
+  facts: Fact[],
+  parent: string,
+): { kind: "dir" | "fact"; path: string }[] {
+  return [
+    ...allDirs(facts)
+      .filter((d) => dirOf(d) === parent)
+      .map((path) => ({ kind: "dir" as const, path })),
+    ...facts
+      .filter((f) => dirOf(f.path) === parent && !isIndex(f.path))
+      .map((f) => ({ kind: "fact" as const, path: f.path })),
+  ].sort((a, b) => (nameOf(a.path) < nameOf(b.path) ? -1 : 1));
+}
+
+/** Depth-first visible rows: dirs and facts interleaved, alphabetical. */
 export function buildRows(
   facts: Fact[],
   isExpanded: (dir: string) => boolean,
 ): Row[] {
-  const dirs = allDirs(facts);
   const rows: Row[] = [];
   const walk = (parent: string, depth: number): void => {
-    for (const dir of dirs.filter((d) => dirOf(d) === parent)) {
-      rows.push({ kind: "dir", path: dir, depth });
-      if (isExpanded(dir)) walk(dir, depth + 1);
-    }
-    for (const fact of facts) {
-      if (dirOf(fact.path) === parent && !isIndex(fact.path)) {
-        rows.push({ kind: "fact", path: fact.path, depth });
-      }
+    for (const entry of childEntries(facts, parent)) {
+      rows.push({ ...entry, depth });
+      if (entry.kind === "dir" && isExpanded(entry.path)) walk(entry.path, depth + 1);
     }
   };
   walk("", 0);

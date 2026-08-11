@@ -55,6 +55,21 @@ export function Panel(props: {
       <div id="panel-items">
         {(fact?.sidecar?.items ?? []).map((item) => {
           const anchorState = item.anchor ? props.anchorStates.get(item.id) : undefined;
+          // edit/reply composers live inside the card they act on — a form
+          // at the panel's foot reads as targeting the last item, not this one
+          const composerHere =
+            props.composer && props.composer.mode !== "new" && props.composer.id === item.id
+              ? props.composer
+              : null;
+          const composerBox = composerHere && (
+            <ComposerBox
+              key={`${composerHere.mode}-${item.id}`}
+              composer={composerHere}
+              bare
+              onCommit={props.onCommit}
+              onCancel={props.onCancel}
+            />
+          );
           return (
             <div
               key={item.id}
@@ -114,32 +129,50 @@ export function Panel(props: {
               )}
               {item.type === "question" ? (
                 <>
-                  {(item.thread ?? []).map((turn, i) => (
-                    <div key={i} className="turn cardtext">
-                      <span className="who">{turn.who}</span>
-                      <Md text={turn.text} />
-                    </div>
-                  ))}
-                  <span className="actions">
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      className="item-reply"
-                      onClick={() => props.onReply(item.id)}
-                    >
-                      Reply
-                    </Button>
-                    {answeredByAgent(item) && <span className="chip q">your turn</span>}
-                  </span>
+                  {(item.thread ?? []).map((turn, i) =>
+                    composerHere?.mode === "edit" && i === 0 ? (
+                      composerBox
+                    ) : (
+                      <div key={i} className="turn cardtext">
+                        <span className="who">{turn.who === "agent" ? "Agent" : "You"}</span>
+                        <Md text={turn.text} />
+                      </div>
+                    ),
+                  )}
+                  {composerHere?.mode === "reply" ? (
+                    composerBox
+                  ) : (
+                    <span className="actions">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        className="item-reply"
+                        onClick={() => props.onReply(item.id)}
+                      >
+                        Reply
+                      </Button>
+                      {answeredByAgent(item) && <span className="chip q">your turn</span>}
+                    </span>
+                  )}
                 </>
+              ) : composerHere ? (
+                composerBox
               ) : (
                 item.text && <Md block className="cardtext" text={item.text} />
               )}
             </div>
           );
         })}
+        {/* the empty state is the manual: the one moment the reviewer will
+            read what Comment and Ask actually set in motion */}
         {fact && (fact.sidecar?.items ?? []).length === 0 && (
-          <p className="text-muted-foreground text-[13px]">No notes on this fact.</p>
+          <p className="text-muted-foreground text-[13px]">
+            No notes on this fact. Select text in it, then{" "}
+            <strong className="text-foreground font-[650]">Comment</strong> to request a change
+            (the agent addresses it in the next revision) or{" "}
+            <strong className="text-foreground font-[650]">Ask</strong> to get a live answer —
+            or decide the whole fact with a quick comment above.
+          </p>
         )}
         {!fact && (
           <p className="text-muted-foreground text-[13px]">
@@ -149,11 +182,11 @@ export function Panel(props: {
           </p>
         )}
       </div>
-      {props.composer && (
+      {props.composer?.mode === "new" && (
         <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
       )}
       <p className="keys-hint">
-        j/k move · 1–3 quick comment · v seen · c/q raise · <Kbd>?</Kbd> help · <Kbd>{MOD}K</Kbd> search
+        j/k move · 1–3 quick comment · v seen · c/q raise · f filter · <Kbd>?</Kbd> help
       </p>
     </>
   );
@@ -161,6 +194,9 @@ export function Panel(props: {
 
 export function ComposerBox(props: {
   composer: Composer;
+  /** rendered inside an item card: the card is the box, so no border,
+   * no padding, and no "reply — q3" label restating what the card shows */
+  bare?: boolean;
   onCommit: (text: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -177,16 +213,26 @@ export function ComposerBox(props: {
         : `reply — ${composer.id}`;
   return (
     <form
-      className="composer mt-3 rounded-lg border p-3"
+      className={props.bare ? "composer mt-2" : "composer mt-3 rounded-lg border p-3"}
       id="item-form"
       onSubmit={(e) => {
         e.preventDefault();
         props.onCommit(ref.current?.value ?? "");
       }}
     >
-      <div className="text-muted-foreground mb-2 text-[12px] whitespace-pre-wrap" id="item-form-label">
-        {label}
-      </div>
+      {!props.bare && (
+        <div className="text-muted-foreground mb-2 text-[12px] whitespace-pre-wrap" id="item-form-label">
+          {label}
+        </div>
+      )}
+      {/* first-contact teaching: what each verb sets in motion */}
+      {composer.mode === "new" && (
+        <p className="text-muted-foreground mt-0 mb-2 text-[11.5px]">
+          {composer.type === "question"
+            ? "A question gets a live answer: the agent replies in a thread on this fact while you keep reviewing."
+            : "A comment requests a change: the agent addresses it when it revises the facts, like a review comment on an MR."}
+        </p>
+      )}
       <Textarea
         id="item-input"
         aria-label="Item text"

@@ -1,13 +1,21 @@
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, SquareDot, SquareMinus, SquarePlus } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  MessageCircleQuestion,
+  MessageSquare,
+  SquareDot,
+  SquareMinus,
+  SquarePlus,
+} from "lucide-react";
 import type { SidecarItem } from "../summary.js";
 import { QUICK_COMMENTS, type QuickComment } from "./common.js";
 import { rangeForSourceSpan } from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
 import {
   changeStatus,
-  childDirsOf,
+  childEntries,
   childFactsOf,
   dirStats,
   factStats,
@@ -92,6 +100,7 @@ export function SelBubble(props: {
           props.onAct("comment");
         }}
       >
+        <MessageSquare className="lucide size-3.5" size={14} aria-hidden="true" />
         Comment
       </Button>
       <Button
@@ -102,6 +111,7 @@ export function SelBubble(props: {
           props.onAct("question");
         }}
       >
+        <MessageCircleQuestion className="lucide size-3.5" size={14} aria-hidden="true" />
         Ask
       </Button>
     </div>
@@ -252,7 +262,7 @@ export function DirView(props: {
   onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.facts, props.dir);
-  const subdirs = childDirsOf(props.facts, props.dir);
+  const entries = childEntries(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
   const selectable = children.filter((f) => !f.ghost);
   const allSelected =
@@ -294,23 +304,27 @@ export function DirView(props: {
             <span className="text-muted-foreground text-[12px]">select all</span>
           </div>
         )}
-        {subdirs.map((dir) => (
-          <div
-            key={dir}
-            className="trow"
-            data-path={dir}
-            onClick={() => props.onOpen({ kind: "dir", path: dir, depth: 0 })}
-          >
-            <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
-            <span className="title dirname">
-              {nameOf(dir)}/{" "}
-              <span className="text-muted-foreground">
-                ({dirStats(props.facts, dir).facts} facts)
-              </span>
-            </span>
-          </div>
-        ))}
-        {children.map((fact) => {
+        {entries.map((entry) => {
+          if (entry.kind === "dir") {
+            const dir = entry.path;
+            return (
+              <div
+                key={dir}
+                className="trow"
+                data-path={dir}
+                onClick={() => props.onOpen({ kind: "dir", path: dir, depth: 0 })}
+              >
+                <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
+                <span className="title dirname">
+                  {nameOf(dir)}/{" "}
+                  <span className="text-muted-foreground">
+                    ({dirStats(props.facts, dir).facts} facts)
+                  </span>
+                </span>
+              </div>
+            );
+          }
+          const fact = children.find((f) => f.path === entry.path)!;
           const stats = factStats(fact);
           const ghost = fact.ghost === true;
           return (

@@ -47,7 +47,9 @@
   --line-raised: var(--line);
 
   /* anchor highlight tints (viewer-specific) */
-  --anno-tint: color-mix(in srgb, var(--accent) 16%, transparent);
+  /* comments are gray like their count chip; blue stays the question hue,
+     green stays interactive/brand, amber stays "changed" */
+  --anno-tint: color-mix(in srgb, var(--muted) 13%, transparent);
   --question-tint: color-mix(in srgb, var(--blue) 14%, transparent);
   --focus-tint: color-mix(in srgb, var(--accent) 26%, transparent);
 }
@@ -189,6 +191,7 @@ body {
 
 @media (max-width: 1100px) {
   .pagenav { margin-bottom: 72px; } /* clear the floating Notes button */
+  .col-resizer { display: none; } /* the panel is a fixed overlay here */
   .panel-col:not(.rail) {
     position: fixed; right: 0; top: 46px; bottom: 0; z-index: 15;
     box-shadow: var(--elev-3); width: min(360px, 92vw);
@@ -239,13 +242,16 @@ body {
 .hdr h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
 .hdr .spacer { flex: 1; }
 .progress { color: var(--muted); font-size: 13px; white-space: nowrap; }
+/* the open-questions pill speaks the question hue, like .chip.q and the
+   question highlight; "your turn" intensifies in the same blue */
 .pill {
   font-size: 12px; border-radius: 999px; padding: 3px 10px; border: 1px solid transparent;
-  background: var(--panel-2); color: var(--muted); white-space: nowrap;
+  background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue);
+  white-space: nowrap;
   transition: background-color var(--dur-hover) var(--ease-out), border-color var(--dur-hover) var(--ease-out);
 }
-.pill:hover { border-color: var(--accent); }
-.pill.attn { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); font-weight: 600; }
+.pill:hover { border-color: var(--blue); }
+.pill.attn { background: color-mix(in srgb, var(--blue) 24%, transparent); font-weight: 600; }
 
 .stale-banner {
   flex: none; padding: 6px 14px; font-size: 13px; z-index: 3;
@@ -395,7 +401,7 @@ body {
 ::highlight(rk-anno) {
   background-color: var(--anno-tint);
   text-decoration: underline;
-  text-decoration-color: var(--amber);
+  text-decoration-color: var(--muted);
   text-underline-offset: 3px;
 }
 ::highlight(rk-question) {
@@ -404,11 +410,20 @@ body {
   text-decoration-color: var(--blue);
   text-underline-offset: 3px;
 }
-::highlight(rk-focused) {
-  background-color: var(--focus-tint);
+/* focus keeps each type's hue and intensifies it — the highlight must not
+   change identity on hover, only strength */
+::highlight(rk-focused-anno) {
+  background-color: color-mix(in srgb, var(--muted) 25%, transparent);
   text-decoration: underline;
   text-decoration-thickness: 2px;
-  text-decoration-color: var(--accent);
+  text-decoration-color: var(--muted);
+  text-underline-offset: 3px;
+}
+::highlight(rk-focused-q) {
+  background-color: color-mix(in srgb, var(--blue) 26%, transparent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--blue);
   text-underline-offset: 3px;
 }
 /* the captured selection: survives iOS collapsing the native selection */
@@ -520,9 +535,17 @@ body {
   border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px;
   transition: border-color var(--dur-hover) var(--ease-out);
 }
-.card.item-comment, .card.item-annotation { border-left-color: var(--accent); }
+.card.item-comment, .card.item-annotation { border-left-color: var(--muted); }
 .card.item-question { border-left-color: var(--blue); }
-.card:hover, .card:focus-visible, .card.focus { border-color: var(--accent); border-left-width: 3px; }
+/* hover: the border alone intensifies, left-edge-only to full perimeter,
+   in the card's own hue. Background stays put — every wash tried here
+   (type tint, neutral ink) read as louder than the panel deserves. */
+.card:hover, .card:focus-visible, .card.focus {
+  border-color: var(--muted); border-left-width: 3px;
+}
+.card.item-question:hover, .card.item-question:focus-visible, .card.item-question.focus {
+  border-color: var(--blue);
+}
 .card .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; gap: 6px; align-items: center; font-weight: 650; }
 .card blockquote {
   margin: 6px 0; padding: 1px 10px; border-left: 2px solid var(--line);
@@ -537,7 +560,7 @@ body {
 .card .who { color: var(--muted); font-weight: 650; margin-right: 6px; font-size: 12px; }
 .card .turn { margin-top: 6px; }
 .card .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-.composer textarea { field-sizing: content; min-height: 74px; }
+.composer textarea { field-sizing: content; min-height: 74px; background: var(--bg); }
 .keys-hint { color: var(--muted); font-size: 12px; margin-top: 18px; }
 
 /* ------------------------------------------------------------- toast */

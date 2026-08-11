@@ -16,14 +16,15 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground shadow-xs [--accent-hover:color-mix(in_oklab,var(--accent),var(--text)_12%)] hover:bg-[var(--accent-hover)]",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 dark:bg-destructive/60",
-        // hover:border-primary because the wash alone is illegible here:
-        // --color-accent is --panel-2 (#eef0f3) against a bg-background rest
-        // (#f8f9fb), a ~2% luminance step that reads as "no hover state".
-        // The accent edge is the house grammar for it (.interactive, checkbox,
-        // select-trigger all do this). Border colour is paint, so it cannot
+        // The wash alone is illegible here (--color-accent is --panel-2, a
+        // ~2% luminance step against bg-background), so the border steps up
+        // too — a neutral ink-mix, not primary: a hue change on hover reads
+        // as meaning, and green is reserved for interactive identity at
+        // rest, not hover feedback. (--line-raised is no step in light mode,
+        // where it equals --line.) Border colour is paint, so it cannot
         // reflow — the hover rule allows it.
         outline:
-          "border bg-background shadow-xs hover:border-primary hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border bg-background shadow-xs hover:border-[color-mix(in_srgb,var(--line),var(--text)_22%)] hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
         ghost:
