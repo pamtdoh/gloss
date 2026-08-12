@@ -70,6 +70,14 @@ interface ToastState {
 }
 
 const POLL_DISABLED = new URLSearchParams(location.search).get("poll") === "0";
+// The liveness timings are one policy, derived so they can't drift apart:
+// local writes must outlive one GET already in flight, and "alive moments
+// ago" (the finish/approve exit race) means within a few missed polls.
+const POLL_MS = 2000;
+const WRITE_GRACE_MS = POLL_MS + 500;
+const RECENT_LIVE_MS = 4 * POLL_MS;
+
+const unsavedPhrase = (n: number): string => `${n} change${n === 1 ? "" : "s"}`;
 
 // Tree scope, GitHub/GitLab-style but sharper: "changed" is what moved
 // since the previous revision (including facts the agent deleted, shown as
@@ -134,7 +142,11 @@ function unescapeHtml(text: string): string {
 
 async function fetchReview(revision?: number): Promise<ReviewData> {
   const res = await fetch("/api/review" + (revision ? `?revision=${revision}` : ""));
-  if (!res.ok) throw new Error(`review fetch failed: ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(`review fetch failed: ${res.status}`) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
 }
 
@@ -252,6 +264,18 @@ function App(): React.JSX.Element {
   } | null>(null);
 
   const pendingWrites = useRef(new Map<string, number>());
+  // sidecar writes not yet ACKed by the server, keyed `revision:path` —
+  // "saved" is the server's word, not the fetch having been fired
+  const unsaved = useRef(new Map<string, { revision: number; path: string; sidecar: Sidecar }>());
+  const flushing = useRef(false);
+  const flushQueued = useRef(false);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [unsavedCount, setUnsavedCount] = useState(0);
+  // liveness: the 2s poll doubles as a heartbeat, so "server gone" is a
+  // state the UI can show instead of a guess each fetch makes alone
+  const lastPollOk = useRef(Date.now());
+  const pollFailures = useRef(0);
+  const [connLost, setConnLost] = useState<"unreachable" | "unauthorized" | null>(null);
   // a finger is down: no re-renders allowed, or iOS drops the selection
   const touchActive = useRef(false);
   // native handle drags fire NO pointer events — selectionchange activity
@@ -273,6 +297,7 @@ function App(): React.JSX.Element {
   // ---------- data ----------
   async function load(revision?: number): Promise<void> {
     const next = await fetchReview(revision);
+    serverOk();
     const prior = next.revisions.filter((s) => s < next.revision).pop();
     setPrev(
       prior === undefined
@@ -327,35 +352,54 @@ function App(): React.JSX.Element {
     const tick = async (): Promise<void> => {
       if (stop) return;
       const st = stateRef.current;
-      const busy =
-        document.hidden ||
-        st.done ||
-        st.composer !== null ||
-        touchActive.current ||
-        Date.now() - lastSelActivity.current < 2000 ||
-        !(window.getSelection()?.isCollapsed ?? true);
-      if (!busy && st.data) {
+      if (!st.done && !document.hidden && st.data) {
         try {
           const fresh = await fetchReview(st.data.revision);
-          const now = Date.now();
-          for (const fact of fresh.facts) {
-            // recent local writes win over poll data (covers the GET-in-flight race)
-            const writtenAt = pendingWrites.current.get(fact.path);
-            if (writtenAt !== undefined && now - writtenAt < 2500) {
-              const local = st.data.facts.find((f) => f.path === fact.path);
-              if (local) fact.sidecar = local.sidecar;
+          serverOk();
+          // busy gates MERGING only (a re-render mid-gesture drops
+          // selections) — the fetch above doubles as the liveness probe.
+          // Measured after the await, at the moment it protects.
+          const busy =
+            stateRef.current.done ||
+            stateRef.current.composer !== null ||
+            touchActive.current ||
+            Date.now() - lastSelActivity.current < 2000 ||
+            !(window.getSelection()?.isCollapsed ?? true);
+          if (!busy) {
+            const now = Date.now();
+            for (const fact of fresh.facts) {
+              // recently ACKed or still-unsaved local writes win over poll
+              // data (covers the GET-in-flight race and queued retries)
+              const writtenAt = pendingWrites.current.get(fact.path);
+              if (
+                (writtenAt !== undefined && now - writtenAt < WRITE_GRACE_MS) ||
+                unsaved.current.has(`${st.data.revision}:${fact.path}`)
+              ) {
+                const local = st.data.facts.find((f) => f.path === fact.path);
+                if (local) fact.sidecar = local.sidecar;
+              }
+            }
+            if (JSON.stringify(fresh) !== JSON.stringify(stateRef.current.data)) {
+              setData(fresh);
             }
           }
-          if (JSON.stringify(fresh) !== JSON.stringify(stateRef.current.data)) {
-            setData(fresh);
+        } catch (error) {
+          if (stateRef.current.done) {
+            // the exit after finish/approve is the one legitimate silence
+          } else if ((error as { status?: number }).status === 401) {
+            // definitive: the server answered and rejected this tab
+            setConnLost("unauthorized");
+          } else {
+            // one failure could be a blip; two in a row is a dead server —
+            // say so instead of silently dropping writes
+            pollFailures.current += 1;
+            if (pollFailures.current >= 2) setConnLost("unreachable");
           }
-        } catch {
-          // session ending
         }
       }
-      timer = setTimeout(() => void tick(), 2000);
+      timer = setTimeout(() => void tick(), POLL_MS);
     };
-    timer = setTimeout(() => void tick(), 2000);
+    timer = setTimeout(() => void tick(), POLL_MS);
     const onVisible = (): void => {
       if (!document.hidden) {
         clearTimeout(timer);
@@ -368,6 +412,15 @@ function App(): React.JSX.Element {
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
+  }, []);
+
+  // closing the tab must not lose un-ACKed writes silently
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent): void => {
+      if (unsaved.current.size > 0) event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
   }, []);
 
   // ---------- selection capture ----------
@@ -615,19 +668,73 @@ function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path, data, seen]);
 
+  // ---------- liveness ----------
+  // Every successful round-trip is proof of life; one owner for the
+  // bookkeeping so a PUT and a GET count the same.
+  function serverOk(): void {
+    lastPollOk.current = Date.now();
+    pollFailures.current = 0;
+    setConnLost((lost) => (lost === null ? lost : null));
+  }
+
   // ---------- sidecar writes ----------
+  // Called inside setData updaters — touch refs only, defer the flush.
+  // pendingWrites is stamped on ACK (in flushWrites), not here: until the
+  // ACK, the unsaved entry itself is what shields the fact from the poll.
   function putSidecar(fact: Fact): void {
     if (!data) return;
-    pendingWrites.current.set(fact.path, Date.now());
-    void fetch("/api/sidecar", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        revision: data.revision,
-        path: fact.path,
-        sidecar: fact.sidecar ?? {},
-      }),
-    }).then(() => pendingWrites.current.set(fact.path, Date.now()));
+    unsaved.current.set(`${data.revision}:${fact.path}`, {
+      revision: data.revision,
+      path: fact.path,
+      sidecar: fact.sidecar ?? {},
+    });
+    if (flushQueued.current) return;
+    flushQueued.current = true;
+    setTimeout(() => {
+      flushQueued.current = false;
+      setUnsavedCount(unsaved.current.size);
+      void flushWrites();
+    }, 0);
+  }
+
+  // Drain the unsaved queue; entries are one-per-fact and independent, so
+  // they go out concurrently. A write leaves the queue only on a 2xx; a
+  // failed one stays and the retry timer below is the sole retry driver —
+  // the liveness banner, not this loop, is what tells the user.
+  async function flushWrites(): Promise<void> {
+    if (flushing.current) return;
+    flushing.current = true;
+    try {
+      await Promise.all(
+        [...unsaved.current].map(async ([key, write]) => {
+          try {
+            const res = await fetch("/api/sidecar", {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(write),
+            });
+            if (res.status === 401) return setConnLost("unauthorized");
+            if (!res.ok) return;
+            serverOk();
+            pendingWrites.current.set(write.path, Date.now());
+            // a newer write for this fact may have queued while this one
+            // was in flight — only clear the entry we actually sent
+            if (unsaved.current.get(key) === write) unsaved.current.delete(key);
+          } catch {
+            /* stays queued for the retry below */
+          }
+        }),
+      );
+    } finally {
+      flushing.current = false;
+      setUnsavedCount(unsaved.current.size);
+      if (unsaved.current.size > 0 && flushTimer.current === null) {
+        flushTimer.current = setTimeout(() => {
+          flushTimer.current = null;
+          void flushWrites();
+        }, POLL_MS);
+      }
+    }
   }
 
   function mutateFact(path: string, fn: (sidecar: Sidecar) => void): void {
@@ -844,35 +951,47 @@ function App(): React.JSX.Element {
     });
   }
 
-  async function finish(): Promise<void> {
-    try {
-      await fetch("/api/finish", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ revision: data?.revision }),
-      });
-    } catch {
-      /* server exits as it answers */
+  // One protocol for both terminal actions: drain unsaved writes first
+  // (bounce only if they still won't land), demand a real response, and
+  // accept a dropped request as the server's exit race only if it was
+  // provably alive moments ago — a dead tab gets the liveness banner,
+  // never a false "the agent has been notified".
+  async function endSession(action: "Finish" | "Approve", doneMessage: string): Promise<void> {
+    if (unsaved.current.size > 0) {
+      await flushWrites();
+      if (unsaved.current.size > 0) {
+        setToast({ message: `${unsavedPhrase(unsaved.current.size)} not saved yet — retrying, hold on.` });
+        return;
+      }
     }
-    setDone("Review finished. The agent has been notified — you can close this tab.");
-  }
-
-  async function approve(): Promise<void> {
     try {
-      const res = await fetch("/api/approve", {
+      const res = await fetch(action === "Finish" ? "/api/finish" : "/api/approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ revision: data?.revision }),
       });
+      if (res.status === 401) return setConnLost("unauthorized");
       if (!res.ok) {
-        setToast({ message: `Approve failed: ${(await res.json()).error}` });
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setToast({ message: `${action} failed: ${body?.error ?? `HTTP ${res.status}`}` });
         return;
       }
     } catch {
-      /* as above */
+      if (POLL_DISABLED || Date.now() - lastPollOk.current < RECENT_LIVE_MS) {
+        // the server exits as it answers; a drop this close to a live
+        // heartbeat is that race, not a dead tab
+      } else {
+        setConnLost("unreachable");
+        return;
+      }
     }
-    setDone(`Revision ${data?.revision} approved — promoted to approved/.`);
+    setDone(doneMessage);
   }
+
+  const finish = (): Promise<void> =>
+    endSession("Finish", "Review finished. The agent has been notified — you can close this tab.");
+  const approve = (): Promise<void> =>
+    endSession("Approve", `Revision ${data?.revision} approved — promoted to approved/.`);
 
   // ---------- keyboard: built from the SHORTCUTS table ----------
   const actions = useRef<Record<string, () => void>>({});
@@ -1204,11 +1323,24 @@ function App(): React.JSX.Element {
             ))}
           </SelectContent>
         </Select>
+        {unsavedCount > 0 && (
+          <span className="pill unsaved-pill" id="unsaved-pill" role="status">
+            {unsavedCount} unsaved
+          </span>
+        )}
         <Button size="sm" id="btn-finish" onClick={() => setOverlay("finish")}>
           <span className="max-[560px]:hidden">Finish review</span>
           <span className="hidden max-[560px]:inline">Finish</span>
         </Button>
       </header>
+      {connLost && (
+        <div className="conn-banner" id="conn-banner" role="alert">
+          {connLost === "unauthorized"
+            ? "This tab lost its session — nothing is being saved. Restart the session and use the fresh link."
+            : "Session unreachable — nothing is being saved. Reconnecting…"}
+          {unsavedCount > 0 && ` ${unsavedPhrase(unsavedCount)} pending.`}
+        </div>
+      )}
       {data.revision !== latestRevision && (
         <div className="stale-banner" id="stale-banner" role="status">
           Viewing revision {data.revision} — latest is {latestRevision} ·{" "}

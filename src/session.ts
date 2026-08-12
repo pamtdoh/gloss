@@ -111,6 +111,12 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   if (!revisions.includes(defaultRevision)) failJson(`no such revision: ${defaultRevision}`);
 
   const revisionDir = (n: number) => join(reviewDir, String(n));
+  // Auth guards the network path only: with --serve-host the viewer is
+  // reachable beyond this machine, so a one-time token gates a session
+  // cookie. Plain loopback skips both — anything local can already edit
+  // .gloss/ directly, so a token adds ceremony, not protection. The host
+  // and origin checks below hold in both modes.
+  const authRequired = opts.serveHost !== undefined;
   const token = randomBytes(32).toString("hex");
   const sessionCookie = randomBytes(32).toString("hex");
   let tokenUsed = false;
@@ -145,6 +151,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
 
   const server = createServer(async (req, res) => {
     const port = (server.address() as { port: number }).port;
+    // one construction for the name that the set-cookie and the check
+    // must agree on exactly
+    const cookie = `rk_session_${port}=${sessionCookie}`;
     const sendJson = (status: number, value: unknown): void => {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(value));
@@ -158,6 +167,11 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       if (!hostOk) return sendJson(400, { ok: false, error: "bad host" });
 
       if (url.pathname === "/auth") {
+        if (!authRequired) {
+          // stale token links from older sessions still land somewhere useful
+          res.writeHead(302, { location: "/" });
+          return res.end();
+        }
         // GET never consumes the token — messaging apps prefetch links for
         // previews and would burn a one-time GET. The page below submits
         // the token via POST (prefetchers don't run JS or submit forms).
@@ -184,7 +198,10 @@ export function runSession(cwd: string, opts: SessionOptions): void {
           }
           tokenUsed = true;
           res.writeHead(303, {
-            "set-cookie": `rk_session=${sessionCookie}; HttpOnly; SameSite=Strict; Path=/`,
+            // port-scoped name: cookies ignore ports, so concurrent sessions
+            // on 127.0.0.1 would otherwise overwrite each other's cookie and
+            // 401 every request from the older tab
+            "set-cookie": `${cookie}; HttpOnly; SameSite=Strict; Path=/`,
             location: "/",
           });
           return res.end();
@@ -193,7 +210,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       }
 
       const cookies = (req.headers.cookie ?? "").split(";").map((c) => c.trim());
-      if (!cookies.includes(`rk_session=${sessionCookie}`)) {
+      if (authRequired && !cookies.includes(cookie)) {
         if (url.pathname.startsWith("/api/")) return sendJson(401, { ok: false, error: "unauthorized" });
         res.writeHead(401, { "content-type": "text/html" });
         return res.end("<h1>Unauthorized</h1><p>Open the one-time URL printed by the review session.</p>");
@@ -316,7 +333,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
 
   server.listen(0, "127.0.0.1", () => {
     const port = (server.address() as { port: number }).port;
-    const url = `http://127.0.0.1:${port}/auth?token=${token}`;
+    const url = authRequired
+      ? `http://127.0.0.1:${port}/auth?token=${token}`
+      : `http://127.0.0.1:${port}/`;
     process.stderr.write(`gloss session: ${url}\n`);
     if (opts.serveHost) {
       process.stderr.write(

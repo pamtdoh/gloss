@@ -253,10 +253,18 @@ body {
 .pill:hover { border-color: var(--blue); }
 .pill.attn { background: color-mix(in srgb, var(--blue) 24%, transparent); font-weight: 600; }
 
+.stale-banner, .conn-banner { flex: none; padding: 6px 14px; font-size: 13px; z-index: 3; }
 .stale-banner {
-  flex: none; padding: 6px 14px; font-size: 13px; z-index: 3;
   background: color-mix(in srgb, var(--amber) 14%, var(--bg));
   color: var(--amber); border-bottom: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line));
+}
+/* "your writes are going nowhere" — red, persistent, but non-blocking:
+   reading a dead session is harmless, and the unsaved pill, the blocked
+   Finish, and the beforeunload guard already stop silent write loss */
+.conn-banner {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--red) 12%, var(--bg));
+  color: var(--red); border-bottom: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
 }
 .stale-banner button {
   border: none; background: none; color: var(--amber); font-weight: 650;
@@ -577,6 +585,13 @@ body {
 .done-screen {
   position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
   background: var(--bg); font-size: 18px; text-align: center; padding: 24px;
+}
+
+/* .pill in the stale-banner's amber, non-interactive */
+.unsaved-pill, .unsaved-pill:hover {
+  color: var(--amber); font-weight: 600;
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
 }
 
 @media (prefers-reduced-motion: reduce) {

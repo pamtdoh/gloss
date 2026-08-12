@@ -83,16 +83,18 @@ All review state for a fact lives in a sidecar next to it —
 
 ## The session
 
-`gloss session <review>` binds an ephemeral loopback port, prints a
-one-time-token URL, serves the viewer over the revision's files, and
-blocks until the reviewer clicks Finish review (or approves). Stdout is
+`gloss session <review>` binds an ephemeral loopback port, prints the
+viewer URL, serves the viewer over the revision's files, and blocks
+until the reviewer clicks Finish review (or approves). Stdout is
 JSONL events — `session.started` (with the URL), `question.asked`,
 `question.replied` (a human turn appended to an existing thread),
 `session.finished` — followed by a final JSON summary line; the process
 exiting is the completion signal, so one stdout monitor covers live Q&A
-and completion. Auth is one-shot: single token, single session cookie,
-loopback only, strict origin checks (`--serve-host` additionally admits a
-private proxy hostname).
+and completion. Plain loopback sessions have no auth — anything local
+can already edit `.gloss/` directly — just host and origin checks.
+With `--serve-host` (a private proxy hostname, e.g. tailscale serve)
+the network boundary is real, so the URL carries a one-time token that
+gates a port-scoped session cookie.
 
 ## Skills
 
