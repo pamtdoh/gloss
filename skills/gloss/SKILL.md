@@ -21,10 +21,16 @@ ask, or state the scope you inferred when you present the review.
 1. **Ensure the repo is initialized.** Run `gloss init` at the repo
    root. It is idempotent and prints a JSON result.
 
-2. **Read the code.** Inspect the repository with normal read tools until
-   you understand the design within the requested scope. You are condensing
-   design, not summarizing files — organize by what the system *is*, not by
-   its directory layout.
+2. **Read the code — and run it when facts will need evidence.**
+   Inspect the repository with normal read tools until you understand
+   the design within the requested scope. You are condensing design,
+   not summarizing files — organize by what the system *is*, not by
+   its directory layout. Whenever facts will need evidence only
+   execution can produce — screenshots, transcripts, probes; any
+   visual scope qualifies — get the app runnable (staged state is
+   fine) now and keep it so through writing, capturing each piece as
+   a fact needs it. Ask the user first only when running would be
+   expensive (no way to launch the app, no browser tooling).
 
 3. **Create the review directory.** Pick a short kebab-case review name
    from the user's prompt (e.g. `checkout-flow`, `design-review`) and
@@ -61,11 +67,23 @@ ask, or state the scope you inferred when you present the review.
    - **Revision 1 is facts only.** Sidecar files (`*.review.json`) are the
      human's review state, written during review — never at generation.
 
-5. **Re-read, then hand it to the human.** Re-read the whole revision
-   in tree order, as the reviewer will, and fix what only shows at
-   that altitude: two facts that contradict each other, a term used
-   before the fact that introduces it, a load-bearing fact buried
-   last. Then show the tree of `.gloss/<review>/1/` and run the
+5. **Re-read, then hand it to the human.**
+
+   - **Cold reader (if you can spawn subagents).** Send one
+     fresh-context agent only `references/writing-facts.md` and the
+     revision directory, and ask it for a defect list — fact,
+     contract rule, what's missing. Launch it first and do the
+     altitude pass while it works; when it returns, apply what's
+     real, drop what's invented.
+   - **Altitude pass.** Re-read the whole revision in tree order, as
+     the reviewer will, and fix what only shows at that altitude: two
+     facts that contradict each other, a term used before the fact
+     that introduces it, a load-bearing fact buried last.
+   - **Contract pass — only if no subagents.** With no cold reader,
+     hold each fact against the writing contract yourself — every
+     rule in `references/writing-facts.md`, not a remembered summary.
+
+   Then show the tree of `.gloss/<review>/1/` and run the
    session (below) — or, for terminal-only review, print the facts
    themselves and take decisions in conversation.
 

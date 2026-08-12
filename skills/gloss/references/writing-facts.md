@@ -63,12 +63,24 @@ what — two sentences is a complete fact. Length is spent on answers
 and context, never on ceremony, hedging, or general programming
 background.
 
-**Walk one concrete case through any hard claim.** For any claim the
-reviewer would otherwise simulate in their head — encodings, offsets,
-path resolution, ordering, concurrency — walk one real value through
-it and show what comes out the other end. One example per hard claim,
-chosen at the failure or the boundary, not the happy path. Each genre
-has its own natural form of this:
+**Ground any claim the reviewer can't check from the fact alone.**
+Three ways a claim stays abstract:
+
+- If the reviewer would have to **simulate** it in their head —
+  encodings, offsets, path resolution, ordering, concurrency — walk
+  one real value through it and show what comes out the other end.
+- If they would have to **imagine** an artifact — a UI state, an
+  error or empty state, CLI or wire output, a rendered result — show
+  the real thing: the actual output line, a short transcript, or a
+  figure ("Show, don't describe", below).
+- If they would have to **trust** a quantity or rule — a boundary, a
+  threshold, a precedence chain, an "only when" claim, a
+  platform-divergent behavior — show what settles it: a constant or
+  comparison read from the code, or a probe run where reading can't
+  settle it.
+
+One case per claim, chosen at the failure or the boundary, not the
+happy path. Each genre has its own natural form of this:
 
 | Genre | Its concrete case |
 |---|---|
@@ -155,8 +167,32 @@ prose would force the reader to reconstruct.
 | an exact shape (schema, config, wire format, CLI surface) | fenced code block |
 | branching or looping logic clearer as code | short pseudocode block |
 | a value crossing boundaries, a lifecycle, a data flow | Mermaid diagram |
-| a visual scope (pages, components) | screenshot saved inside the revision directory, referenced relatively |
+| a visual subject (a page, a component, styling, a user flow) | screenshot or drawn figure — see "Show, don't describe" |
 | real code the reviewer must read line by line | never — that defeats the review |
+
+### Show, don't describe
+
+A visual fact with no figure asks the reviewer to imagine the thing
+they are judging: when the subject is visual, the fact carries a
+figure. (When to capture is workflow — SKILL.md step 2.) What a
+figure must be:
+
+- **A screenshot of the running app, not a mockup.** Staged state is
+  fine — a seeded database, planted review items, a fabricated
+  session — but the fact must say the state is staged, so the
+  reviewer doesn't mistake sample data for their own.
+- **Proportionate.** One figure per fact by default, and prose
+  suffices where one sentence fully specifies the state ("the empty
+  list shows 'No reviews yet'").
+- **Drawn only where values are better seen than read** — a palette
+  as swatches, layout regimes side by side, a state chart — and
+  hand-drawn SVG only where a Mermaid diagram can't show it.
+- **Stored inside the revision directory**, referenced relatively, so
+  it travels with revision copies and stays readable in `approved/`
+  after earlier revisions are gone.
+- **Self-backgrounded.** The viewer renders in light and dark themes;
+  a figure that assumes the page's background is unreadable in the
+  other theme.
 
 ## Examples
 
