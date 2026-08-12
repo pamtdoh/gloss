@@ -77,6 +77,12 @@ All review state for a fact lives in a sidecar next to it —
 - `thread` entries append in order, labeled `who: human | agent`; the
   agent answers questions live during a session by appending and writing
   the file back. All `text` may contain Markdown.
+- Two writers share a sidecar during a live session: the viewer PUTs its
+  whole in-memory copy, the agent edits the file directly. The server
+  merges on write instead of overwriting — the viewer owns the item set
+  (creations, edits, deletions win), the agent owns its thread entries
+  (an entry the incoming copy lacks is re-inserted), so a stale tab can
+  never erase an answer.
 - Resolving an item deletes it from `items`; delete the sidecar when
   nothing remains. Revision-level notes go in `_review.json` at the
   revision root, same schema minus anchors.

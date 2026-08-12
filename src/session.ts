@@ -12,7 +12,7 @@ import {
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { emitLine, failJson, toProtocolPath } from "./protocol.js";
-import { type Sidecar, isEmptySidecar, summarize } from "./summary.js";
+import { type Sidecar, isEmptySidecar, mergeSidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
 import clientJs from "./viewer/client.gen.js" with { type: "text" };
@@ -284,7 +284,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         }
         const factPath = toProtocolPath(relative(dir, factAbs));
         const previous = readSidecar(dir, factPath);
-        const sidecar: Sidecar = body.sidecar ?? {};
+        // merge, don't overwrite: the agent may have appended thread
+        // answers to the file since this tab last read it
+        const sidecar: Sidecar = mergeSidecar(previous, body.sidecar ?? {});
         const target = sidecarPath(dir, factPath);
         if (isEmptySidecar(sidecar)) {
           if (existsSync(target)) unlinkSync(target);
