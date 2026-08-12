@@ -1,6 +1,6 @@
 {
   "name": "gloss-review",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Files-first design review: an agent condenses a repo's design into decidable facts, a human reviews them, the approved revision drives implementation",
   "license": "MIT",
   "type": "module",
