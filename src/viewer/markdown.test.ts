@@ -73,13 +73,97 @@ describe("renderMarkdown richness", () => {
 describe("renderMarkdown source offsets", () => {
   const source = "# Title\n\nBody with `code` and **bold** text.";
 
-  test("text runs carry data-s/data-e matching the source", () => {
-    const html = renderMarkdown(source);
-    const spans = [...html.matchAll(/<span data-s="(\d+)" data-e="(\d+)">([^<]*)<\/span>/g)];
-    expect(spans.length).toBeGreaterThan(2);
-    for (const [, s, e, text] of spans) {
-      expect(source.slice(Number(s), Number(e))).toBe(text!);
+  const unescape = (html: string) =>
+    html.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+
+  /** Every offset-carrying run must quote the source verbatim — dom-anchor's
+   * DOM↔source arithmetic depends on it. */
+  const expectRunsMatchSource = (src: string, minRuns: number) => {
+    const html = renderMarkdown(src);
+    const runs = [...html.matchAll(/data-s="(\d+)" data-e="(\d+)"[^>]*>([^<]*)</g)];
+    expect(runs.length).toBeGreaterThanOrEqual(minRuns);
+    for (const [, s, e, text] of runs) {
+      expect(src.slice(Number(s), Number(e))).toBe(unescape(text!));
     }
+  };
+
+  test("text runs carry data-s/data-e matching the source", () => {
+    expectRunsMatchSource(source, 3);
+  });
+
+  test("soft-wrapped blockquote lines stamp per line, past the > markers", () => {
+    expectRunsMatchSource("> A callout with a long first line\n> and a second wrapped line.", 2);
+  });
+
+  test("wrapped list items stamp per line, past continuation indentation", () => {
+    expectRunsMatchSource("- first item\n- second item with wrapped text\n  continuing on the next line", 3);
+  });
+
+  test("multi-line inline code and fenced code inside a blockquote", () => {
+    expectRunsMatchSource("> some `inline\n> code` here\n\n> ```ts\n> const x = 1;\n> const y = 2;\n> ```", 5);
+  });
+
+  test("raw HTML blocks inside a blockquote stamp per line", () => {
+    expectRunsMatchSource("> <div>\n> raw html\n> </div>", 3);
+  });
+
+  test("the invariant holds across nested structures", () => {
+    expectRunsMatchSource("> | col | role |\n> |---|---|\n> | a | wraps |", 4);
+    expectRunsMatchSource("> - outer item\n>   - inner item that has\n>     a wrapped line", 3);
+    expectRunsMatchSource("> # A heading\n> continued paragraph\n> with a wrap", 3);
+    expectRunsMatchSource("> > double quoted\n> > wrapped line", 2);
+    expectRunsMatchSource("- [x] a done item with\n  a wrapped continuation", 2);
+    expectRunsMatchSource("A setext heading\n====", 1);
+    expectRunsMatchSource("> before [link\n> text](https://x.example) after", 4);
+  });
+
+  test("escapes and references stamp exactly around unstamped gaps", () => {
+    // the rewritten source characters ("\", "amp;") sit between exact runs
+    expectRunsMatchSource("> uses foo\\_bar and\n> a second line", 3);
+    expectRunsMatchSource("AT&amp;T and more", 3); // "&amp;" stamps its own "&"
+    expectRunsMatchSource("a \\* b", 2);
+    // a literal "&" (no well-formed reference) is plain text
+    expectRunsMatchSource("AT&T works", 1);
+  });
+
+  test("a character the source never contains stays an unstamped gap", () => {
+    // "&#65;" renders "A": no source slice can equal it, so it gets no
+    // stamp — and its neighbors stay exact instead of the node skewing
+    const html = renderMarkdown("&#65;grade inflation");
+    expect(html).toBe(`<p>A<span data-s="5" data-e="20">grade inflation</span></p>`);
+  });
+
+  test("raw HTML keeps its verbatim whole-node stamp (no decoding happens in it)", () => {
+    expectRunsMatchSource("<div>&amp;</div>", 1);
+  });
+
+  test("corpus sweep: wherever rendered text exists verbatim in a real fact, its stamp is exact", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const root = join(import.meta.dir, "../..");
+    const files: string[] = [join(root, "README.md")];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".md")) files.push(full);
+      }
+    };
+    walk(join(root, ".gloss"));
+    let checked = 0;
+    for (const file of files) {
+      const src = readFileSync(file, "utf8");
+      const html = renderMarkdown(src);
+      for (const [, s, e, text] of html.matchAll(/data-s="(\d+)" data-e="(\d+)"[^>]*>([^<]*)</g)) {
+        const dom = unescape(text!);
+        if (!dom) continue; // mermaid <pre> stamps wrap a nested <code>; the direct capture is empty
+        if (src.slice(Number(s), Number(e)) !== dom) {
+          expect(src.includes(dom)).toBe(false); // only the declared fallback may mismatch
+        }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 
   test("inline code offsets exclude the backticks", () => {
