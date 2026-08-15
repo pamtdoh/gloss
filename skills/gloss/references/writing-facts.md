@@ -1,12 +1,11 @@
 # Writing fact files
 
 A Gloss review succeeds when the human decides every fact without
-opening anything else: not the source, not git history, not the
-conversation that produced the review. SKILL.md governs the workflow
-and the shape of the tree; this file governs the words inside each
-fact. Read it before writing the first fact, and hold every fact you
-write against it. Four sections: what counts as a fact, what to
-write, how to display it, examples.
+opening anything else. Reading source is the cost Gloss exists to
+remove, so a fact that sends the reviewer to the code has failed at
+its one job. Every fact carries two duties: the reviewer can *decide*
+it, and a cold reader can *follow* it. Failing either is a defect.
+Hold every fact you write against this contract.
 
 ## What counts as a fact
 
@@ -14,7 +13,7 @@ write, how to display it, examples.
 sentence — the reviewer can agree or object to it alone. The body
 *observes* the design; the reviewer supplies the judgment. A fact is
 not a thesis to defend: it needs no supporting argument, only enough
-content for a cold reader to understand what is being stated.
+content for a cold reader to follow what is being stated.
 
 **Written for a cold reader.** The reviewer arrives knowing roughly
 what the project is and nothing else. They have not seen your
@@ -27,48 +26,58 @@ never lean on:
 - **Git archaeology.** A bare commit hash ("reverted in `5d851d1`")
   is an errand. State what happened; a hash may follow as a locator,
   never substitute.
-- **The code itself.** A pointer like `session.ts:57` may *anchor* a
-  claim so the implementer can find it later. It must never *carry*
-  the claim. Test: delete every pointer from the fact. If the fact
-  stops making sense, it was an index into the codebase, not a fact.
+- **The code itself.** The reviewer has no code open to check a
+  claim against, so the fact carries its claim entirely in its own
+  words. Test: if the fact only makes sense to someone with the
+  codebase in front of them, it is an index into the codebase, not a
+  fact. Showing a relevant shape — a struct, a schema, a signature —
+  is fine; that is the fact carrying the content itself.
 
-**Standing alone.** The test for a well-cut fact: someone who read
-only the group's `_index.md` could write it without reading its
-sibling facts. If two files can't be written independently, they are
+**Standing alone.** The test for a well-cut fact: someone who knows
+the design and has read only the group's `_index.md` could write it
+without reading its sibling facts. If two files can't be written independently, they are
 one fact. If a file needs a preamble before its first sentence, the
 preamble belongs in `_index.md`. Numeric prefixes order the reading
 as a courtesy, not a dependency; a genuinely layered design may make
 later facts assume earlier ones, but that is an allowed exception,
 not the default shape.
 
-**One claim per sentence.** An em dash must not join two independent
-claims, and a colon must not chain three. Dash-spliced sentences let
-distant facts sit next to each other without the connective tissue
-that would reveal whether they cohere. If removing the dash leaves
-two sentences that each say something, write two sentences.
+**One claim per sentence.** A sentence carries one decidable claim:
+an em dash, a colon, or an "and" must not fuse two claims the
+reviewer could judge differently. If removing the joiner leaves two
+sentences that each say something, write two sentences.
 
 ## What to write
 
 **Open with the what.** The first sentence of the body states what
 exists, what it does, or what changed — the way you would describe
 the code to a colleague at a higher altitude. No situation paragraph,
-no problem-first buildup.
+no problem-first buildup. Two genre-shaped exceptions: when the
+fact's substance is a block or table (interface, inventory), the
+block itself may open the body; a delta may open with the old
+behavior, because before → after order is its what.
 
-**Elaborate only to answer anticipated questions.** Body text beyond
-the opening statement serves two purposes only: answering a question
-the reviewer would plausibly ask ("what happens on conflict?", "where
-does this run?"), or supplying context they need to understand the
-statement. If no question is anticipated, the fact ends after the
-what — two sentences is a complete fact. Length is spent on answers
-and context, never on ceremony, hedging, or general programming
-background.
+**Elaborate to answer anticipated questions.** Body text beyond the
+opening statement answers questions the reviewer would plausibly ask,
+or supplies context they need to understand the statement; prose a
+cold reader needs to follow the mechanism is an answer, not padding.
+Context stays inline. A substantial answer goes under its own `##`
+heading phrased as the literal question — "Why is this needed?",
+"Why X and not Y?", "What is the flow, step by step?" — skippable
+for a reviewer who already knows. A short fact is fine when nothing
+needs answering; length is never spent on ceremony, hedging, or
+general programming background. A reviewer cannot decide a why, so
+justification is never the decidable content of a file; a fact whose
+only substance is justification is deleted or merged into the fact
+it justifies.
 
 **Ground any claim the reviewer can't check from the fact alone.**
 Three ways a claim stays abstract:
 
 - If the reviewer would have to **simulate** it in their head —
   encodings, offsets, path resolution, ordering, concurrency — walk
-  one real value through it and show what comes out the other end.
+  one real value through it, end to end, and show what comes out the
+  other side — never a token example that stays vague.
 - If they would have to **imagine** an artifact — a UI state, an
   error or empty state, CLI or wire output, a rendered result — show
   the real thing: the actual output line, a short transcript, or a
@@ -79,29 +88,16 @@ Three ways a claim stays abstract:
   comparison read from the code, or a probe run where reading can't
   settle it.
 
-One case per claim, chosen at the failure or the boundary, not the
-happy path. Each genre has its own natural form of this:
+A happy-path walkthrough may come first to build the reader's model;
+a claim that can fail is still grounded at the failure or the
+boundary. Each genre bullet below names its natural form of
+grounding.
 
-| Genre | Its concrete case |
-|---|---|
-| Mechanism | a `Concretely:` walkthrough (the heaviest user) |
-| Procedure | one real request run through the numbered steps |
-| Invariant | the one violation that would break the guarantee |
-| Delta | the same input shown under old and new behavior |
-| Interface | a sample instance next to the schema, when fields aren't obvious |
-| Inventory | rarely needed — the table is already concrete parts |
-
-**Keep the why in one callout.** Rationale goes in a single
-`> **Why:**` blockquote, at most one per fact, visually apart from
-behavior. Rationale that outgrows its callout is cut, not promoted; a
-reviewer who wants more can ask in the fact's thread. A reviewer
-cannot decide a why, so a why is never the decidable content of a
-file. A fact whose only substance is justification is deleted or
-merged into the fact it justifies.
-
-**Pick the genre before writing.** Every fact is one of six genres;
-the genre decides its shape. A fact that fits none of them is usually
-two facts.
+**Start from a genre.** The six genres below are reference shapes:
+most facts fit one, and a fact may blend two when its subject demands
+it — a mechanism whose walkthrough is a numbered ladder, an interface
+with a short procedure attached. A fact that fits no shape is usually
+making two claims.
 
 | Genre | States | Typical form |
 |---|---|---|
@@ -116,31 +112,33 @@ two facts.
   commands, endpoints, message types, files, states, UI pages, UI
   components. One row per part, with only the columns a reviewer
   needs to judge the set — name, role, and at most one or two more.
-  The decidable claim is the set itself: the
-  reviewer scans it the way they would skim a module's exports —
-  object to a row that shouldn't exist, ask about one that seems
-  missing, let the rest stand.
+  The decidable claim is the set itself: the reviewer objects to a
+  row, asks about a missing one, lets the rest stand. The table is
+  its own grounding.
 - **Procedure** writes down the steps of an important flow — a
   request lifecycle, an API call sequence, a startup order — as a
   numbered list, one action per step, in the order the system
-  performs them. When branching or looping makes prose steps awkward,
-  a short pseudocode block is a legitimate rendering; the ban is on
-  pasting real code that must be reviewed line by line, not on
-  code-shaped clarity.
+  performs them. Ground it with one real request run through the
+  steps. When the flow branches or loops, a short pseudocode block is
+  often the clearest rendering; the ban is on pasting real code that
+  must be reviewed line by line, not on code-shaped clarity.
 - **Mechanism** explains the behavior of a single piece: what it
-  does, in prose a cold reader can follow, anchored (not carried) by
-  a file pointer, then grounded with a `Concretely:` walkthrough.
+  does, in prose a cold reader can follow, grounded with a
+  `Concretely:` walkthrough.
 - **Delta** describes a change at design level: what the behavior
   was, what it is now, and what surface it touches. It substitutes
   for reading the diff, so it names the observable difference, not
-  the edited lines. This is the genre for "review what changed"
-  scopes.
+  the edited lines. Ground it with the same input shown under old and
+  new behavior. This is the genre for "review what changed" scopes.
 - **Interface** shows a boundary as a fenced code block: a schema, a
   config format, a wire message, a CLI surface, a file layout. The
   block *is* the
-  decidable content; surrounding prose stays minimal — one sentence
+  decidable content; the body around it stays minimal — one sentence
   on what the shape is for, plus only the field notes a reviewer
-  couldn't infer from the shape itself. Telling it apart from
+  couldn't infer from the shape itself. Ground it with a sample
+  instance next to the schema when fields aren't obvious. Questions
+  the shape raises go under `##` headings, as in any fact. Telling it
+  apart from
   inventory: judging *what's in a set* is inventory; judging
   *field-level shape* is interface; both is two facts.
 - **Invariant** states a property the design maintains across parts,
@@ -154,6 +152,38 @@ two facts.
   invariant. A mechanism often enforces an invariant, and the
   invariant fact may name it.
 
+## How to word it
+
+A fact's reader is a cold reader, often not a native English speaker,
+with no author to ask. These rules come from ASD-STE100
+controlled-language practice; each is checkable word by word:
+
+| Rule | Write | Not |
+|---|---|---|
+| Active voice, named actor | "The server mints a token." | "A token is minted." |
+| Simple tenses | "the viewer re-reads the sidecar" | "the sidecar has been re-read" |
+| One plain verb, never a phrasal verb | "start the session" | "spin up the session" |
+| The verb, not its noun | "the viewer resolves the anchor" | "the viewer performs resolution of the anchor" |
+| One name per concept, used everywhere | always "run" | "run", "segment", "chunk" in rotation |
+| Noun stacks of at most three words | "the arithmetic that maps offsets" | "the DOM source offset mapping arithmetic" |
+| At most ~25 words per sentence; split instead of joining | two short sentences | "clause; clause" or a chain of subordinate clauses |
+| Keep the subject, verb, and articles | "the lines that were not located" | "lines not located" (which lines?) |
+
+Four more rules govern flow rather than words. Give information gradually: each sentence adds one new idea
+to what the reader already holds. Connect sentences with visible
+connecting words ("then", "thus", "because of this") — the reader
+must never have to infer the link between two sentences. Introduce a
+long term in full once, then use one consistent short form. Keep one
+topic per paragraph, at most about six sentences.
+
+Two shapes to copy directly. State a sharp edge the way a warning is
+written — the condition first, then the consequence: "If
+you delete a sidecar item during a live session, the viewer treats
+it as resolved", never a risk buried mid-sentence. And a caution: a
+hedge is content. "May drift" must not become "drifts" to save
+words — the goal is a sentence that cannot be misread, not the
+shortest sentence.
+
 ## How to display it
 
 Prose is the default; a form is chosen when it shows structure that
@@ -165,7 +195,7 @@ prose would force the reader to reconstruct.
 | a small unordered set of points | bullet list |
 | steps in a required order | numbered list |
 | an exact shape (schema, config, wire format, CLI surface) | fenced code block |
-| branching or looping logic clearer as code | short pseudocode block |
+| an algorithm — a decision ladder, a matching loop, branching logic | short pseudocode block |
 | a value crossing boundaries, a lifecycle, a data flow | Mermaid diagram |
 | a visual subject (a page, a component, styling, a user flow) | screenshot or drawn figure — see "Show, don't describe" |
 | real code the reviewer must read line by line | never — that defeats the review |
@@ -188,8 +218,7 @@ figure must be:
   as swatches, layout regimes side by side, a state chart — and
   hand-drawn SVG only where a Mermaid diagram can't show it.
 - **Stored inside the revision directory**, referenced relatively, so
-  it travels with revision copies and stays readable in `approved/`
-  after earlier revisions are gone.
+  it survives revision copies.
 - **Self-backgrounded.** The viewer renders in light and dark themes;
   a figure that assumes the page's background is unreadable in the
   other theme.
@@ -199,53 +228,45 @@ figure must be:
 One complete fact, mechanism genre, at full length:
 
 ```markdown
-# Viewer auth: one-time token, then a session cookie
+# Viewer auth is a one-time token, then a session cookie
 
-The session URL carries a token that works exactly once. Opening it
-sets a session cookie and burns the token; every later request from
-that browser rides the cookie.
+The session URL carries a token that works exactly once. The first
+visit burns the token and sets a session cookie. Every later request
+from that browser uses the cookie.
 
 Concretely: the `session.started` event prints
-`http://127.0.0.1:37665/auth?token=ba47…`. The first visit consumes
-the token and redirects to the viewer with a cookie set. Pasting that
+`http://127.0.0.1:37665/auth?token=ba47…`. The first visit burns the
+token and redirects to the viewer with a cookie set. Pasting that
 same URL into a second browser gets a 403, because the token is
-already spent. A second reviewer needs a new session, not a shared
-link.
+already burned.
 
-The token is minted fresh per `gloss session` run (`session.ts`);
-nothing is persisted across runs.
+Each `gloss session` run mints a fresh token. Nothing
+persists across runs.
 
-> **Why:** the session URL lands in terminal scrollback and shell
-> history; a token that burns on first use means a leaked line can't
-> open the review for anyone else.
+## Why a one-time token?
+
+The session URL lands in terminal scrollback and shell history. A
+token that burns on first use means a leaked line cannot open the
+review for anyone else.
+
+## What does a second reviewer do?
+
+They ask for a new `gloss session` run. Tokens are per run, so a
+shared link cannot admit them.
 ```
 
-Compact examples of the remaining genres, showing each form:
+Compact examples of four more genres, showing each form:
 
-**Inventory** — a complete fact can be a title, one sentence, and a
-table:
+**Inventory** — a complete fact can be a title and a table:
 
 ```markdown
 # The CLI has three commands
 
 | Command | Role |
 |---|---|
-| `gloss init` | create `.gloss/` in the repo; idempotent |
+| `gloss init` | create `.gloss/` in the repo (idempotent) |
 | `gloss session <review>` | serve the viewer, stream JSONL events until the review finishes |
 | `gloss skill install` | write the skills where an agent will find them |
-```
-
-**Procedure** — one action per step, in execution order:
-
-```markdown
-# A question travels file-first from viewer to agent
-
-1. The reviewer asks a question on a fact; the viewer writes it into
-   the fact's `.review.json` sidecar.
-2. The server emits a `question.asked` line on stdout.
-3. The agent appends its answer to the same sidecar item's `thread`.
-4. The viewer re-reads the sidecar within a few seconds and shows the
-   answer in place.
 ```
 
 **Delta** — the observable difference, not the edited lines:
@@ -256,11 +277,8 @@ table:
 Before, fact paths used the platform's separator. On Windows the
 viewer received `10-flow\_index.md`, so no directory grouping matched
 and facts rendered as one flat backslashed list. Now the server
-normalizes to `/` at the two places it creates a path, and every
-consumer sees one canonical form.
-
-> **Why:** the same strings flow into session events and come back in
-> API calls; one form at the source keeps every reader simple.
+normalizes to `/` at the two places it creates a path, and the same
+fact arrives everywhere as `10-flow/_index.md`.
 ```
 
 **Interface** — the block is the claim:
@@ -277,7 +295,9 @@ consumer sees one canonical form.
 }
 ```
 
-`anchor` is optional; an item without one applies to the whole fact.
+`anchor` is optional. An item without one applies to the whole fact.
+`type` is `"comment"` or `"question"`. A comment carries `text`
+instead of a `thread`.
 ````
 
 **Invariant** — operational statement, then the violation:
@@ -285,10 +305,11 @@ consumer sees one canonical form.
 ```markdown
 # Revisions never reference each other
 
-Whenever a new revision is created, every fact file is copied into it
-as a standalone copy, with no link, include, or mention of the
-previous revision. The concrete violation: a fact in `2/` that says
-"unchanged from revision 1", or an image referenced from `1/` —
-either breaks the guarantee that any revision, including `approved/`,
-stays fully readable after earlier revisions are edited or deleted.
+Whenever the agent creates a new revision, it copies every fact file
+into it as a standalone copy, with no link, include, or mention of
+the previous revision. The concrete violation: a fact in `2/` that
+says "unchanged from revision 1", or an image referenced from `1/`.
+Either breaks the guarantee that every revision, including
+`approved/`, stays readable after anyone edits or deletes the
+earlier ones.
 ```
