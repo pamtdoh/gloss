@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { emitLine, failJson as fail } from "./protocol.js";
-import { runSession, type SessionOptions } from "./session.js";
+import { drainSession, runSession, type SessionOptions } from "./session.js";
 import { installSkills, isSkillAgent } from "./skills.js";
 
 const USAGE = `gloss — files-first design review
@@ -12,10 +12,17 @@ Usage:
                     [--serve-host <host>]
                           Serve the viewer, emit JSONL events on stdout,
                           block until the review is finished, then print
-                          a JSON summary.
+                          a JSON summary. Every line is also written to
+                          .gloss/.local/<review>/session.jsonl.
                           --serve-host additionally accepts requests
                           proxied from a private hostname (e.g.
                           tailscale serve); binding stays loopback-only
+  gloss session <review> --drain [--timeout <seconds>]
+                          Print the event lines that arrived since the
+                          last drain, then exit within the timeout
+                          (default 25). Exit code 0: the session
+                          finished; 3: still open, call again; 4: the
+                          session process is gone without finishing
   gloss skill install --agent claude|codex [--global]
                           Install the Gloss skills into this repo, or
                           with --global into your home directory for
@@ -37,12 +44,19 @@ function init(cwd: string): void {
   emitLine({ ok: true, path: root, created });
 }
 
-function parseSessionArgs(args: string[]): SessionOptions {
-  const opts: SessionOptions = { review: "", noBrowser: false };
+type SessionArgs = SessionOptions & { drain: boolean; timeoutMs?: number };
+
+function parseSessionArgs(args: string[]): SessionArgs {
+  const opts: SessionArgs = { review: "", noBrowser: false, drain: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--no-browser") opts.noBrowser = true;
-    else if (arg === "--rev") {
+    else if (arg === "--drain") opts.drain = true;
+    else if (arg === "--timeout") {
+      const seconds = Number(args[++i]);
+      if (!Number.isInteger(seconds) || seconds <= 0) fail("--timeout expects whole seconds");
+      opts.timeoutMs = seconds * 1000;
+    } else if (arg === "--rev") {
       const value = Number(args[++i]);
       if (!Number.isInteger(value)) fail("--rev expects a number");
       opts.revision = value;
@@ -55,6 +69,10 @@ function parseSessionArgs(args: string[]): SessionOptions {
     else opts.review = arg;
   }
   if (!opts.review) fail("usage: gloss session <review> [--rev <n>] [--no-browser]");
+  if (opts.timeoutMs !== undefined && !opts.drain) fail("--timeout requires --drain");
+  if (opts.drain && (opts.revision !== undefined || opts.noBrowser || opts.serveHost)) {
+    fail("--drain combines only with --timeout");
+  }
   return opts;
 }
 
@@ -64,9 +82,15 @@ switch (command) {
     if (rest.length > 0) fail("init takes no arguments");
     init(process.cwd());
     break;
-  case "session":
-    runSession(process.cwd(), parseSessionArgs(rest));
+  case "session": {
+    const opts = parseSessionArgs(rest);
+    // drainSession is async (it sleeps between polls) and exits the
+    // process itself; the pending timers keep the event loop alive.
+    if (opts.drain) {
+      void drainSession(process.cwd(), { review: opts.review, timeoutMs: opts.timeoutMs ?? 25_000 });
+    } else runSession(process.cwd(), opts);
     break;
+  }
   case "skill": {
     const usage = "usage: gloss skill install --agent claude|codex [--global]";
     if (rest[0] !== "install") fail(usage);

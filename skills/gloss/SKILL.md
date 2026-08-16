@@ -65,46 +65,118 @@ the scope you inferred when you present the review.
    - **Revision 1 is facts only.** Sidecar files (`*.review.json`) are the
      human's review state, written during review — never at generation.
 
-5. **Re-read, then hand it to the human.**
+   Finish with the checklist at the end of
+   `references/writing-facts.md`, run over the whole tree by
+   searching rather than rereading. It is part of writing, not a
+   verification pass.
 
-   - **Cold reader (if you can spawn subagents).** Send one
-     fresh-context agent only `references/writing-facts.md` and the
-     revision directory, and ask it for a defect list — fact, the
-     contract duty or rule it fails, what's missing. Launch it first
-     and do the altitude pass while it works; when it returns, apply
-     what's real, drop what's invented.
-   - **Altitude pass.** Re-read the whole revision in tree order, as
-     the reviewer will, and fix what only shows at that altitude: two
-     facts that contradict each other, a term used before the fact
-     that introduces it, a load-bearing fact buried last.
-   - **Contract pass — only if no subagents.** With no cold reader,
-     hold each fact against the writing contract yourself — every
-     rule in `references/writing-facts.md`, not a remembered summary.
+5. **Verify on request, then hand it to the human.**
 
-   Then show the tree of `.gloss/<review>/1/` and run the
-   session (below) — or, for terminal-only review, print the facts
-   themselves and take decisions in conversation.
+   When you present the review, tell the human they can ask for a
+   verification pass, and that they can say how thorough it should
+   be. The trade is theirs: without the request the review arrives
+   fast, and with it the tree gets fresh-eyed checks before they
+   read. Without that request, serve the revision directly.
 
-## Run the session under one monitor
+   Verification runs in subagents only, never as your own re-read,
+   because the author fills gaps from memory that a fresh reader
+   would have to notice:
 
-Start the session as a single background monitor whose event stream is
-the command's stdout:
+   - **Mechanical check.** Send one fresh-context agent
+     `references/writing-facts.md` and the revision directory, with
+     one mandate: the wording table and the finishing checklist,
+     nothing else. Its hits are pattern matches, so apply every
+     one.
+   - **Contract check.** Send a second fresh-context agent only
+     `references/writing-facts.md` and the revision directory. Ask
+     it for a defect list: fact, the rule it fails, what's missing.
+   - **Tree check.** Send a third fresh-context agent this
+     SKILL.md and the revision directory. Ask it for tree-level
+     defects: two facts that contradict each other, a term used
+     before the fact that introduces it, a load-bearing fact buried
+     last, a tree rule from step 4 broken.
+
+   Launch all of them together and make no edits while they run, because
+   an edit mid-check splits the tree into two states, one per
+   reader. When all return, merge the lists, then apply what's
+   real and drop what's invented.
+
+   If you cannot spawn subagents, fall back to checking the
+   revision yourself: hold each fact against every rule in
+   `references/writing-facts.md`, and the tree against the rules in
+   step 4, reading the actual rules rather than a remembered
+   summary, because your memory of the text is what the check
+   exists to correct. Tell the human the check was your own re-read
+   rather than a fresh reader's, so they can weigh it accordingly.
+
+   Then show the tree of `.gloss/<review>/1/` and run the session
+   (below). For terminal-only review, print the facts themselves
+   and take decisions in conversation instead.
+
+## Run the session under one supervisor
 
 ```
 gloss session <review>
 ```
 
-It serves the review's latest revision on loopback and blocks until the human clicks
-**Finish review** or approves. Stdout is JSONL, one event per line:
-`session.started` (includes the one-time viewer `url` — share it if the
-human's browser didn't open), `question.asked`, `question.replied` (the
-human replied in an existing thread), `session.finished`, then a final
-JSON summary (comment count, open questions, approval status).
+It serves the review's latest revision on loopback and blocks until
+the human clicks **Finish review** or approves. Stdout is JSONL,
+one event per line. The events are `session.started` (with the
+one-time viewer `url` to share if the human's browser didn't open),
+`question.asked`, `question.replied` (the human replied in an
+existing thread), and `session.finished`. A final JSON summary
+follows, with the comment count, open questions, and approval
+status. The session also writes every line to
+`.gloss/.local/<review>/session.jsonl`, so the event stream is
+always readable as a file.
 
-One listener covers everything — in Claude Code, run the command via the
-Monitor tool with `persistent: true`. Each stdout line wakes you; the
-process exiting is the completion signal. Don't add a second watcher or
-a poll loop on top.
+**The goal, in whatever way your harness supports it.** One
+supervisor owns this process for its whole life, because two
+watchers split the event stream and each answers half the
+questions. You see every line it prints, in order, exactly once,
+and you notice promptly when the process exits. Act on each
+question as it arrives, because the human is sitting in front of
+the viewer: an answer that lands while they are still reading
+changes the review they are giving you, and the same answer after
+they close the tab is a note for next time.
+
+**How to get there.** Take the first of these your harness can
+actually do.
+
+If your harness can push each new line of a running command into
+your context, use that and add nothing else. In Claude Code that is
+the Monitor tool with `persistent: true`; each stdout line wakes
+you and process exit is the completion signal.
+
+Otherwise, use the drain loop. Start the session detached and
+discard its stdout, because the log file already carries every
+event (on POSIX shells):
+
+```
+nohup gloss session <review> >/dev/null 2>&1 &
+```
+
+Then run `gloss session <review> --drain` in a loop. Each call
+prints the events that arrived since the previous call and exits
+within `--timeout` (default 25s), so it fits under any harness's
+tool timeout. Never cover the whole review with one open-ended
+blocking call. Exit code 0 means the review is finished. Code 3
+means it is still open: answer what arrived, then call again. Code
+4 means the session process died without finishing; the sidecars
+still hold every comment, so restart the session if the review
+should continue.
+
+If your harness cannot start a background process at all, ask the
+human to run `gloss session <review>` in their own terminal and
+tell you when it's up. You can still follow the review with the
+same drain loop, and your answers travel through the sidecar files
+on disk, so you do not need to own the process to take part.
+
+**Knowing where you are without the stream.** The events are a
+notification layer, not the record. The record is the sidecar
+files. If you lose the stream or resume from a compaction, read
+every `*.review.json` in the revision: any question whose thread
+ends with a `"who": "human"` entry is waiting on you.
 
 ## Answer questions live, while the session runs
 
@@ -135,8 +207,10 @@ When the session finishes with sidecars present:
    delete facts per the comments; answer or settle questions. When you
    judge an item resolved, delete it from the sidecar; delete the sidecar
    file when nothing remains. Carry unresolved items forward untouched.
-4. Run another session on the new revision. Silence is agreement: a
-   revision with no sidecars is fully addressed.
+4. Offer verification for the new revision the same way as in
+   generation step 5, because a rewritten revision is new text and
+   can carry new defects. Then run another session on it. Silence
+   is agreement: a revision with no sidecars is fully addressed.
 
 When the session finishes with no sidecars and no approval, ask the
 human how to proceed — a comment-free finish is not approval, and you

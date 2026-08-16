@@ -1,17 +1,21 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  appendFileSync,
   cpSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { emitLine, failJson, toProtocolPath } from "./protocol.js";
+import { setTimeout as sleep } from "node:timers/promises";
+import { emitLine, emitLines, failJson, teeLinesTo, toProtocolPath } from "./protocol.js";
 import { type Sidecar, isEmptySidecar, mergeSidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
@@ -39,6 +43,13 @@ export interface SessionOptions {
    * still gates the session.
    */
   serveHost?: string;
+}
+
+// Session state (ARCHITECTURE.md): top-level dot-names under .gloss/ are
+// reserved for the tool, and .local/ is the gitignored home for per-review
+// session state — the event log, the drain cursor, the session pid.
+function sessionStateDir(cwd: string, review: string): string {
+  return join(cwd, ".gloss", ".local", review);
 }
 
 function listRevisions(reviewDir: string): number[] {
@@ -122,6 +133,19 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   let tokenUsed = false;
   let finishing = false;
 
+  // Every stdout line is also appended to a session log, so a harness
+  // that cannot hold a pipe open can read the stream as a file via
+  // `gloss session <review> --drain`. The pid is written before the
+  // log, so a log without a pid file can only mean hand-deletion; the
+  // drain cursor carries this pid, so a cursor left by a drain of an
+  // earlier run resets instead of skipping this run's first events.
+  const stateDir = sessionStateDir(cwd, opts.review);
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(join(stateDir, "session.pid"), String(process.pid) + "\n");
+  const logPath = join(stateDir, "session.jsonl");
+  writeFileSync(logPath, "");
+  teeLinesTo((chunk) => appendFileSync(logPath, chunk));
+
   const emit = (event: string, data: Record<string, unknown>): void => {
     emitLine({ event, ...data });
   };
@@ -143,8 +167,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(payload), () => {
       const summary = computeSummary(revision);
-      emit("session.finished", { summary });
-      emitLine(summary);
+      emitLines([{ event: "session.finished", summary }, summary]);
       process.exit(0);
     });
   };
@@ -365,4 +388,97 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       }
     }
   });
+}
+
+export interface DrainOptions {
+  review: string;
+  timeoutMs: number;
+}
+
+// Bounded read of the session log: print every event line that arrived
+// since the last drain, then exit within timeoutMs. Exit codes are the
+// signal — 0: the session finished; 3: still open, call again; 4: the
+// session process is gone without finishing. Together with the tee in
+// runSession this lets a harness with no long-lived pipe supervise the
+// review as a sequence of short calls.
+export async function drainSession(cwd: string, opts: DrainOptions): Promise<never> {
+  const stateDir = sessionStateDir(cwd, opts.review);
+  const logPath = join(stateDir, "session.jsonl");
+  const cursorPath = join(stateDir, "session.offset");
+  const pidPath = join(stateDir, "session.pid");
+  if (!existsSync(logPath)) {
+    failJson(`no session log for ${opts.review} — start gloss session first`);
+  }
+
+  // The cursor is "<pid> <offset>". Stamping the run's pid means a
+  // cursor left by a drain of an earlier session resets instead of
+  // skipping the new session's first events.
+  let cursorPid = 0;
+  let offset = 0;
+  if (existsSync(cursorPath)) {
+    const parts = readFileSync(cursorPath, "utf8").trim().split(" ");
+    const pid = Number(parts[0]);
+    const stored = Number(parts[1]);
+    if (Number.isInteger(pid) && pid > 0 && Number.isInteger(stored) && stored >= 0) {
+      cursorPid = pid;
+      offset = stored;
+    }
+  }
+  let finished = false;
+
+  // runSession writes the pid before the log, so a missing pid file next
+  // to an existing log means someone deleted it by hand — report the
+  // session gone rather than poll to the deadline forever.
+  const sessionPid = (): number => {
+    if (!existsSync(pidPath)) return 0;
+    const pid = Number(readFileSync(pidPath, "utf8"));
+    return Number.isInteger(pid) && pid > 0 ? pid : 0;
+  };
+  const alive = (pid: number): boolean => {
+    if (pid === 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const drainOnce = (): void => {
+    const buffer = readFileSync(logPath);
+    if (offset > buffer.length) offset = 0; // cursor corrupt; recover from the start
+    const text = buffer.toString("utf8", offset);
+    const end = text.lastIndexOf("\n");
+    if (end < 0) return; // a line is mid-write; the next poll gets it whole
+    const complete = text.slice(0, end + 1);
+    writeSync(1, complete);
+    offset += Buffer.byteLength(complete, "utf8");
+    writeFileSync(cursorPath, `${cursorPid} ${offset}\n`);
+    for (const line of complete.split("\n")) {
+      if (!line) continue;
+      try {
+        if (JSON.parse(line).event === "session.finished") finished = true;
+      } catch {
+        // not JSON we understand; pass through without interpreting
+      }
+    }
+  };
+
+  const deadline = Date.now() + opts.timeoutMs;
+  for (;;) {
+    const pid = sessionPid();
+    if (pid !== cursorPid) {
+      // a different session owns the log now; read it from the start
+      cursorPid = pid;
+      offset = 0;
+    }
+    const wasAlive = alive(pid);
+    // liveness is checked before the drain, so lines written up to the
+    // session's death are drained before the death is reported
+    drainOnce();
+    if (finished) process.exit(0);
+    if (!wasAlive) process.exit(4);
+    if (Date.now() >= deadline) process.exit(3);
+    await sleep(Math.min(300, Math.max(1, deadline - Date.now())));
+  }
 }

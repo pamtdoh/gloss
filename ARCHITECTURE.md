@@ -96,7 +96,15 @@ JSONL events — `session.started` (with the URL), `question.asked`,
 `question.replied` (a human turn appended to an existing thread),
 `session.finished` — followed by a final JSON summary line; the process
 exiting is the completion signal, so one stdout monitor covers live Q&A
-and completion. Plain loopback sessions have no auth — anything local
+and completion. Every line is also appended to
+`.gloss/.local/<review>/session.jsonl` (a fresh log per run), so the
+stream is readable as a file. `gloss session <review> --drain` prints
+the lines that arrived since the last drain and exits within
+`--timeout` (default 25s) — exit code 0 when the session finished, 3
+when it is still open, 4 when the session process died without
+finishing — so a harness that cannot hold a pipe open supervises the
+review as a sequence of short calls; the drain cursor and session pid
+live next to the log under `.local/`. Plain loopback sessions have no auth — anything local
 can already edit `.gloss/` directly — just host and origin checks.
 With `--serve-host` (a private proxy hostname, e.g. tailscale serve)
 the network boundary is real, so the URL carries a one-time token that
