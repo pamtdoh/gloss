@@ -1,25 +1,22 @@
 # Writing fact files
 
 A Gloss review succeeds when the human decides every fact without
-opening anything else. Gloss exists to spare the reviewer from
-reading source, so a fact that sends them to the code has failed at
-its one job. Every fact carries two duties: the reviewer can
-*decide* it, and a cold reader can *follow* it. Failing either is a
-defect. Hold every fact you write against this contract.
+opening anything else. Every fact serves the reviewer in two ways: they can
+*decide* it, and they can *follow* it as a cold reader. A fact they
+cannot decide leaves them nothing to accept or object to, so it
+costs a reading pass without settling anything. A fact they cannot
+follow sends them to you or to the code for the missing context,
+which is the reading Gloss exists to remove. The rest of this guide
+is how to give the reviewer both.
 
 ## What counts as a fact
 
 **A standalone, decidable observation.** The title is one decidable
-sentence: the reviewer can agree or object to it alone. Test the
-title like any sentence: remove each "and", "but", comma join, or
-colon, and if two sentences remain that each say something, the
-title makes two claims. Keep the claim the fact is about and let
-the body carry the rest: write "Approval is one directory copy",
-not "Approval is one directory copy, and the directory is the whole
-record". The body *observes* the design, and the reviewer supplies
-the judgment. A fact is not a thesis to defend. It needs no
-supporting argument, only enough content for a cold reader to
-follow what is being stated.
+sentence with a verb: the reviewer can agree or object to it alone.
+The body *observes* the design in neutral terms, including its
+sharp edges, and the reviewer supplies the judgment. A fact is not
+a thesis to defend. It needs no supporting argument, only enough
+content for a cold reader to follow what is being stated.
 
 **Written for a cold reader.** The reviewer arrives knowing roughly
 what the project is and nothing else. They have not seen your
@@ -42,20 +39,6 @@ a plain gloss at its first use. A fact may never lean on:
   signature) is fine, because then the fact carries the content
   itself.
 
-**Standing alone.** The test for a well-cut fact: someone who knows
-the design and has read only the group's `_index.md` could write it
-without reading its sibling facts. If two files can't be written
-independently, they are one fact. If a file needs a preamble before
-its first sentence, the preamble belongs in `_index.md`. Numeric
-prefixes order the reading as a courtesy, not a dependency. A
-genuinely layered design may make later facts assume earlier ones,
-but that is an allowed exception, not the default shape.
-
-**One claim per sentence.** A sentence carries one decidable claim:
-an em dash, a colon, or an "and" must not fuse two claims the
-reviewer could judge differently. If removing the joiner leaves two
-sentences that each say something, write two sentences.
-
 ## What to write
 
 **Open with the what.** The first thing in the body states what
@@ -63,8 +46,8 @@ exists, what it does, or what changed, the way you would describe
 the code to a colleague one level above it. The reason: the
 reviewer can only start judging once the claim is in front of them,
 so buildup delays the verdict without informing it. Anything that
-*is* the claim
-counts as opening with it. A schema block or an inventory table can
+*is* the claim counts as opening with it. A schema block or an
+inventory table can
 open the body when the block is the fact's substance. A delta opens
 with the old behavior, because before → after is that genre's what.
 
@@ -83,10 +66,19 @@ reviewer cannot decide a why, so justification is never the
 decidable content of a file. A fact whose only substance is
 justification is deleted or merged into the fact it justifies.
 
+**Stop at the review's altitude.** The review's prompt sets how
+deep the tree descends (SKILL.md governs this), and elaboration
+stops at that level. Detail below it is named, not elaborated: one
+sentence that says the layer exists and what the fact leaves out,
+so the reviewer knows there is more and can pull it with a question
+or a comment. A named, unelaborated detail is therefore not a hole
+and needs no grounding, because the fact claims only that the
+detail exists, not what it does.
+
 **Ground any claim the reviewer can't check from the fact alone.**
 Grounding is evidence inside the fact: the claim states the design,
 the grounding shows it, so the reviewer checks instead of trusts.
-Three ways a claim stays abstract:
+Three cues that a claim needs grounding:
 
 - If the reviewer would have to **simulate** it in their head
   (encodings, offsets, path resolution, ordering, concurrency),
@@ -102,34 +94,18 @@ Three ways a claim stays abstract:
   threshold, a precedence chain, an "only when" claim, a
   platform-divergent behavior), show what settles it: a constant or
   comparison read from the code, or a probe run where reading can't
-  settle it.
+  settle it. An unverified "only" is the easiest false claim to
+  write, so check it against the source before writing it.
 
 A happy-path walkthrough may come first to build the reader's
 model. A claim that can fail is still grounded at the failure or
 the boundary. Each genre bullet below names its natural form of
 grounding.
 
-Three cases that writers miss:
-
-- A claim about a piece of text shows the operative words in a
-  block quote or fence, because describing a sentence makes the
-  reviewer imagine it.
-- A count or an exclusive claim ("only", "once", "never", "nothing
-  else") is checked against the source before it is written, and
-  the fact shows what settles it. An unverified "only" is the
-  easiest false claim to write. When a count could be taken two
-  ways (case, whole word, examples included or not), the fact
-  states which way it counted.
-- A rule or test the reviewer must apply is grounded by one real
-  case run through it, so the reader sees the test decide
-  something.
-
 **Start from a genre.** The six genres below are reference shapes:
 most facts fit one, and a fact may blend two when its subject
-demands it. A fact that fits no shape is usually making two claims.
-When genres seem to overlap, ask what the reviewer would judge. One
-judgment is one fact, and the genre is the shape that judgment
-takes.
+demands it. Pick whichever shape presents the fact in the way a
+reader will understand most easily.
 
 | Genre | States | Typical form |
 |---|---|---|
@@ -152,7 +128,7 @@ takes.
   numbered list, one action per step, in the order the system
   performs them. Ground it with one real request run through the
   steps. Choose the rendering that shows the logic, because the
-  duty guards the reviewer's effort, not the syntax. For example, a
+  aim is the reviewer's effort, not the syntax. For example, a
   flow that branches or loops is often clearest as a short
   pseudocode block.
 - **Mechanism** explains the behavior of a single piece: what it
@@ -171,33 +147,25 @@ takes.
   field notes a reviewer couldn't infer from the shape itself.
   Ground it with a sample instance next to the schema when fields
   aren't obvious. Questions the shape raises go under `##`
-  headings, as in any fact. To separate it from inventory, apply
-  the general test: a set of endpoints is one judgment (inventory),
-  and one endpoint's field-level shape is another (interface).
-  Needing both means two facts.
+  headings, as in any fact.
 - **Invariant** states a property the design maintains across
   parts, written operationally: *"when/whenever ⟨event⟩, ⟨what
   holds⟩"*, with an actor, a moment, and an observable outcome. A
   slogan ("revisions are standalone") can serve as the title, but
-  it names the guarantee without saying who upholds it when. The
-  one concrete violation serves as its concrete case. To separate it from
-  mechanism, apply the general test again. If deleting one
-  component would make the claim meaningless, the judgment is about
-  that component, so the fact is mechanism. If the claim still
-  constrains whatever replaces the component, the judgment is about
-  the guarantee, so the fact is invariant. For example, "the first visit burns the
-  token" is mechanism, and "no revision references another" is
-  invariant. A mechanism often enforces an invariant, and the
-  invariant fact may name it.
+  it names the guarantee without saying who upholds it, or when.
+  Ground it with the one concrete violation that would break it.
+  For example, "the first visit burns the token" is mechanism, and
+  "no revision references another" is invariant. A mechanism often enforces an
+  invariant, and the invariant fact may name it.
 
 ## How to word it
 
 A fact's reader is a cold reader, often not a native English
-speaker, with no author to ask. These rules come from ASD-STE100,
-an aerospace standard for simplified technical English. Each rule
-is checkable word by word:
+speaker, with no author to ask. This guidance comes from
+ASD-STE100, an aerospace standard for simplified technical English.
+Each row is checkable word by word:
 
-| Rule | Write | Not |
+| Guideline | Write | Not |
 |---|---|---|
 | Active voice, named actor | "The server mints a token." | "A token is minted." |
 | Simple tenses | "the viewer re-reads the sidecar" | "the sidecar has been re-read" |
@@ -214,7 +182,7 @@ Brackets of any shape ask the reader to hold the main sentence open
 while a second sentence runs inside it, so an aside earns a
 sentence of its own.
 
-Five flow rules govern above the sentence:
+Four flow guidelines govern above the sentence:
 
 - Give information gradually: each sentence adds one new idea to
   what the reader already holds.
@@ -224,25 +192,12 @@ Five flow rules govern above the sentence:
 - Introduce a long term in full once, then use one consistent short
   form.
 - Keep one topic per paragraph, at most about six sentences.
-- A transition carries its content instead of announcing it. A
-  sentence that only points at the next idea ("Two rules close the
-  section.") makes the reader pay for a sentence and learn nothing,
-  so fold the announcement into the idea itself: not "Order is
-  addressed separately", but "One more rule governs where the
-  grounding sits inside the fact: …". One shape is exempt: a
-  lead-in that ends with a colon and stands directly above the list
-  it names is a header, not a transition.
 
-Two sentence patterns to copy directly:
-
-- State a sharp edge the way a warning is written: the condition
-  first, and then the consequence, because a reader who meets the
-  condition first knows to read on with care. For example, write
-  "If you delete a sidecar item during a live session, the viewer
-  treats it as resolved".
-- Keep each hedge, because a hedge is content. "May drift" must not
-  become "drifts" to save words. The goal is a sentence that cannot
-  be misread, not the shortest sentence.
+One sentence pattern to copy directly: state a sharp edge the way a
+warning is written, the condition first and then the consequence,
+because a reader who meets the condition first knows to read on
+with care. For example, write "If you delete a sidecar item during
+a live session, the viewer treats it as resolved".
 
 ## How to display it
 
@@ -262,15 +217,26 @@ same three attributes each is really a table.
 | a visual subject (a page, a component, styling, a user flow) | screenshot or drawn figure (see "Show, don't describe") |
 | a short verbatim excerpt (code or document text), when its exact wording is what the reviewer judges | fenced or quoted block |
 
-A fact condenses. Pasting a whole file hands the reviewer the
-reading that Gloss removes, so an excerpt stays as short as its
-point allows. And a quotation is display, never grammar: the
-paraphrase carries your sentence, and the verbatim words sit in
-their own block quote, fence, or table cell, because a fragment
-spliced into your sentence makes the reader parse two voices at
-once. Short quoted phrases count too, so a quoted term serves as
-your sentence's subject or object only after a colon header or
-inside a cell, never mid-sentence.
+When a fact quotes its source, prefer one excerpt over many
+fragments. Show the operative words inside enough surrounding text
+that the reader sees where they live, mark the operative words in
+bold, and cut unrelated stretches with an ellipsis. One block per
+fact is usually enough, and it keeps the quoted lines in their
+source order. Your own sentences carry the point, and the verbatim
+words stay in the block, so the reader never parses two voices in
+one sentence.
+
+For example, a fact claiming that losing the event stream loses no
+review state quotes its source once, with the operative words
+marked:
+
+> Stdout is JSONL, one event per line. … The session also writes
+> every line to `.gloss/.local/<review>/session.jsonl`, so **the
+> event stream is always readable as a file**.
+
+The paraphrase before the block makes the claim, the bold shows the
+words that settle it, and the ellipsis skips the event names the
+claim doesn't need.
 
 ### Show, don't describe
 
@@ -347,16 +313,18 @@ Compact examples of the five other genres, showing each form:
 # A question travels from the viewer to the agent and back
 
 1. The human selects text in a fact and asks a question.
-2. The viewer writes the question into the fact's sidecar, and the
-   session prints a `question.asked` event.
-3. The agent reads the sidecar, appends its answer to the question's
-   thread, and writes the file back.
-4. The viewer re-reads the sidecar and shows the answer in the same
+2. The viewer writes the question into the fact's sidecar.
+3. The session prints a `question.asked` event.
+4. The agent appends its answer to the question's thread and
+   writes the sidecar back.
+5. The viewer re-reads the sidecar and shows the answer in the same
    thread, where the human can reply.
 
 Concretely: a question on `collision-retry.md` lands in
 `collision-retry.review.json` as
-`{"id":"q1","type":"question","thread":[{"who":"human","text":"…"}]}`,
+
+    {"id":"q1","type":"question","thread":[{"who":"human","text":"…"}]}
+
 and the answer appends `{"who":"agent","text":"…"}` to that thread.
 
 ## What happens when the human closes the tab?
@@ -373,7 +341,7 @@ session serves the same revision, and the thread is still there.
 Before, fact paths used the platform's separator. On Windows the
 viewer received `10-flow\_index.md`, so no directory grouping matched
 and facts rendered as one flat backslashed list. Now the server
-normalizes to `/` at the two places it creates a path, and the same
+normalizes to `/` at every place it creates a path, and the same
 fact arrives everywhere as `10-flow/_index.md`.
 ```
 
@@ -409,44 +377,9 @@ text.
 Whenever the agent creates a new revision, it copies every fact file
 into it as a standalone copy, with no link, include, or mention of
 the previous revision. The concrete violation: a fact in `2/` that
-says "unchanged from revision 1", or an image referenced from `1/`.
+calls itself unchanged from revision 1, or an image referenced from
+`1/`.
 Either breaks the guarantee that every revision, including
 `approved/`, stays readable after anyone edits or deletes the
 earlier ones.
 ```
-
-## Before you hand it over
-
-Walk the finished tree once against this list. It is part of
-writing, not a verification pass, and each check is mechanical, so
-a miss is a defect you can find without judgment. Search instead of
-rereading, because your own eye fills in what you meant to write:
-items 1 and 2 fall to literal searches for ";", "—", "(", and
-quotation marks, and item 6 to searches over the source. When the
-human asks for verification, a fresh agent repeats this walk with
-eyes that wrote none of it.
-
-1. Semicolons, dashes, and clause-sized parentheses appear only
-   inside verbatim quotes.
-2. No verbatim fragment sits inside your own sentence grammar.
-3. Every title survives the one-claim test and has a verb.
-4. Read only each fact's group `_index.md` and then the fact:
-   every term is defined by the time it is used, in tree order.
-5. Every transition sentence carries content. A bare "N rules
-   follow" sentence is a defect unless it is a colon header
-   directly above its list.
-6. Every count and every "only", "once", "never", or "nothing
-   else" claim was checked against the source, and the fact shows
-   what settles it.
-7. No fact would make the reviewer say "well, parts of it…". When
-   they could accept one half and reject the other, it is two
-   facts.
-8. A claim about a piece of text shows the operative words. A
-   claim about behavior walks one real value through.
-9. Everything a group's `_index.md` promises about its children
-   exists as a child fact. A promised topic with no fact is a
-   hole the index itself documents.
-10. Every sentence passes the wording table. Actorless passives
-    are findable by searching for " is ", " are ", " was ", and
-    " were " followed by a past participle ("is copied", "are
-    deleted"), and any sentence over ~25 words gets split.
