@@ -252,6 +252,8 @@ export function DirView(props: {
   prev: Map<string, string> | null;
   seen: Set<string>;
   selection: Set<string>;
+  /** compare mode: no checkboxes, no quick comments */
+  readonly?: boolean;
   /** already wrapped in the stable {__html} object — see factHtmlProp */
   indexHtml: { __html: string };
   indexFact: Fact | null;
@@ -264,7 +266,7 @@ export function DirView(props: {
   const children = childFactsOf(props.facts, props.dir);
   const entries = childEntries(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
-  const selectable = children.filter((f) => !f.ghost);
+  const selectable = props.readonly ? [] : children.filter((f) => !f.ghost);
   const allSelected =
     selectable.length > 0 && selectable.every((f) => props.selection.has(f.path));
   return (
@@ -289,7 +291,7 @@ export function DirView(props: {
         {stats.questions === 1 ? "" : "s"}
       </div>
       <div className="facttable" id="fact-table" aria-label={`Facts in ${props.dir}`}>
-        {children.length > 0 && (
+        {selectable.length > 0 && (
           <div className="selectall flex items-center gap-2.5 border-b border-line-soft px-1.5 py-1.5">
             <Checkbox
               aria-label="Select all facts in this directory"
@@ -334,7 +336,7 @@ export function DirView(props: {
               data-path={fact.path}
               onClick={() => props.onOpen({ kind: "fact", path: fact.path, depth: 0 })}
             >
-              {ghost ? (
+              {ghost || props.readonly ? (
                 <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
               ) : (
                 <Checkbox
@@ -355,7 +357,7 @@ export function DirView(props: {
                   <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                 )}
               </span>
-              {!ghost && (
+              {!ghost && !props.readonly && (
                 <span className="decide" onClick={(e) => e.stopPropagation()}>
                   {QUICK_COMMENTS.map((note) => (
                     <Button

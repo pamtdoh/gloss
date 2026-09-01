@@ -46,9 +46,13 @@ describe("renderMarkdown richness", () => {
 
   test("fenced code keeps its language; mermaid gets its own class", () => {
     expect(renderMarkdown("```ts\nconst x = 1;\n```")).toContain(`class="lang-ts"`);
-    expect(renderMarkdown("```mermaid\nflowchart LR\nA-->B\n```")).toContain(
-      `class="rk-mermaid"`,
-    );
+    // the diagram's stamps sit on the <code> like any fence's: the
+    // wrapper stays unstamped so no run ever has an element first child
+    const src = "```mermaid\nflowchart LR\nA-->B\n```";
+    const html = renderMarkdown(src);
+    expect(html).toStartWith(`<pre class="rk-mermaid"><code`);
+    const m = /data-s="(\d+)" data-e="(\d+)"/.exec(html)!;
+    expect(src.slice(Number(m[1]), Number(m[2]))).toBe("flowchart LR\nA-->B");
   });
 
   test("ordered lists, task lists, strikethrough", () => {
@@ -156,7 +160,6 @@ describe("renderMarkdown source offsets", () => {
       const html = renderMarkdown(src);
       for (const [, s, e, text] of html.matchAll(/data-s="(\d+)" data-e="(\d+)"[^>]*>([^<]*)</g)) {
         const dom = unescape(text!);
-        if (!dom) continue; // mermaid <pre> stamps wrap a nested <code>; the direct capture is empty
         if (src.slice(Number(s), Number(e)) !== dom) {
           expect(src.includes(dom)).toBe(false); // only the declared fallback may mismatch
         }

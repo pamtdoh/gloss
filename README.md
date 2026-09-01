@@ -24,8 +24,8 @@ change it, ask to understand it, approve to build it.
 ## Install
 
 ```sh
-npm install -g gloss-review                  # `gloss` on PATH (Node 18+)
-gloss skill install --agent claude --global  # or --agent codex
+npm install -g gloss-review          # `gloss` on PATH (Node 18+)
+gloss skill install --global         # or --agents for .agents/skills
 ```
 
 The install is the only time you touch the CLI — your agent drives

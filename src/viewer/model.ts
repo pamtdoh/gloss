@@ -11,6 +11,8 @@ export interface Fact {
 export interface ReviewData {
   review: string;
   revision: number;
+  /** the revision this session serves — the only writable one */
+  served: number;
   revisions: number[];
   facts: Fact[];
 }
@@ -130,6 +132,19 @@ export function dirStats(facts: Fact[], dir: string): DirStats {
     questions += stats.questions;
   }
   return { facts: within.length, items, questions };
+}
+
+/** How an item's anchor resolves against the fact text it sits on. */
+export type AnchorState = "exact" | "drifted" | "detached";
+
+/** The revision before the viewed one, if any. */
+export function previousRevision(data: ReviewData): number | null {
+  return data.revisions.filter((r) => r < data.revision).pop() ?? null;
+}
+
+/** path -> content, the shape the changed-since machinery compares against */
+export function contentMap(facts: Fact[]): Map<string, string> {
+  return new Map(facts.map((f) => [f.path, f.content]));
 }
 
 export type ChangeStatus = "new" | "changed" | "removed" | undefined;

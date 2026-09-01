@@ -54,8 +54,8 @@ try {
   );
   check(again.ok === true && again.created === false, "init is idempotent");
   check(
-    readFileSync(join(tmp, ".gloss/.gitignore"), "utf8").includes(".local/"),
-    "reserved .local/ is git-ignored",
+    readFileSync(join(tmp, ".gloss/.gitignore"), "utf8").includes(".session"),
+    "the ephemeral .session file is git-ignored",
   );
 
   // 3. The agent writes revision 1 (plain file writes of the generated tree).
@@ -82,7 +82,26 @@ try {
     "every fact opens with a # Title claim",
   );
 
-  // 5. The terminal reading path: the whole review, printed.
+  // 5. Skill install: one body, two mount points, identical content.
+  const install = (flags: string[]) =>
+    JSON.parse(execFileSync("node", [cli, "skill", "install", ...flags], { cwd: tmp, encoding: "utf8" }));
+  const toClaude = install([]);
+  const toAgents = install(["--agents"]);
+  check(
+    toClaude.ok === true && toClaude.installed.every((p: string) => p.startsWith(".claude/skills/")),
+    "default install lands in .claude/skills/",
+  );
+  check(
+    toAgents.ok === true && toAgents.installed.every((p: string) => p.startsWith(".agents/skills/")),
+    "--agents install lands in .agents/skills/",
+  );
+  check(
+    readFileSync(join(tmp, ".claude/skills/gloss/SKILL.md"), "utf8") ===
+      readFileSync(join(tmp, ".agents/skills/gloss/SKILL.md"), "utf8"),
+    "both destinations get identical skill content",
+  );
+
+  // 6. The terminal reading path: the whole review, printed.
   console.log("\n=== .gloss/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {

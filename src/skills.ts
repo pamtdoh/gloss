@@ -7,20 +7,19 @@ import reviewSkill from "../skills/gloss/SKILL.md" with { type: "text" };
 import reviewWritingFacts from "../skills/gloss/references/writing-facts.md" with { type: "text" };
 import implementSkill from "../skills/gloss-apply/SKILL.md" with { type: "text" };
 
+// One skill body, two mount points: .claude/skills for Claude Code, or
+// .agents/skills for any other harness that can supervise a streaming
+// background process (Cursor qualifies).
 const DESTINATIONS = {
   claude: ".claude/skills",
-  codex: ".agents/skills",
+  agents: ".agents/skills",
 } as const;
 
-export type SkillAgent = keyof typeof DESTINATIONS;
+export type SkillDest = keyof typeof DESTINATIONS;
 
-export function isSkillAgent(value: string): value is SkillAgent {
-  return value in DESTINATIONS;
-}
-
-// Global installs land in the same directories under $HOME, where both agents
-// look for skills that apply to every repo.
-export function installSkills(cwd: string, agent: SkillAgent, global = false): string[] {
+// Global installs land in the same directories under $HOME, where the
+// harnesses look for skills that apply to every repo.
+export function installSkills(cwd: string, agent: SkillDest, global = false): string[] {
   const skills: [string, [string, string][]][] = [
     [
       "gloss",

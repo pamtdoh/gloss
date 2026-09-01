@@ -1,21 +1,17 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
-  appendFileSync,
   cpSync,
   existsSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
-import { emitLine, emitLines, failJson, teeLinesTo, toProtocolPath } from "./protocol.js";
+import { emitLine, emitLines, failJson, toProtocolPath } from "./protocol.js";
 import { type Sidecar, isEmptySidecar, mergeSidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
@@ -45,11 +41,12 @@ export interface SessionOptions {
   serveHost?: string;
 }
 
-// Session state (ARCHITECTURE.md): top-level dot-names under .gloss/ are
-// reserved for the tool, and .local/ is the gitignored home for per-review
-// session state — the event log, the drain cursor, the session pid.
-function sessionStateDir(cwd: string, review: string): string {
-  return join(cwd, ".gloss", ".local", review);
+// The one piece of session state on disk (ARCHITECTURE.md): an ephemeral
+// dotfile next to the revision directories, holding the live server's pid
+// and address so `gloss reply` can find it. Written on listen, removed on
+// exit; a stale copy is detected by the pid check.
+function sessionFilePath(cwd: string, review: string): string {
+  return join(cwd, ".gloss", review, ".session");
 }
 
 function listRevisions(reviewDir: string): number[] {
@@ -75,6 +72,15 @@ function readText(path: string): string {
 function escapesDir(baseDir: string, abs: string): boolean {
   const rel = relative(baseDir, abs);
   return rel === "" || rel.startsWith("..") || isAbsolute(rel);
+}
+
+/** A request's fact path resolved inside one revision, as the protocol
+ * path — null unless it names an existing .md strictly within the
+ * revision. The one place both write routes check what they may touch. */
+function resolveFact(revisionDir: string, raw: unknown): string | null {
+  const abs = resolve(revisionDir, String(raw));
+  if (escapesDir(revisionDir, abs) || !abs.endsWith(".md") || !existsSync(abs)) return null;
+  return toProtocolPath(relative(revisionDir, abs));
 }
 
 function walkFacts(revisionDir: string, dir = revisionDir): string[] {
@@ -133,18 +139,28 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   let tokenUsed = false;
   let finishing = false;
 
-  // Every stdout line is also appended to a session log, so a harness
-  // that cannot hold a pipe open can read the stream as a file via
-  // `gloss session <review> --drain`. The pid is written before the
-  // log, so a log without a pid file can only mean hand-deletion; the
-  // drain cursor carries this pid, so a cursor left by a drain of an
-  // earlier run resets instead of skipping this run's first events.
-  const stateDir = sessionStateDir(cwd, opts.review);
-  mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(stateDir, "session.pid"), String(process.pid) + "\n");
-  const logPath = join(stateDir, "session.jsonl");
-  writeFileSync(logPath, "");
-  teeLinesTo((chunk) => appendFileSync(logPath, chunk));
+  const sessionFile = sessionFilePath(cwd, opts.review);
+  const removeSessionFile = (): void => {
+    try {
+      // only the owner may clean up: a newer session for the same review
+      // has overwritten the file with its own pid, and this exit must not
+      // delete the live pointer out from under it
+      const current = JSON.parse(readFileSync(sessionFile, "utf8"));
+      if (current.pid === process.pid) unlinkSync(sessionFile);
+    } catch {
+      // already gone or unreadable; nothing to clean
+    }
+  };
+  // a killed session must not leave a live-looking .session file behind;
+  // re-raising after cleanup keeps the death observable (a supervisor
+  // reads "exited by SIGTERM", not a successful exit 0)
+  process.on("exit", removeSessionFile);
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      removeSessionFile();
+      process.kill(process.pid, signal);
+    });
+  }
 
   const emit = (event: string, data: Record<string, unknown>): void => {
     emitLine({ event, ...data });
@@ -232,6 +248,49 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         return sendJson(405, { ok: false, error: "method not allowed" });
       }
 
+      // Agent write path, checked before the cookie gate on purpose: a
+      // local CLI has no cookie. Two zero-state checks close it to
+      // everything but local processes — a browser always sends Origin on
+      // a cross-origin POST, and a request through a --serve-host proxy
+      // carries the proxy's Host, so requiring the loopback Host keeps
+      // remote peers off the write path the viewer's token exists to gate.
+      if (url.pathname === "/api/agent/reply") {
+        if (req.method !== "POST") return sendJson(405, { ok: false, error: "method not allowed" });
+        if (req.headers.origin !== undefined || req.headers.host !== `127.0.0.1:${port}`) {
+          return sendJson(403, { ok: false, error: "the agent route is for local processes only" });
+        }
+        const body = JSON.parse(await readBody(req));
+        // end-to-end identity: a stale .session whose pid and port were
+        // both recycled must not deliver a reply meant for another review
+        if (body.review !== opts.review) {
+          return sendJson(400, { ok: false, error: `this session serves ${opts.review}, not ${body.review}` });
+        }
+        // replies always land on the served revision — every other
+        // revision is read-only
+        const dir = revisionDir(defaultRevision);
+        const factPath = resolveFact(dir, body.path);
+        if (!factPath) return sendJson(404, { ok: false, error: "no such fact" });
+        const sidecar = readSidecar(dir, factPath);
+        const item = sidecar?.items?.find((i) => i.id === String(body.id));
+        if (!item) return sendJson(404, { ok: false, error: `no item ${body.id} on ${factPath}` });
+        if (item.type !== "question") {
+          return sendJson(400, { ok: false, error: `${item.id} is a comment — comments are addressed in the next revision, not replied to` });
+        }
+        const text = String(body.text ?? "").trim();
+        if (!text) return sendJson(400, { ok: false, error: "empty reply" });
+        // Append-through-the-server is what makes retries safe: a resend
+        // of an agent turn already in the thread is ACKed, not appended —
+        // the whole thread is scanned, so a human turn landing between a
+        // reply and its retry can't sneak the duplicate in. The sidecar
+        // file is the record, so the ACK carries nothing else.
+        const thread = (item.thread ??= []);
+        if (!thread.some((t) => t.who === "agent" && t.text === text)) {
+          thread.push({ who: "agent", text });
+          writeFileSync(sidecarPath(dir, factPath), JSON.stringify(sidecar, null, 2) + "\n");
+        }
+        return sendJson(200, { ok: true });
+      }
+
       const cookies = (req.headers.cookie ?? "").split(";").map((c) => c.trim());
       if (authRequired && !cookies.includes(cookie)) {
         if (url.pathname.startsWith("/api/")) return sendJson(401, { ok: false, error: "unauthorized" });
@@ -294,18 +353,19 @@ export function runSession(cwd: string, opts: SessionOptions): void {
           content: readText(join(dir, factPath)),
           sidecar: readSidecar(dir, factPath) ?? null,
         }));
-        return sendJson(200, { review: opts.review, revision, revisions, facts });
+        return sendJson(200, { review: opts.review, revision, served: defaultRevision, revisions, facts });
       }
       if (req.method === "PUT" && url.pathname === "/api/sidecar") {
         const body = JSON.parse(await readBody(req));
         const revision: number = body.revision ?? defaultRevision;
-        if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
-        const dir = revisionDir(revision);
-        const factAbs = resolve(dir, String(body.path));
-        if (escapesDir(dir, factAbs) || !factAbs.endsWith(".md") || !existsSync(factAbs)) {
-          return sendJson(404, { ok: false, error: "no such fact" });
+        // the served revision is the only writable one: feedback on any
+        // other refers to text iteration no longer starts from
+        if (revision !== defaultRevision) {
+          return sendJson(400, { ok: false, error: `revision ${revision} is read-only — this session serves ${defaultRevision}` });
         }
-        const factPath = toProtocolPath(relative(dir, factAbs));
+        const dir = revisionDir(revision);
+        const factPath = resolveFact(dir, body.path);
+        if (!factPath) return sendJson(404, { ok: false, error: "no such fact" });
         const previous = readSidecar(dir, factPath);
         // merge, don't overwrite: the agent may have appended thread
         // answers to the file since this tab last read it
@@ -358,6 +418,12 @@ export function runSession(cwd: string, opts: SessionOptions): void {
 
   server.listen(0, "127.0.0.1", () => {
     const port = (server.address() as { port: number }).port;
+    // where `gloss reply` finds this run — written after bind so the file
+    // never names a port nothing listens on
+    writeFileSync(
+      sessionFile,
+      JSON.stringify({ pid: process.pid, addr: `http://127.0.0.1:${port}` }) + "\n",
+    );
     const url = authRequired
       ? `http://127.0.0.1:${port}/auth?token=${token}`
       : `http://127.0.0.1:${port}/`;
@@ -390,95 +456,45 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   });
 }
 
-export interface DrainOptions {
+export interface ReplyOptions {
   review: string;
-  timeoutMs: number;
+  path: string;
+  id: string;
+  text: string;
 }
 
-// Bounded read of the session log: print every event line that arrived
-// since the last drain, then exit within timeoutMs. Exit codes are the
-// signal — 0: the session finished; 3: still open, call again; 4: the
-// session process is gone without finishing. Together with the tee in
-// runSession this lets a harness with no long-lived pipe supervise the
-// review as a sequence of short calls.
-export async function drainSession(cwd: string, opts: DrainOptions): Promise<never> {
-  const stateDir = sessionStateDir(cwd, opts.review);
-  const logPath = join(stateDir, "session.jsonl");
-  const cursorPath = join(stateDir, "session.offset");
-  const pidPath = join(stateDir, "session.pid");
-  if (!existsSync(logPath)) {
-    failJson(`no session log for ${opts.review} — start gloss session first`);
+// The agent's one write during a live session. Editing a sidecar by hand
+// while the viewer PUTs its own copy of the same file is how threads got
+// duplicated; this routes the append through the server, which holds the
+// merged truth and dedupes retries. No session, no reply — the command
+// says so instead of falling back to the racy path.
+export async function sendReply(cwd: string, opts: ReplyOptions): Promise<void> {
+  const dead = (): never =>
+    failJson(`no live session for ${opts.review} — start gloss session first`);
+  let session: { pid: number; addr: string };
+  try {
+    session = JSON.parse(readFileSync(sessionFilePath(cwd, opts.review), "utf8"));
+  } catch {
+    return dead();
   }
-
-  // The cursor is "<pid> <offset>". Stamping the run's pid means a
-  // cursor left by a drain of an earlier session resets instead of
-  // skipping the new session's first events.
-  let cursorPid = 0;
-  let offset = 0;
-  if (existsSync(cursorPath)) {
-    const parts = readFileSync(cursorPath, "utf8").trim().split(" ");
-    const pid = Number(parts[0]);
-    const stored = Number(parts[1]);
-    if (Number.isInteger(pid) && pid > 0 && Number.isInteger(stored) && stored >= 0) {
-      cursorPid = pid;
-      offset = stored;
-    }
+  try {
+    process.kill(session.pid, 0); // a stale file from a killed session
+  } catch {
+    dead();
   }
-  let finished = false;
-
-  // runSession writes the pid before the log, so a missing pid file next
-  // to an existing log means someone deleted it by hand — report the
-  // session gone rather than poll to the deadline forever.
-  const sessionPid = (): number => {
-    if (!existsSync(pidPath)) return 0;
-    const pid = Number(readFileSync(pidPath, "utf8"));
-    return Number.isInteger(pid) && pid > 0 ? pid : 0;
-  };
-  const alive = (pid: number): boolean => {
-    if (pid === 0) return false;
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const drainOnce = (): void => {
-    const buffer = readFileSync(logPath);
-    if (offset > buffer.length) offset = 0; // cursor corrupt; recover from the start
-    const text = buffer.toString("utf8", offset);
-    const end = text.lastIndexOf("\n");
-    if (end < 0) return; // a line is mid-write; the next poll gets it whole
-    const complete = text.slice(0, end + 1);
-    writeSync(1, complete);
-    offset += Buffer.byteLength(complete, "utf8");
-    writeFileSync(cursorPath, `${cursorPid} ${offset}\n`);
-    for (const line of complete.split("\n")) {
-      if (!line) continue;
-      try {
-        if (JSON.parse(line).event === "session.finished") finished = true;
-      } catch {
-        // not JSON we understand; pass through without interpreting
-      }
-    }
-  };
-
-  const deadline = Date.now() + opts.timeoutMs;
-  for (;;) {
-    const pid = sessionPid();
-    if (pid !== cursorPid) {
-      // a different session owns the log now; read it from the start
-      cursorPid = pid;
-      offset = 0;
-    }
-    const wasAlive = alive(pid);
-    // liveness is checked before the drain, so lines written up to the
-    // session's death are drained before the death is reported
-    drainOnce();
-    if (finished) process.exit(0);
-    if (!wasAlive) process.exit(4);
-    if (Date.now() >= deadline) process.exit(3);
-    await sleep(Math.min(300, Math.max(1, deadline - Date.now())));
+  let res: Response;
+  try {
+    res = await fetch(`${session.addr}/api/agent/reply`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ review: opts.review, path: opts.path, id: opts.id, text: opts.text }),
+    });
+  } catch {
+    return dead();
   }
+  const body = (await res.json().catch(() => null)) as
+    | { ok: boolean; error?: string }
+    | null;
+  if (!res.ok || !body?.ok) failJson(body?.error ?? `reply failed: HTTP ${res.status}`);
+  emitLine(body);
 }

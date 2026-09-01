@@ -36,6 +36,26 @@ const stdoutLines: Record<string, unknown>[] = [];
 const snap2 = (...parts: string[]) => join(tmp, ".gloss/design-review/2", ...parts);
 const readSidecar = (relative: string) => JSON.parse(readFileSync(snap2(relative), "utf8"));
 
+// the agent's one live-session write, as the CLI call the skill makes;
+// the error paths speak JSON on stderr and exit 1
+function glossReply(
+  factPath: string,
+  id: string,
+  text: string,
+): { status: number; out: string; err: string } {
+  try {
+    const out = execFileSync("node", [cli, "reply", "design-review", factPath, id, "--text", text], {
+      cwd: tmp,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return { status: 0, out, err: "" };
+  } catch (error) {
+    const e = error as { status: number; stdout: string; stderr: string };
+    return { status: e.status, out: e.stdout.toString(), err: e.stderr.toString() };
+  }
+}
+
 const RICH_FACT = `# The design in one picture
 
 | piece | role |
@@ -123,11 +143,29 @@ test.beforeAll(async ({ browser }) => {
     join(tmp, ".gloss/design-review"),
     { recursive: true },
   );
-  // revision 2 = iterated copy: one changed fact, one new rich fact
+  // revision 2 = iterated copy: one changed fact, one new rich fact.
+  // The changed fact also carries a mermaid diagram edited between the
+  // revisions — the rendered compare layout must diff it without crashing
+  // and render it as a diagram (regression: a changed mermaid block threw
+  // in the highlight effect and blanked the page).
   cpSync(join(tmp, ".gloss/design-review/1"), snap2(), { recursive: true });
+  const mermaidFence = (label: string) =>
+    "\n```mermaid\nflowchart LR\n  W[writer] --> " + label + "\n```\n";
+  appendFileSync(
+    join(tmp, ".gloss/design-review/1/storage/whole-file-writes.md"),
+    mermaidFence("S[store]"),
+  );
   appendFileSync(
     snap2("storage/whole-file-writes.md"),
-    "A write-through cache was considered and rejected for v1.\n",
+    mermaidFence("F[full file]") +
+      "\nA write-through cache was considered and rejected for v1.\n",
+  );
+  writeFileSync(
+    snap2("storage/whole-file-writes.md"),
+    readFileSync(snap2("storage/whole-file-writes.md"), "utf8").replace(
+      "change one entry",
+      "change a single entry",
+    ),
   );
   writeFileSync(snap2("architecture.md"), RICH_FACT);
   writeFileSync(snap2("tree.png"), png(1600, 1000, [122, 140, 118]));
@@ -169,13 +207,14 @@ test.afterAll(async () => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
 });
 
-test("initial render: nested tree, directory view for the first row", async () => {
+test("initial render: nested tree, first fact shown", async () => {
   await expect(page.locator("#review-name")).toHaveText("design-review");
   await expect(page.locator("#progress")).toContainText("0 / 10 reviewed");
-  // first row is the cli/ directory; its view shows the child-fact table
-  await expect(page.locator(".tree .row").first()).toHaveAttribute("data-kind", "dir");
-  await expect(page.locator("#dir-view")).toBeVisible();
-  await expect(page.locator("#fact-table .trow")).toHaveCount(1);
+  // root sorts dirs and facts together: architecture.md leads
+  await expect(page.locator(".tree .row").first()).toHaveAttribute(
+    "data-path",
+    "architecture.md",
+  );
   // interdiff badges from revision 1 -> 2 (14px glyphs in the tree)
   await expect(
     page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .gbadge.changed'),
@@ -187,6 +226,10 @@ test("initial render: nested tree, directory view for the first row", async () =
 });
 
 test("j/k walk the tree; a directory row shows its _index fact", async () => {
+  await page.keyboard.press("j"); // cli/ directory
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute("data-path", "cli");
+  await expect(page.locator("#dir-view")).toBeVisible();
+  await expect(page.locator("#fact-table .trow")).toHaveCount(1);
   await page.keyboard.press("j"); // cli/add-and-list.md
   await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",
@@ -268,13 +311,24 @@ test("reading a fact marks it seen automatically; v unmarks", async () => {
 });
 
 test("selection comment stores the verbatim quote and paints a highlight", async () => {
-  // make seen state deterministic for the screenshot below
-  await page.keyboard.press("/");
-  await page.locator("[cmdk-input]").fill("mark all facts");
-  await page.keyboard.press("Enter");
+  // make seen state deterministic for the screenshot below: seen is
+  // content-keyed per review in localStorage
+  await page.evaluate(async () => {
+    const review = (await (await fetch("/api/review")).json()) as {
+      review: string;
+      facts: { path: string; content: string }[];
+    };
+    const store: Record<string, string> = {};
+    for (const fact of review.facts) store[fact.path] = fact.content;
+    localStorage.setItem(`rk-seen2:${review.review}`, JSON.stringify(store));
+  });
+  await page.reload();
   await expect(page.locator("#progress")).toContainText("10 / 10 reviewed");
 
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
+  // the staged diagram's first render splices new innerHTML — let it
+  // finish so the selection below isn't dropped by the rewrite
+  await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
   await selectText("last write wins");
   await expect(page.locator("#sel-pop")).toBeVisible();
   await page.keyboard.press("c");
@@ -357,25 +411,47 @@ test("anchored question emits question.asked and shows the header pill", async (
   await expect(page.locator("#question-pill")).toContainText("1 open question");
 });
 
-test("an agent answer on disk appears live; the pill flips to your-turn", async () => {
-  const path = snap2("slugs/collision-retry.review.json");
-  const sidecar = JSON.parse(readFileSync(path, "utf8"));
-  sidecar.items[0].thread.push({
-    who: "agent",
-    text: "At 62^6 slugs, ten retries only fail past ~50M links.",
-  });
-  writeFileSync(path, JSON.stringify(sidecar, null, 2) + "\n");
+test("a gloss reply lands in the folded card; retries dedupe", async () => {
+  const answer = "At 62^6 slugs, ten retries only fail past ~50M links.";
+  const reply = () => glossReply("slugs/collision-retry.md", "q1", answer);
+  // the ACK is bare — the sidecar file is the record
+  expect(JSON.parse(reply().out)).toEqual({ ok: true });
+  // an identical resend is ACKed, not appended — the duplication bug
+  // gloss reply exists to remove
+  expect(JSON.parse(reply().out)).toEqual({ ok: true });
+  expect(readSidecar("slugs/collision-retry.review.json").items[0].thread).toHaveLength(2);
 
-  await expect(page.locator(".card.item-question .who").nth(1)).toHaveText("agent", {
+  // the error paths: unknown item, reply to a comment
+  const replyTo = (factPath: string, id: string) => glossReply(factPath, id, "x");
+  const unknown = replyTo("slugs/collision-retry.md", "q9");
+  expect(unknown.status).toBe(1);
+  expect(JSON.parse(unknown.err)).toMatchObject({ ok: false, error: "no item q9 on slugs/collision-retry.md" });
+  const toComment = replyTo("http/create-link.md", "c1");
+  expect(toComment.status).toBe(1);
+  expect(JSON.parse(toComment.err).error).toContain("c1 is a comment");
+
+  // the folded question card summarizes the thread instead of inlining it
+  const card = page.locator(".card.item-question");
+  await expect(card.locator(".q-preview")).toContainText("Agent: At 62^6", {
     timeout: 10_000,
   });
+  await expect(card.locator(".q-meta")).toContainText("1 reply");
+  await expect(card.locator(".chip.q")).toHaveText("your turn");
   await expect(page.locator("#question-pill")).toContainText("1 answered — your turn");
 });
 
-test("the human replies in the same thread", async () => {
-  await page.locator(".card.item-question .item-reply").click();
-  await page.locator("#item-input").fill("Good enough — keeping it.");
-  await page.locator("#item-save").click();
+test("the thread opens as a panel subpage; the human replies there", async () => {
+  await page.locator(".card.item-question").click();
+  await expect(page.locator("#thread-page")).toBeVisible();
+  // two speakers, visually distinct: tinted human card, labeled agent turn
+  await expect(page.locator("#thread-page .msg.human .msg-body").first()).toContainText(
+    "Why ten?",
+  );
+  await expect(page.locator("#thread-page .msg.agent .msg-who")).toContainText("Agent");
+  await expect(page).toHaveScreenshot("viewer-thread.png");
+
+  await page.locator("#thread-reply-input").fill("Good enough — keeping it.");
+  await page.locator("#thread-send").click();
   await expect
     .poll(() =>
       readSidecar("slugs/collision-retry.review.json").items[0].thread.map(
@@ -383,6 +459,40 @@ test("the human replies in the same thread", async () => {
       ),
     )
     .toEqual(["human", "agent", "human"]);
+  // the reply travels to the agent as an event
+  await expect
+    .poll(() =>
+      stdoutLines.find(
+        (l) => l.event === "question.replied" && l.path === "slugs/collision-retry.md",
+      ),
+    )
+    .toMatchObject({ id: "q1" });
+  await expect(page.locator("#thread-page .msg")).toHaveCount(3);
+
+  // a reply arriving over gloss reply while the thread is open shows up
+  // in place — the live Q&A loop the 2s poll exists for — and an unsent
+  // draft in the reply box survives it
+  await page.locator("#thread-reply-input").fill("draft in progress");
+  expect(glossReply("slugs/collision-retry.md", "q1", "Keeping it, then.").status).toBe(0);
+  await expect(page.locator("#thread-page .msg")).toHaveCount(4, { timeout: 10_000 });
+  await expect(page.locator("#thread-page .msg").last()).toContainText("Keeping it, then.");
+  await expect(page.locator("#thread-reply-input")).toHaveValue("draft in progress");
+
+  // escape in the reply box only leaves the field (the draft is kept);
+  // the next escape closes the thread
+  await page.locator("#thread-reply-input").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#thread-page")).toBeVisible();
+  await expect(page.locator("#thread-reply-input")).toHaveValue("draft in progress");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+
+  // back returns to the notes list too
+  await page.locator(".card.item-question").click();
+  await expect(page.locator("#thread-page")).toBeVisible();
+  await page.locator("#thread-back").click();
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+  await expect(page.locator("#quick-comment")).toBeVisible();
 });
 
 test("notes can be edited and deleted from the card menu", async () => {
@@ -420,9 +530,10 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   );
   await expect(page.locator(".card[data-id=c9]")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
-  // and survive navigating away and back
-  await page.locator("#nav-prev").click();
+  // and survive navigating away and back (architecture.md is the first
+  // row, so away is forward)
   await page.locator("#nav-next").click();
+  await page.locator("#nav-prev").click();
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
   rmSync(snap2("architecture.review.json"));
   await expect(page.locator(".card[data-id=c9]")).toHaveCount(0, { timeout: 10_000 });
@@ -455,18 +566,15 @@ test("images open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
 });
 
-test("tree filter narrows the tree; palette search jumps", async () => {
+test("tree filter narrows the tree; ? opens help", async () => {
   await page.keyboard.press("f");
   await page.locator("#tree-filter").fill("collision");
   await expect(page.locator(".tree .row")).toHaveCount(2); // slugs/ + the match
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await page.locator("#tree-filter").focus();
   await page.keyboard.press("Escape");
   await expect(page.locator("#tree-filter")).toHaveValue("");
   await expect(page.locator(".tree .row")).toHaveCount(11);
-
-  await page.keyboard.press("/");
-  await page.locator("[cmdk-input]").fill("collision");
-  await expect(page.locator("[cmdk-item][data-selected=true]")).toContainText("collision");
-  await page.keyboard.press("Enter");
   await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",
     "slugs/collision-retry.md",
@@ -538,7 +646,7 @@ test("the URL names the page; back and forward walk the visited pages", async ()
   );
 });
 
-test("theme button toggles dark/light and persists; system is a palette command", async () => {
+test("theme button toggles dark/light and persists", async () => {
   const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
   expect(await isDark()).toBe(false); // test context is light-scheme
   await page.locator("#btn-theme").click();
@@ -548,21 +656,145 @@ test("theme button toggles dark/light and persists; system is a palette command"
   await expect.poll(isDark).toBe(true); // survives reload before first paint
   await page.locator("#btn-theme").click();
   await expect.poll(isDark).toBe(false);
-
-  await page.keyboard.press("/");
-  await page.locator("[cmdk-input]").fill("theme: system");
-  await page.keyboard.press("Enter");
-  await expect.poll(isDark).toBe(false);
-  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe(null);
+  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("light");
 });
 
-test("older revisions show a banner with a switch back to latest", async () => {
-  await page.keyboard.press("/");
-  await page.locator("[cmdk-input]").fill("switch to revision 1");
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#stale-banner")).toContainText("Viewing revision 1 — latest is 2");
+test("a revision the session doesn't serve is read-only", async () => {
+  await page.locator("#revision-select").click();
+  await page.getByRole("option", { name: "Revision 1" }).click();
+  await expect(page.locator("#stale-banner")).toContainText(
+    "Viewing revision 1 read-only — the session serves 2",
+  );
+  // no composer, no quick-comment writes, no seen marks
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
+  await page.keyboard.press("c");
+  await expect(page.locator("#item-form")).toHaveCount(0);
+  await page.keyboard.press("1");
+  await expect(page.locator("#quick-comment")).toHaveCount(0); // read-only panel
+  await expect(page.locator(".panel h2").first()).toContainText("Notes on revision 1");
+  // the server refuses the write even if a client tries
+  const put = await page.evaluate(async () => {
+    const res = await fetch("/api/sidecar", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: 1, path: "cli/add-and-list.md", sidecar: { items: [{ id: "c9", type: "comment", text: "x" }] } }),
+    });
+    return { status: res.status, body: await res.json() };
+  });
+  expect(put.status).toBe(400);
+  expect(put.body.error).toContain("read-only");
   await page.locator("#stale-banner button").click();
   await expect(page.locator("#stale-banner")).toHaveCount(0);
+});
+
+test("compare mode: diff of changed facts, base notes read-only", async () => {
+  // a note left on revision 1, so the compare panel has history to show
+  writeFileSync(
+    join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"),
+    JSON.stringify({
+      items: [
+        { id: "c1", type: "comment", text: "Tighten the failure story." },
+        {
+          id: "q1",
+          type: "question",
+          thread: [
+            { who: "human", text: "Is there any locking at all?" },
+            { who: "agent", text: "None — both writers rewrite the whole file." },
+          ],
+        },
+      ],
+    }) + "\n",
+  );
+
+  // unmark one changed fact so the no-auto-seen guard is observable
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
+  await page.keyboard.press("v");
+  await expect(page.locator("#progress")).toContainText("9 / 10 reviewed");
+
+  await page.locator("#btn-compare").click();
+  await expect(page.locator("#compare-bar")).toContainText("Changes from revision");
+  // the tree scopes to what moved between 1 and 2, deletions included
+  await expect(page.locator("#scope-btn")).toContainText("Changed");
+  await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
+
+  // the default layout renders blocks, not source: a new fact is all
+  // added blocks, its table rendered as a table
+  await page.locator('.tree .row[data-path="architecture.md"]').click();
+  await expect(page.locator("#diff-view .rblock.add").first()).toBeVisible();
+  await expect(page.locator("#diff-view .rblock.del")).toHaveCount(0);
+  await expect(page.locator("#diff-view .rblock table th").first()).toHaveText("piece");
+
+  // a changed fact: the new paragraph is an added block, the edited
+  // mermaid pair is a changed block rendered as a DIAGRAM (regression:
+  // the word-mark effect crashed on it and blanked the page), and the
+  // revision-1 notes sit read-only in the panel
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
+  await expect(page.locator("#diff-view .rblock.add")).toContainText("write-through cache");
+  await expect(page.locator("#diff-view .rblock.context").first()).toBeVisible();
+  await expect(
+    page.locator("#diff-view .rblock.changed .rk-mermaid svg"),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("#diff-view .rblock.changed del.rk-dd")).toContainText("one");
+  // the struck run stays red: the added-words highlight must start after
+  // the spliced <del>, never paint across it
+  const delCovered = await page.evaluate(() => {
+    const highlight = (CSS as unknown as { highlights: Map<string, Iterable<Range>> })
+      .highlights.get("rk-diff-ins");
+    const ranges = highlight ? [...highlight] : [];
+    return [...document.querySelectorAll("del.rk-dd")].some((del) =>
+      ranges.some((range) => range.intersectsNode(del)),
+    );
+  });
+  expect(delCovered).toBe(false);
+  await expect(page.locator("#panel-items .card.readonly.item-comment")).toContainText(
+    "Tighten the failure story.",
+  );
+  // the base question folds like the live panel's and opens read-only
+  const foldedBase = page.locator("#panel-items .card.readonly.item-question");
+  await expect(foldedBase.locator(".q-meta")).toContainText("1 reply");
+  await foldedBase.click();
+  await expect(page.locator("#thread-page")).toBeVisible();
+  await expect(page.locator("#thread-reply")).toHaveCount(0); // no reply box
+  await page.locator("#thread-back").click();
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+  await expect(page).toHaveScreenshot("viewer-compare.png");
+
+  // the source layouts remain one click away
+  await page.locator("#diff-unified").click();
+  await expect(page.locator("#diff-view .dline.context").first()).toBeVisible();
+  await expect(page.locator("#diff-view .dline.add").last()).toContainText("write-through cache");
+
+  // compare is read-only even on a live, changed fact: no composer, no
+  // quick-comment writes, and dwelling on a diff marks nothing seen
+  await page.keyboard.press("c");
+  await expect(page.locator("#item-form")).toHaveCount(0);
+  await page.keyboard.press("1");
+  expect(readSidecar("storage/whole-file-writes.review.json").items).toHaveLength(1);
+  await page.waitForTimeout(2000); // past the 1.5s auto-seen dwell
+  await expect(page.locator("#progress")).toContainText("9 / 10 reviewed");
+
+  // split layout: old text left with its line number, new text right
+  await page.locator("#diff-split").click();
+  const addedRow = page.locator("#diff-view .dtable.split .drow", {
+    hasText: "write-through cache",
+  });
+  await expect(addedRow.locator(".dcell.add")).toContainText("write-through cache");
+  await expect(addedRow.locator(".dcell.empty")).toHaveCount(1); // no old side
+  const contextRow = page.locator("#diff-view .dtable.split .drow").first();
+  await expect(contextRow.locator(".dcell").nth(0)).toContainText("Every mutation");
+  await expect(contextRow.locator(".dcell").nth(1)).toContainText("Every mutation");
+  await page.locator("#diff-unified").click();
+
+  // a removed fact diffs as pure deletions
+  await page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]').click();
+  await expect(page.locator("#diff-view .dline.del").first()).toBeVisible();
+  await expect(page.locator("#diff-view .dline.add")).toHaveCount(0);
+
+  // escape leaves compare mode and restores the full tree
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#compare-bar")).toHaveCount(0);
+  await expect(page.locator(".tree .row")).toHaveCount(11);
+  rmSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"));
 });
 
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {

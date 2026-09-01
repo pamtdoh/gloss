@@ -20,6 +20,7 @@ import type {
   List,
   Node,
   Parent,
+  Root,
   Table,
   Text,
 } from "mdast";
@@ -294,9 +295,10 @@ function render(node: Node, opts: RenderOptions): string {
     }
     case "code": {
       const code = node as Code;
-      if (code.lang === "mermaid") {
-        return `<pre class="rk-mermaid"${offsets(node)}><code>${escapeHtml(code.value)}</code></pre>\n`;
-      }
+      // a mermaid fence is the same block with a class the viewer swaps
+      // for the rendered diagram; its stamps sit on the <code> like any
+      // other fence, so every stamped run quotes source verbatim
+      const pre = code.lang === "mermaid" ? `<pre class="rk-mermaid">` : "<pre>";
       // locate the raw value inside the fence so selections in code anchor
       const lang = code.lang ? ` class="lang-${escapeHtml(code.lang)}"` : "";
       const start = code.position?.start.offset;
@@ -305,20 +307,22 @@ function render(node: Node, opts: RenderOptions): string {
         const src = opts.sourceText;
         const idx = src.indexOf(code.value, start);
         if (idx !== -1 && idx < end) {
-          return `<pre><code${lang} data-s="${idx}" data-e="${idx + code.value.length}">${escapeHtml(code.value)}</code></pre>\n`;
+          return `${pre}<code${lang} data-s="${idx}" data-e="${idx + code.value.length}">${escapeHtml(code.value)}</code></pre>\n`;
         }
         // fence in a blockquote/list: block prefixes interleave the value's
         // lines, so search per line starting past the opening fence line
+        // (not for mermaid — the viewer reads the diagram source back out
+        // of the <code>, which per-line spans would garble)
         const contentStart = src.indexOf("\n", start) + 1;
-        if (contentStart > 0) {
+        if (contentStart > 0 && code.lang !== "mermaid") {
           const lines = code.value.split("\n");
           const located = locateLines(lines, contentStart, end, src, false);
           if (located.some(Boolean)) {
-            return `<pre><code${lang}>${emitLines(lines, located)}</code></pre>\n`;
+            return `${pre}<code${lang}>${emitLines(lines, located)}</code></pre>\n`;
           }
         }
       }
-      return `<pre><code${lang}>${escapeHtml(code.value)}</code></pre>\n`;
+      return `${pre}<code${lang}>${escapeHtml(code.value)}</code></pre>\n`;
     }
     case "link": {
       const url = (node as Link).url;
@@ -363,11 +367,16 @@ function render(node: Node, opts: RenderOptions): string {
   }
 }
 
-export function renderMarkdown(source: string, opts: RenderOptions = {}): string {
-  const tree = fromMarkdown(source, {
+/** The one parser configuration: whatever renders here is what the diff
+ * splits into blocks — two configurations would disagree on boundaries. */
+export function parseMarkdown(source: string): Root {
+  return fromMarkdown(source, {
     extensions: [gfm()],
     mdastExtensions: [gfmFromMarkdown()],
   });
+}
+
+export function renderMarkdown(source: string, opts: RenderOptions = {}): string {
   const withSource = { ...opts, sourceText: source };
-  return tree.children.map((child) => render(child, withSource)).join("").trimEnd();
+  return parseMarkdown(source).children.map((child) => render(child, withSource)).join("").trimEnd();
 }

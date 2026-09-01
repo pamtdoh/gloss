@@ -5,6 +5,7 @@ import { tinykeys } from "tinykeys";
 import {
   Check,
   CircleHelp,
+  GitCompareArrows,
   ListTodo,
   Menu,
   MessageCircleQuestion,
@@ -18,23 +19,32 @@ import {
 import PhotoSwipe from "photoswipe";
 import type { Sidecar, SidecarItem } from "../summary.js";
 import { describeAnchor, resolveAnchor, type Anchor } from "./anchor.js";
-import { rangeForSourceSpan, sourceSpanForSelection } from "./dom-anchor.js";
+import {
+  clearHighlight,
+  rangeForSourceSpan,
+  setHighlight,
+  sourceSpanForSelection,
+} from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
 import {
   buildRows,
   changeStatus,
+  contentMap,
   dirOf,
   factStats,
   indexFactOf,
   nextId,
   normalizeSidecar,
-  type ChangeStatus,
+  previousRevision,
+  type AnchorState,
   type Fact,
   type ReviewData,
   type Row,
 } from "./model.js";
-import { QUICK_COMMENTS, keepFocusOutOfFields, type Composer, type QuickComment } from "./common.js";
+import { QUICK_COMMENTS, type Composer, type QuickComment } from "./common.js";
 import { ChangeBadge, DirView, SelBubble, TreeRow, rowLabel } from "./components.js";
+import { DiffView } from "./compare.js";
+import { useMermaidHtml } from "./mermaid.js";
 import { Help, FinishSheet } from "./overlays.js";
 import { Panel } from "./panel.js";
 import { SHORTCUTS } from "./shortcuts.js";
@@ -106,40 +116,6 @@ function cursorFromHash(facts: Fact[]): Row | null {
 // selection instead.
 const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
-// Mermaid rendering goes THROUGH React state, never DOM mutation: mutating
-// dangerouslySetInnerHTML's subtree behind React's back meant any re-render
-// of the fact (its own sidecar changing, a poll) reverted the diagram to
-// raw source. SVGs are rendered once per source into a module cache and
-// spliced into the HTML React owns.
-let mermaidSeq = 0;
-const mermaidCache = new Map<string, string>(); // source -> svg | "__error__"
-let mermaidLoader: Promise<void> | null = null;
-function ensureMermaid(): Promise<void> {
-  if ((window as unknown as { __rkMermaid?: unknown }).__rkMermaid) return Promise.resolve();
-  if (!mermaidLoader) {
-    mermaidLoader = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "/mermaid.js";
-      script.onload = () => resolve();
-      script.onerror = () => {
-        mermaidLoader = null; // a failed load may retry next time
-        script.remove();
-        reject(new Error("mermaid failed to load"));
-      };
-      document.body.appendChild(script);
-    });
-  }
-  return mermaidLoader;
-}
-const MERMAID_BLOCK = /<pre class="rk-mermaid"[^>]*><code>([\s\S]*?)<\/code><\/pre>/g;
-function unescapeHtml(text: string): string {
-  return text
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, ">")
-    .replace(/&lt;/g, "<")
-    .replace(/&amp;/g, "&");
-}
-
 async function fetchReview(revision?: number): Promise<ReviewData> {
   const res = await fetch("/api/review" + (revision ? `?revision=${revision}` : ""));
   if (!res.ok) {
@@ -209,7 +185,8 @@ function PanelResizer(): React.JSX.Element {
 
 function App(): React.JSX.Element {
   const [data, setData] = useState<ReviewData | null>(null);
-  const [prev, setPrev] = useState<Map<string, string> | null>(null);
+  // the previous revision: the changed-since basis outside compare mode
+  const [prevData, setPrevData] = useState<ReviewData | null>(null);
   const [cursor, setCursor] = useState<Row | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [seenVersion, setSeenVersion] = useState(0);
@@ -232,6 +209,16 @@ function App(): React.JSX.Element {
   const [focusItemId, setFocusItemId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [scope, setScope] = useState<Scope>("all");
+  // question thread opened as a panel subpage
+  const [openThreadId, setOpenThreadId] = useState<string | null>(null);
+  // compare mode: head is the viewed revision, the human picks the base
+  // (GitHub's single-axis picker); the base revision held whole is the
+  // whole of the mode's state
+  const [compareData, setCompareData] = useState<ReviewData | null>(null);
+  const [diffLayout, setDiffLayout] = useState<"rendered" | "unified" | "split">(() => {
+    const stored = localStorage.getItem("rk-diff-layout");
+    return stored === "unified" || stored === "split" ? stored : "rendered";
+  });
   const [theme, setTheme] = useState<ThemeMode>(storedTheme);
   // OS scheme changes re-render so the header icon tracks the effective theme
   const [sysDark, setSysDark] = useState(darkQuery.matches);
@@ -298,12 +285,8 @@ function App(): React.JSX.Element {
   async function load(revision?: number): Promise<void> {
     const next = await fetchReview(revision);
     serverOk();
-    const prior = next.revisions.filter((s) => s < next.revision).pop();
-    setPrev(
-      prior === undefined
-        ? null
-        : new Map((await fetchReview(prior)).facts.map((f) => [f.path, f.content])),
-    );
+    const prior = previousRevision(next);
+    setPrevData(prior === null ? null : await fetchReview(prior));
     setData(next);
     // deep links land on their page; revision switches keep the place
     setCursor(cursorFromHash(next.facts));
@@ -311,6 +294,10 @@ function App(): React.JSX.Element {
     setComposer(null);
     setFilter("");
     setScope("all"); // like the text filter: a new revision starts unscoped
+    setOpenThreadId(null);
+    // compare pins its head to the viewed revision, so switching
+    // revisions ends the comparison
+    setCompareData(null);
     autoMarked.current.clear();
   }
   useEffect(() => {
@@ -366,22 +353,26 @@ function App(): React.JSX.Element {
             Date.now() - lastSelActivity.current < 2000 ||
             !(window.getSelection()?.isCollapsed ?? true);
           if (!busy) {
-            const now = Date.now();
-            for (const fact of fresh.facts) {
-              // recently ACKed or still-unsaved local writes win over poll
-              // data (covers the GET-in-flight race and queued retries)
-              const writtenAt = pendingWrites.current.get(fact.path);
-              if (
-                (writtenAt !== undefined && now - writtenAt < WRITE_GRACE_MS) ||
-                unsaved.current.has(`${st.data.revision}:${fact.path}`)
-              ) {
-                const local = st.data.facts.find((f) => f.path === fact.path);
-                if (local) fact.sidecar = local.sidecar;
-              }
-            }
-            if (JSON.stringify(fresh) !== JSON.stringify(stateRef.current.data)) {
-              setData(fresh);
-            }
+            // merged as an updater, against the state as it is when the
+            // merge applies: a local write made while this GET was in
+            // flight has already run its own updater (arming the unsaved
+            // shield) by then, so its sidecar wins over the pre-write data
+            setData((current) => {
+              if (!current || current.revision !== fresh.revision) return current;
+              const now = Date.now();
+              const facts = fresh.facts.map((fact) => {
+                // recently ACKed or still-unsaved local writes win over
+                // poll data (the GET-in-flight race and queued retries)
+                const writtenAt = pendingWrites.current.get(fact.path);
+                const shielded =
+                  (writtenAt !== undefined && now - writtenAt < WRITE_GRACE_MS) ||
+                  unsaved.current.has(`${current.revision}:${fact.path}`);
+                const local = shielded ? current.facts.find((f) => f.path === fact.path) : undefined;
+                return local ? { ...fact, sidecar: local.sidecar } : fact;
+              });
+              const merged = { ...fresh, facts };
+              return JSON.stringify(merged) === JSON.stringify(current) ? current : merged;
+            });
           }
         } catch (error) {
           if (stateRef.current.done) {
@@ -516,16 +507,28 @@ function App(): React.JSX.Element {
   }, []);
 
   // ---------- derived ----------
-  // facts deleted since the previous revision, resurrected read-only from
-  // the previous revision's copy (prev already holds their content)
+  // Compare mode reuses the whole changed-since machinery by swapping the
+  // basis: normally the previous revision, in compare mode the chosen
+  // base. Ghosts, badges, and scopes all follow.
+  const compareOn = compareData !== null;
+  const compareBase = compareData?.revision ?? null;
+  // every revision but the served one is read-only — feedback on old text
+  // refers to words iteration no longer starts from (the server rejects
+  // such writes too)
+  const staleReadOnly = data !== null && data.revision !== data.served;
+  const readOnly = compareOn || staleReadOnly;
+  const basisData = compareData ?? prevData;
+  const baseMap = useMemo(() => (basisData ? contentMap(basisData.facts) : null), [basisData]);
+  // facts deleted since the basis revision, resurrected read-only from
+  // the basis revision's copy (baseMap already holds their content)
   const ghosts = useMemo(() => {
-    if (!prev || !data) return [];
+    if (!baseMap || !data) return [];
     const live = new Set(data.facts.map((f) => f.path));
-    return [...prev.entries()]
+    return [...baseMap.entries()]
       .filter(([path]) => !live.has(path))
       .map(([path, content]): Fact => ({ path, content, sidecar: null, ghost: true }))
       .sort((a, b) => a.path.localeCompare(b.path));
-  }, [prev, data]);
+  }, [baseMap, data]);
   // every fact a row can name, ghosts included — the one path->fact lookup
   const factMap = useMemo(
     () => new Map([...(data?.facts ?? []), ...ghosts].map((f) => [f.path, f])),
@@ -533,8 +536,8 @@ function App(): React.JSX.Element {
   );
 
   const changedFacts = useMemo(
-    () => (data?.facts ?? []).filter((f) => changeStatus(prev, f) !== undefined),
-    [data, prev],
+    () => (data?.facts ?? []).filter((f) => changeStatus(baseMap, f) !== undefined),
+    [data, baseMap],
   );
   const raisedFacts = useMemo(
     () => (data?.facts ?? []).filter((f) => (f.sidecar?.items?.length ?? 0) > 0),
@@ -632,7 +635,8 @@ function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // a composer and a pending selection belong to the fact they started on
+  // a composer, a pending selection, and an open thread belong to the
+  // fact they started on
   useEffect(() => {
     if (composer && composer.path !== targetFact?.path) setComposer(null);
     setPendingSel((p) => (p && p.path !== targetFact?.path ? null : p));
@@ -640,15 +644,21 @@ function App(): React.JSX.Element {
     if (lastSpan.current && lastSpan.current.path !== targetFact?.path) {
       lastSpan.current = null;
     }
+    setOpenThreadId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path]);
+
+  // the item whose anchor is lit in the reading pane: the open thread's,
+  // else the hovered or focused card's
+  const litItemId = openThreadId ?? focusItemId;
 
   // auto-seen on dwell, only after the user has actually navigated. The
   // mark waits out any active touch/selection — its re-render would make
   // iOS drop an in-progress selection.
   useEffect(() => {
     const fact = targetFact;
-    if (!fact || !data || !userMoved.current || targetIsGhost) return;
+    // reading a diff is not reading the fact — no seen marks in compare
+    if (!fact || !data || !userMoved.current || targetIsGhost || readOnly) return;
     if (seen.has(fact.path) || autoMarked.current.has(fact.path)) return;
     let timer: ReturnType<typeof setTimeout>;
     const fire = (): void => {
@@ -666,7 +676,7 @@ function App(): React.JSX.Element {
     timer = setTimeout(fire, 1500);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetFact?.path, data, seen]);
+  }, [targetFact?.path, data, seen, readOnly]);
 
   // ---------- liveness ----------
   // Every successful round-trip is proof of life; one owner for the
@@ -677,14 +687,40 @@ function App(): React.JSX.Element {
     setConnLost((lost) => (lost === null ? lost : null));
   }
 
+  // ---------- compare mode ----------
+  async function startCompare(base: number): Promise<void> {
+    if (!data || base >= data.revision) return;
+    try {
+      // fetched fresh even for the previous revision already in hand:
+      // the files are the record, and anything may have written them
+      // since load
+      const baseReview = await fetchReview(base);
+      serverOk();
+      setCompareData(baseReview);
+      setScope("changed"); // the changes are what a comparison is for
+      setComposer(null);
+      setSelection(new Set());
+      setOpenThreadId(null);
+      setPendingSel(null);
+      setLiveSel(null);
+    } catch {
+      setToast({ message: `Couldn't load revision ${base}.` });
+    }
+  }
+
+  function exitCompare(): void {
+    setCompareData(null);
+    setOpenThreadId(null); // a base-revision thread must not carry over
+    setScope("all");
+  }
+
   // ---------- sidecar writes ----------
   // Called inside setData updaters — touch refs only, defer the flush.
   // pendingWrites is stamped on ACK (in flushWrites), not here: until the
   // ACK, the unsaved entry itself is what shields the fact from the poll.
-  function putSidecar(fact: Fact): void {
-    if (!data) return;
-    unsaved.current.set(`${data.revision}:${fact.path}`, {
-      revision: data.revision,
+  function putSidecar(revision: number, fact: Fact): void {
+    unsaved.current.set(`${revision}:${fact.path}`, {
+      revision,
       path: fact.path,
       sidecar: fact.sidecar ?? {},
     });
@@ -714,7 +750,17 @@ function App(): React.JSX.Element {
               body: JSON.stringify(write),
             });
             if (res.status === 401) return setConnLost("unauthorized");
-            if (!res.ok) return;
+            if (!res.ok) {
+              // a 4xx is the server's verdict (a read-only revision, a
+              // fact that no longer exists): no retry can land it, so it
+              // leaves the queue with the reason instead of retrying forever
+              if (res.status < 500 && unsaved.current.get(key) === write) {
+                unsaved.current.delete(key);
+                const body = (await res.json().catch(() => null)) as { error?: string } | null;
+                setToast({ message: `Not saved: ${body?.error ?? `HTTP ${res.status}`}` });
+              }
+              return;
+            }
             serverOk();
             pendingWrites.current.set(write.path, Date.now());
             // a newer write for this fact may have queued while this one
@@ -737,15 +783,19 @@ function App(): React.JSX.Element {
     }
   }
 
+  // The one funnel every sidecar write passes through, so the served-
+  // revision rule holds here regardless of which handler, undo closure,
+  // or stale callback asked: judged against the state as it is when the
+  // update applies, not the render that made the closure.
   function mutateFact(path: string, fn: (sidecar: Sidecar) => void): void {
     setData((current) => {
-      if (!current) return current;
+      if (!current || current.revision !== current.served) return current;
       const facts = current.facts.map((fact) => {
         if (fact.path !== path) return fact;
         const sidecar: Sidecar = structuredClone(fact.sidecar ?? {});
         fn(sidecar);
         const next = { ...fact, sidecar: normalizeSidecar(sidecar) };
-        putSidecar(next);
+        putSidecar(current.revision, next);
         return next;
       });
       return { ...current, facts };
@@ -753,7 +803,7 @@ function App(): React.JSX.Element {
   }
 
   function applyQuickComment(note: QuickComment, paths?: string[]): void {
-    if (!data) return;
+    if (!data || readOnly) return;
     const bulk = !paths && selection.size > 0;
     // ghosts can't get here: not selectable, and the cursor case is guarded
     const targets =
@@ -787,7 +837,7 @@ function App(): React.JSX.Element {
   }
 
   function beginItem(type: SidecarItem["type"]): void {
-    if (!targetFact || targetIsGhost) return;
+    if (!targetFact || targetIsGhost || readOnly) return;
     // both comments and questions anchor when text is selected;
     // live selection first, then the pending (survives iOS collapse)
     let anchor: Anchor | undefined;
@@ -806,20 +856,26 @@ function App(): React.JSX.Element {
     if (!COARSE) {
       setPendingSel(span ? { path: targetFact.path, start: span.start, end: span.end } : null);
     }
+    setOpenThreadId(null); // the composer renders in the list view
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
   }
 
-  // the ONE way out of a composer without saving — every cancel path
-  // (empty save, Escape, the panel's Cancel button) must drop the desktop
-  // draft anchor, or a stale span re-shows highlight or bubble with no
-  // native selection behind it (touch keeps its bar, re-actionable)
-  function cancelComposer(): void {
+  // the ONE way out of a composer without saving — every path that drops
+  // one (empty save, Escape, the panel's Cancel button, a thread opening
+  // over it) must drop the desktop draft anchor too, or a stale span
+  // re-shows highlight or bubble with no native selection behind it
+  // (touch keeps its bar, re-actionable)
+  function dropComposer(): void {
     setComposer(null);
     if (!COARSE) {
       setPendingSel(null);
       setLiveSel(null);
     }
+  }
+
+  function cancelComposer(): void {
+    dropComposer();
     closeSheetIfOverlay();
   }
 
@@ -844,21 +900,34 @@ function App(): React.JSX.Element {
         items.push(item);
         if (active.type !== "question") undoStack.current.push({ path: active.path, id });
       });
-    } else if (active.mode === "edit") {
+    } else {
       mutateFact(active.path, (sidecar) => {
         const item = sidecar.items?.find((i) => i.id === active.id);
         if (!item) return;
         if (item.type === "question" && item.thread?.length) item.thread[0]!.text = body;
         else item.text = body;
       });
-    } else {
-      mutateFact(active.path, (sidecar) => {
-        const item = sidecar.items?.find((i) => i.id === active.id);
-        if (item) (item.thread ??= []).push({ who: "human", text: body });
-      });
     }
     setComposer(null);
     closeSheetIfOverlay();
+  }
+
+  // the one way threads open or close. An open composer would keep
+  // running invisibly under the subpage (its busy gate would even stall
+  // poll merges), so it is dropped first.
+  function openThread(id: string | null): void {
+    if (id !== null && composer) dropComposer();
+    setOpenThreadId(id);
+  }
+
+  // replies come from the thread subpage's own box, not the composer
+  function submitReply(id: string, text: string): void {
+    const body = text.trim();
+    if (!targetFact || targetIsGhost || readOnly || !body) return;
+    mutateFact(targetFact.path, (sidecar) => {
+      const item = sidecar.items?.find((i) => i.id === id);
+      if (item) (item.thread ??= []).push({ who: "human", text: body });
+    });
   }
 
   function deleteItem(path: string, id: string): void {
@@ -880,6 +949,7 @@ function App(): React.JSX.Element {
   }
 
   function undoLast(): void {
+    if (readOnly) return; // read-only, like every other write path
     const last = undoStack.current.pop();
     if (last) {
       mutateFact(last.path, (sidecar) => {
@@ -932,13 +1002,14 @@ function App(): React.JSX.Element {
   }
 
   function toggleSeen(advance: boolean): void {
-    if (!targetFact || targetIsGhost) return;
+    if (!targetFact || targetIsGhost || readOnly) return;
     if (seen.has(targetFact.path) && !advance) unmarkSeen(targetFact.path);
     else markSeen(targetFact);
     if (advance) moveCursorWhere((f) => !seen.has(f.path) && f.path !== targetFact.path, 1);
   }
 
   function toggleSelect(path?: string): void {
+    if (readOnly) return;
     // explicit paths come from table checkboxes, which ghosts never render
     const target =
       path ?? (effectiveCursor?.kind === "fact" && !targetIsGhost ? effectiveCursor.path : null);
@@ -1029,7 +1100,7 @@ function App(): React.JSX.Element {
     filter: () => document.getElementById("tree-filter")?.focus(),
     scope: () =>
       setScope((s) => {
-        const order = SCOPES.filter((x) => x !== "changed" || prev !== null);
+        const order = SCOPES.filter((x) => x !== "changed" || baseMap !== null);
         return order[(order.indexOf(s) + 1) % order.length] ?? "all";
       }),
     close: () => {
@@ -1043,7 +1114,9 @@ function App(): React.JSX.Element {
         setLiveSel(null);
         lastSpan.current = null;
         window.getSelection()?.removeAllRanges();
-      } else if (selection.size) setSelection(new Set());
+      } else if (openThreadId) openThread(null);
+      else if (selection.size) setSelection(new Set());
+      else if (compareOn) exitCompare();
     },
   };
   useEffect(() => {
@@ -1053,6 +1126,9 @@ function App(): React.JSX.Element {
       for (const key of def.keys) {
         handlers[key] = def.raw
           ? (e) => {
+              // an Escape a layer already consumed (a Radix dropdown
+              // closing itself) must not also fire the close chain
+              if (e.defaultPrevented) return;
               e.preventDefault();
               run(def.id);
             }
@@ -1070,86 +1146,52 @@ function App(): React.JSX.Element {
   }, []);
 
   // ---------- fact rendering + highlights + mermaid ----------
-  const renderedFact =
-    effectiveCursor?.kind === "fact"
-      ? targetFact
-      : effectiveCursor
-        ? indexFactOf(data?.facts ?? [], effectiveCursor.path)
-        : null;
+  // which revision the change badges and ghosts are measured against —
+  // the previous one, or the compare base while comparing
+  const basisRevision = basisData?.revision ?? null;
+  // the fact whose notes the panel holds: the base revision's copy of the
+  // viewed fact while comparing (its notes were raised on that text),
+  // the viewed fact otherwise. Anchors, chips, the lit highlight, and the
+  // fab and rail badges all follow this one choice.
+  const notesFact: Fact | null = compareOn
+    ? (compareData.facts.find((f) => f.path === targetFact?.path) ?? null)
+    : targetIsGhost
+      ? null
+      : targetFact;
+  const readonlyRevision = compareOn ? compareBase : staleReadOnly ? data!.revision : null;
+  const panelBadge = notesFact ? factStats(notesFact).items : 0;
 
-  const prevRevision = data ? (data.revisions.filter((s) => s < data.revision).pop() ?? null) : null;
-
-  useEffect(() => pswpRef.current?.close(), [renderedFact?.path]);
+  useEffect(() => pswpRef.current?.close(), [targetFact?.path]);
 
   const factHtml = useMemo(() => {
-    if (!renderedFact || !data) return "";
+    if (!targetFact || !data) return "";
     // a ghost's images live in the revision it was deleted from
-    const revision = renderedFact.ghost ? (prevRevision ?? data.revision) : data.revision;
-    return renderMarkdown(renderedFact.content, {
+    const revision = targetFact.ghost ? (basisRevision ?? data.revision) : data.revision;
+    return renderMarkdown(targetFact.content, {
       assetBase: `/asset/${revision}/`,
-      factDir: dirOf(renderedFact.path),
+      factDir: dirOf(targetFact.path),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderedFact, data, prevRevision]);
+  }, [targetFact, data, basisRevision]);
 
   const anchorStates = useMemo(() => {
-    const states = new Map<string, "exact" | "drifted" | "detached">();
-    for (const item of renderedFact?.sidecar?.items ?? []) {
+    const states = new Map<string, AnchorState>();
+    for (const item of notesFact?.sidecar?.items ?? []) {
       if (!item.anchor) continue;
-      const resolved = resolveAnchor(renderedFact!.content, item.anchor);
+      const resolved = resolveAnchor(notesFact!.content, item.anchor);
       states.set(item.id, resolved ? resolved.state : "detached");
     }
     return states;
-  }, [renderedFact]);
+  }, [notesFact]);
 
-  const [diagramVersion, setDiagramVersion] = useState(0);
-  useEffect(() => {
-    const sources = [...factHtml.matchAll(MERMAID_BLOCK)].map((m) => unescapeHtml(m[1]!));
-    const missing = sources.filter((src) => !mermaidCache.has(src));
-    if (!missing.length) return;
-    let cancelled = false;
-    void ensureMermaid()
-      .then(async () => {
-        const mermaid = (window as unknown as {
-          __rkMermaid: { render: (id: string, src: string) => Promise<{ svg: string }> };
-        }).__rkMermaid;
-        for (const src of missing) {
-          if (mermaidCache.has(src)) continue;
-          try {
-            const { svg } = await mermaid.render(`rk-mmd-${++mermaidSeq}`, src);
-            mermaidCache.set(src, svg);
-          } catch {
-            mermaidCache.set(src, "__error__");
-          }
-        }
-        if (!cancelled) setDiagramVersion((v) => v + 1);
-      })
-      .catch(() => {
-        /* load failed; a later view retries */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [factHtml]);
-
-  // splice cached SVGs into the HTML React owns — re-renders are now stable
-  const processedHtml = useMemo(() => {
-    void diagramVersion;
-    return factHtml.replace(MERMAID_BLOCK, (block, code: string) => {
-      const svg = mermaidCache.get(unescapeHtml(code));
-      if (!svg) return block; // still loading: show the source
-      if (svg === "__error__") {
-        return `<pre class="rk-mermaid" data-error="1"><code>${code}</code></pre>`;
-      }
-      return `<div class="rk-mermaid">${svg}</div>`;
-    });
-  }, [factHtml, diagramVersion]);
+  const factHtmls = useMemo(() => [factHtml], [factHtml]);
+  const factHtmlProp = useMermaidHtml(factHtmls)[0]!;
 
   useEffect(() => {
-    const highlights = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
-    const HighlightCtor = (window as unknown as { Highlight?: new (...r: Range[]) => unknown })
-      .Highlight;
-    if (!highlights || !HighlightCtor || !readRef.current || !renderedFact) return;
+    // the reading pane holds the viewed fact; while comparing it exists
+    // only for an unchanged fact, whose text the base notes were raised
+    // on too — so notesFact's anchors resolve against it either way
+    if (!readRef.current || !notesFact) return;
     const buckets: Record<string, Range[]> = {
       "rk-anno": [],
       "rk-question": [],
@@ -1157,14 +1199,14 @@ function App(): React.JSX.Element {
       "rk-focused-q": [],
       "rk-pending": [],
     };
-    for (const item of renderedFact.sidecar?.items ?? []) {
+    for (const item of notesFact.sidecar?.items ?? []) {
       if (!item.anchor) continue;
-      const resolved = resolveAnchor(renderedFact.content, item.anchor);
+      const resolved = resolveAnchor(notesFact.content, item.anchor);
       if (!resolved) continue;
       const range = rangeForSourceSpan(readRef.current as HTMLElement, resolved.start, resolved.end);
       if (!range) continue;
       const question = item.type === "question";
-      if (item.id === focusItemId) {
+      if (item.id === litItemId) {
         buckets[question ? "rk-focused-q" : "rk-focused-anno"]!.push(range);
       } else {
         buckets[question ? "rk-question" : "rk-anno"]!.push(range);
@@ -1175,7 +1217,7 @@ function App(): React.JSX.Element {
     // Plate, tiptap — relies on it); rk-pending paints only once the
     // composer owns the screen and the native selection is free to
     // collapse. Touch paints throughout — iOS collapses on any tap.
-    if (pendingSel && pendingSel.path === renderedFact.path && (COARSE || composer)) {
+    if (pendingSel && pendingSel.path === notesFact.path && (COARSE || composer)) {
       const range = rangeForSourceSpan(
         readRef.current as HTMLElement,
         pendingSel.start,
@@ -1183,23 +1225,16 @@ function App(): React.JSX.Element {
       );
       if (range) buckets["rk-pending"]!.push(range);
     }
-    for (const [name, ranges] of Object.entries(buckets)) {
-      highlights.set(name, new HighlightCtor(...ranges));
-    }
+    for (const [name, ranges] of Object.entries(buckets)) setHighlight(name, ranges);
     return () => {
-      for (const name of Object.keys(buckets)) highlights.delete(name);
+      for (const name of Object.keys(buckets)) clearHighlight(name);
     };
-    // keyed on processedHtml, NOT factHtml: the mermaid splice rewrites
+    // keyed on factHtmlProp, not factHtml: the mermaid splice rewrites
     // innerHTML without changing factHtml, detaching every Range the
-    // highlights hold — they must rebuild against the new DOM
-  }, [processedHtml, renderedFact, focusItemId, pendingSel, composer]);
-
-  // React 19 diffs dangerouslySetInnerHTML by OBJECT identity, not by the
-  // __html string: a fresh {__html} object every render rewrites innerHTML
-  // even when the markup is byte-identical — destroying the reader's live
-  // text selection (and, before the mermaid cache, the rendered diagrams).
-  // One memoized object per markup value makes re-renders truly inert.
-  const factHtmlProp = useMemo(() => ({ __html: processedHtml }), [processedHtml]);
+    // highlights hold — they must rebuild against the new DOM. compareOn
+    // is here because entering compare unmounts the pane (the ranges
+    // would pin the detached subtree) and leaving it mounts a fresh one.
+  }, [factHtmlProp, notesFact, litItemId, pendingSel, composer, compareOn]);
 
   // toast auto-dismiss (paused while hovered)
   const toastHover = useRef(false);
@@ -1293,6 +1328,23 @@ function App(): React.JSX.Element {
         >
           {effectiveDark ? <Moon /> : <Sun />}
         </Button>
+        {prevData !== null && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            id="btn-compare"
+            className={compareOn ? "compare-active" : ""}
+            aria-label={compareOn ? "Exit compare" : "Compare revisions"}
+            aria-pressed={compareOn}
+            title={compareOn ? "Exit compare" : "Compare revisions"}
+            onClick={() => {
+              if (compareOn) exitCompare();
+              else if (prevData !== null) void startCompare(prevData.revision);
+            }}
+          >
+            <GitCompareArrows />
+          </Button>
+        )}
         <Select
           value={String(data.revision)}
           onValueChange={(value) => void load(Number(value))}
@@ -1302,12 +1354,12 @@ function App(): React.JSX.Element {
             id="revision-select"
             aria-label="Revision"
             title={
-              data.revision === Math.max(...data.revisions)
+              data.revision === latestRevision
                 ? undefined
-                : `Older revision — ${Math.max(...data.revisions)} is latest`
+                : `Older revision — ${latestRevision} is latest`
             }
             className={`revision-select w-[140px] max-[560px]:w-[76px] ${
-              data.revision === Math.max(...data.revisions) ? "" : "revision-stale"
+              data.revision === latestRevision ? "" : "revision-stale"
             }`}
           >
             <span className="max-[560px]:hidden">
@@ -1341,10 +1393,61 @@ function App(): React.JSX.Element {
           {unsavedCount > 0 && ` ${unsavedPhrase(unsavedCount)} pending.`}
         </div>
       )}
-      {data.revision !== latestRevision && (
+      {staleReadOnly && (
         <div className="stale-banner" id="stale-banner" role="status">
-          Viewing revision {data.revision} — latest is {latestRevision} ·{" "}
-          <button onClick={() => void load(latestRevision)}>Switch</button>
+          Viewing revision {data.revision} read-only — the session serves {data.served} ·{" "}
+          <button onClick={() => void load(data.served)}>Switch</button>
+        </div>
+      )}
+      {compareOn && (
+        <div className="compare-bar" id="compare-bar">
+          <GitCompareArrows className="lucide size-3.5" size={14} aria-hidden="true" />
+          {/* the announceable text alone is the live region — the visible
+              controls never belong inside one */}
+          <span className="sr-only" role="status">
+            Comparing revision {compareBase} to revision {data.revision} — read-only
+          </span>
+          <span className="compare-label">
+            Changes from revision
+            <Select
+              value={String(compareBase)}
+              onValueChange={(value) => void startCompare(Number(value))}
+            >
+              <SelectTrigger size="sm" id="compare-base" aria-label="Compare base revision" className="compare-base-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {data.revisions
+                  .filter((r) => r < data.revision)
+                  .map((r) => (
+                    <SelectItem key={r} value={String(r)}>
+                      {r}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            to {data.revision} — read-only
+          </span>
+          <span className="layout-toggle" role="group" aria-label="Diff layout">
+            {(["rendered", "unified", "split"] as const).map((layout) => (
+              <button
+                key={layout}
+                id={`diff-${layout}`}
+                aria-pressed={diffLayout === layout}
+                className={diffLayout === layout ? "on" : ""}
+                onClick={() => {
+                  setDiffLayout(layout);
+                  localStorage.setItem("rk-diff-layout", layout);
+                }}
+              >
+                {layout === "rendered" ? "Rendered" : layout === "unified" ? "Unified" : "Split"}
+              </button>
+            ))}
+          </span>
+          <span className="flex-1" />
+          <button className="compare-exit" id="compare-exit" onClick={exitCompare}>
+            Exit compare
+          </button>
         </div>
       )}
 
@@ -1392,7 +1495,7 @@ function App(): React.JSX.Element {
                 </SelectTrigger>
                 <SelectContent align="end">
                   {SCOPES.map((s) => (
-                    <SelectItem key={s} value={s} id={`scope-${s}`} disabled={s === "changed" && !prev}>
+                    <SelectItem key={s} value={s} id={`scope-${s}`} disabled={s === "changed" && !baseMap}>
                       <span className="flex-1">{SCOPE_LABEL[s]}</span>
                       <span className="scope-count">{scopeCounts[s]}</span>
                     </SelectItem>
@@ -1412,7 +1515,7 @@ function App(): React.JSX.Element {
                     scope !== "all" ? ` in ${SCOPE_LABEL[scope].toLowerCase()}` : ""
                   }`
                 : scope === "changed"
-                  ? `${scopeCounts.changed} changed since revision ${prevRevision ?? "—"}`
+                  ? `${scopeCounts.changed} changed since revision ${basisRevision ?? "—"}`
                   : `${scopeCounts.raised} with notes or questions`}
             </div>
           )}
@@ -1441,7 +1544,7 @@ function App(): React.JSX.Element {
                   key={`${row.kind}:${row.path}`}
                   row={row}
                   data={data}
-                  prev={prev}
+                  prev={baseMap}
                   fact={row.kind === "fact" ? factMap.get(row.path) : undefined}
                   seen={seen}
                   selection={selection}
@@ -1506,15 +1609,17 @@ function App(): React.JSX.Element {
                 dir={effectiveCursor.path}
                 data={data}
                 facts={filteredFacts}
-                prev={prev}
+                prev={baseMap}
                 seen={seen}
                 selection={selection}
+                readonly={readOnly}
                 indexHtml={factHtmlProp}
                 readRef={readRef}
-                indexFact={renderedFact}
+                indexFact={targetFact}
                 onOpen={openRow}
                 onToggleSelect={toggleSelect}
-                onSelectAll={(paths, on) =>
+                onSelectAll={(paths, on) => {
+                  if (readOnly) return;
                   setSelection((current) => {
                     const next = new Set(current);
                     for (const p of paths) {
@@ -1522,32 +1627,56 @@ function App(): React.JSX.Element {
                       else next.delete(p);
                     }
                     return next;
-                  })
-                }
+                  });
+                }}
                 onQuickComment={(path, note) => applyQuickComment(note, [path])}
               />
-            ) : renderedFact ? (
+            ) : targetFact ? (
               <>
                 <div className="crumb">
-                  <span>{renderedFact.path}</span>
-                  <ChangeBadge status={changeStatus(prev, renderedFact)} />
-                  {seen.has(renderedFact.path) && (
+                  <span>{targetFact.path}</span>
+                  <ChangeBadge status={changeStatus(baseMap, targetFact)} />
+                  {seen.has(targetFact.path) && (
                     <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                   )}
                 </div>
-                {targetIsGhost && (
+                {targetIsGhost && !compareOn && (
                   <div className="ghost-banner" id="ghost-banner" role="status">
                     Removed in revision {data.revision} — shown as it was in revision{" "}
-                    {prevRevision}. Read-only.
+                    {basisRevision}. Read-only.
                   </div>
                 )}
-                <article
-                  className="fact-body"
-                  id="fact-content"
-                  data-fact-path={renderedFact.path}
-                  ref={readRef as React.RefObject<HTMLElement>}
-                  dangerouslySetInnerHTML={factHtmlProp}
-                />
+                {compareOn ? (
+                  changeStatus(baseMap, targetFact) === undefined ? (
+                    <>
+                      <div className="unchanged-note" id="unchanged-note" role="status">
+                        Unchanged since revision {compareBase}.
+                      </div>
+                      <article
+                        className="fact-body"
+                        id="fact-content"
+                        dangerouslySetInnerHTML={factHtmlProp}
+                      />
+                    </>
+                  ) : (
+                    <DiffView
+                      before={baseMap?.get(targetFact.path) ?? ""}
+                      after={targetFact.ghost ? "" : targetFact.content}
+                      layout={diffLayout}
+                      baseAsset={`/asset/${compareBase}/`}
+                      headAsset={`/asset/${data.revision}/`}
+                      factDir={dirOf(targetFact.path)}
+                    />
+                  )
+                ) : (
+                  <article
+                    className="fact-body"
+                    id="fact-content"
+                    data-fact-path={targetFact.path}
+                    ref={readRef as React.RefObject<HTMLElement>}
+                    dangerouslySetInnerHTML={factHtmlProp}
+                  />
+                )}
               </>
             ) : (
               <p className="text-muted-foreground">
@@ -1606,19 +1735,21 @@ function App(): React.JSX.Element {
           >
             <ListTodo className="lucide size-4" size={16} />
             Notes
-            {targetFact && factStats(targetFact).items > 0 && (
-              <span className="chip count">{factStats(targetFact).items}</span>
-            )}
+            {panelBadge > 0 && <span className="chip count">{panelBadge}</span>}
           </button>
         )}
         {panelOpen && <PanelResizer />}
         {panelOpen ? (
           <aside className="panel-col panel" aria-label="Review panel">
             <Panel
-              fact={targetIsGhost ? null : targetFact}
+              fact={notesFact}
               ghost={targetIsGhost}
               anchorStates={anchorStates}
               composer={composer}
+              openThreadId={openThreadId}
+              readonlyRevision={readonlyRevision}
+              onOpenThread={openThread}
+              onReplySubmit={submitReply}
               onQuickComment={(note) => applyQuickComment(note)}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
@@ -1632,9 +1763,6 @@ function App(): React.JSX.Element {
                 })
               }
               onDelete={(id) => targetFact && deleteItem(targetFact.path, id)}
-              onReply={(id) =>
-                targetFact && setComposer({ mode: "reply", path: targetFact.path, id })
-              }
               onReanchor={(id) => targetFact && reanchor(targetFact.path, id)}
               onCollapse={() => setPanelOpen(false)}
               onCommit={commitComposer}
@@ -1651,9 +1779,7 @@ function App(): React.JSX.Element {
             >
               <PanelRightOpen />
             </Button>
-            {targetFact && factStats(targetFact).items > 0 && (
-              <div className="chip count mt-2">{factStats(targetFact).items}</div>
-            )}
+            {panelBadge > 0 && <div className="chip count mt-2">{panelBadge}</div>}
           </aside>
         )}
       </div>
@@ -1661,6 +1787,7 @@ function App(): React.JSX.Element {
       {COARSE
         ? pendingSel &&
           targetFact &&
+          !readOnly &&
           pendingSel.path === targetFact.path &&
           !composer && (
             <div
@@ -1695,6 +1822,7 @@ function App(): React.JSX.Element {
           )
         : liveSel &&
           targetFact &&
+          !readOnly &&
           liveSel.path === targetFact.path &&
           !composer && (
             <SelBubble

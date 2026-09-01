@@ -9,7 +9,15 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,8 +32,8 @@ let url: string;
 let context: BrowserContext;
 let page: Page;
 
-const sidecar = (relative: string) =>
-  JSON.parse(readFileSync(join(tmp, ".gloss/design-review/1", relative), "utf8"));
+const sidecarPath = (relative: string) => join(tmp, ".gloss/design-review/2", relative);
+const sidecar = (relative: string) => JSON.parse(readFileSync(sidecarPath(relative), "utf8"));
 
 test.describe.configure({ mode: "serial" });
 
@@ -38,6 +46,15 @@ test.beforeAll(async ({ browser }) => {
     join(root, "tests/generated-review/design-review"),
     join(tmp, ".gloss/design-review"),
     { recursive: true },
+  );
+  // revision 2 = iterated copy with one changed fact, so the phone can
+  // exercise compare mode too
+  cpSync(join(tmp, ".gloss/design-review/1"), join(tmp, ".gloss/design-review/2"), {
+    recursive: true,
+  });
+  appendFileSync(
+    join(tmp, ".gloss/design-review/2/storage/whole-file-writes.md"),
+    "A write-through cache was considered and rejected for v1.\n",
   );
   proc = spawn("node", [cli, "session", "design-review", "--no-browser"], {
     cwd: tmp,
@@ -97,7 +114,7 @@ test("the review panel opens as a bottom sheet; quick comments write and close i
   await expect
     .poll(
       () =>
-        existsSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json")) &&
+        existsSync(sidecarPath("storage/whole-file-writes.review.json")) &&
         sidecar("storage/whole-file-writes.review.json"),
     )
     .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });
@@ -170,6 +187,50 @@ test("book-style prev/next navigation walks the facts", async () => {
   await expect(page.locator("#nav-next")).toBeDisabled();
 });
 
+test("a question thread opens as a subpage inside the bottom sheet", async () => {
+  // an answered thread lands on disk (the poll picks it up), on the fact
+  // the cursor is already on
+  const path = sidecarPath("storage/whole-file-writes.review.json");
+  const state = JSON.parse(readFileSync(path, "utf8"));
+  state.items.push({
+    id: "q1",
+    type: "question",
+    thread: [
+      { who: "human", text: "Is the whole-file write ever fsynced?" },
+      { who: "agent", text: "No — `writeFileSync` without fsync; a crash can lose the tail." },
+    ],
+  });
+  writeFileSync(path, JSON.stringify(state, null, 2) + "\n");
+
+  await page.locator("#panel-fab").tap();
+  const card = page.locator(".card.item-question");
+  await expect(card.locator(".q-meta")).toContainText("1 reply", { timeout: 10_000 });
+  await card.tap();
+  await expect(page.locator(".panel-col.panel #thread-page")).toBeVisible();
+  await expect(page.locator("#thread-page .msg.agent .msg-body")).toContainText("fsync");
+  await expect(page.locator("#thread-reply-input")).toBeVisible();
+  await page.locator("#thread-back").tap();
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+  // close the sheet so later tests start from the reading view
+  await page.locator('[aria-label="Collapse panel"]').tap();
+  await expect(page.locator(".panel-col.panel")).toHaveCount(0);
+});
+
+test("compare mode works at phone width without sideways scroll", async () => {
+  await page.locator("#btn-compare").tap();
+  await expect(page.locator("#compare-bar")).toBeVisible();
+  // the drawer opens on the scoped tree; the changed fact shows its diff
+  await page.locator("#btn-tree").tap();
+  await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').tap();
+  await expect(page.locator("#diff-view .rblock.changed")).toContainText("write-through cache");
+  const overflow = await page.evaluate(
+    () => document.scrollingElement!.scrollWidth - document.scrollingElement!.clientWidth,
+  );
+  expect(overflow).toBe(0);
+  await page.locator("#compare-exit").tap();
+  await expect(page.locator("#compare-bar")).toHaveCount(0);
+});
+
 test("dark theme on mobile", async ({ browser }) => {
   const dark = await browser.newContext({
     viewport: PHONE,
@@ -178,7 +239,7 @@ test("dark theme on mobile", async ({ browser }) => {
     storageState: await context.storageState(), // the auth token is one-time
   });
   const darkPage = await dark.newPage();
-  await darkPage.goto(url.split("/auth")[0] + "/");
+  await darkPage.goto(new URL(url).origin + "/");
   await expect(darkPage.locator(".hamburger")).toBeVisible();
   await expect(darkPage).toHaveScreenshot("mobile-dark.png");
   await dark.close();

@@ -10,10 +10,11 @@ export const QUICK_COMMENTS: QuickComment[] = [
   { key: "3", label: "Defer", text: "Defer." },
 ];
 
+// replies have no composer mode: they live in the thread subpage,
+// which owns its own always-visible reply box
 export type Composer =
   | { mode: "new"; type: SidecarItem["type"]; path: string; anchor?: Anchor }
-  | { mode: "edit"; path: string; id: string; initial: string }
-  | { mode: "reply"; path: string; id: string };
+  | { mode: "edit"; path: string; id: string; initial: string };
 
 // Dialogs restore focus on close; if that would land in a text field, the
 // single-key shortcuts die silently — drop the restore instead.
