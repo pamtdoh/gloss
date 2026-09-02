@@ -36,6 +36,15 @@ export function isIndex(path: string): boolean {
   return nameOf(path) === "_index.md";
 }
 
+/** The review's front page: the root directory, whose index fact (a
+ * root `_index.md`, when the agent wrote one) is the overview. Notes on
+ * that fact are notes on the review as a whole. */
+export const ROOT: Row = { kind: "dir", path: "", depth: 0 };
+
+export function isRoot(row: Row): boolean {
+  return row.kind === "dir" && row.path === "";
+}
+
 export function titleOf(fact: Fact): string {
   const m = /^#{1,6} +(.+)$/m.exec(fact.content);
   return m?.[1]?.trim() ?? nameOf(fact.path);
@@ -69,12 +78,14 @@ export function childEntries(
   ].sort((a, b) => (nameOf(a.path) < nameOf(b.path) ? -1 : 1));
 }
 
-/** Depth-first visible rows: dirs and facts interleaved, alphabetical. */
+/** Depth-first visible rows: the root page first (when `withRoot`), then
+ * dirs and facts interleaved, alphabetical. The root never collapses. */
 export function buildRows(
   facts: Fact[],
   isExpanded: (dir: string) => boolean,
+  withRoot = true,
 ): Row[] {
-  const rows: Row[] = [];
+  const rows: Row[] = withRoot ? [ROOT] : [];
   const walk = (parent: string, depth: number): void => {
     for (const entry of childEntries(facts, parent)) {
       rows.push({ ...entry, depth });
@@ -123,7 +134,8 @@ export interface DirStats {
 }
 
 export function dirStats(facts: Fact[], dir: string): DirStats {
-  const within = facts.filter((f) => f.path.startsWith(dir + "/"));
+  const prefix = dir ? `${dir}/` : ""; // the root holds every fact
+  const within = facts.filter((f) => f.path.startsWith(prefix));
   let items = 0;
   let questions = 0;
   for (const fact of within) {

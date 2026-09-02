@@ -1,6 +1,6 @@
 // Shapes from ARCHITECTURE.md — a shared convention, not a validated schema.
-// Rounds 3-4 (owner): no decision field; items are comments and questions.
-// "Decisions" live on only as Quick Comment presets with canned text.
+// No decision field: items are comments and questions, both typed by the
+// human (the canned quick-comment presets were removed unused).
 
 export interface ThreadEntry {
   who: "human" | "agent";

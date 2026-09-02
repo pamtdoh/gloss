@@ -17,11 +17,12 @@ import { Kbd } from "./ui/kbd.js";
 // everything else the viewer teaches at the moment of use
 const CONCEPTS: [string, string][] = [
   ["Fact", "one small claim about the design, one file. Let it stand or raise something on it — silence is agreement."],
+  ["Overview", "the review's front page, the root fact. Notes on it speak to the review as a whole: its altitude, its focus, what to deepen or drop — or ask for a cold read."],
   ["Revision", "one pass of the review. After your feedback the agent writes the next one; each is a standalone copy."],
   ["Comment", "requests a change — the agent addresses it when it revises the facts, like a review comment on an MR."],
   ["Ask", "a live question — the agent answers in a thread on the fact while you keep reviewing."],
   ["Seen", "your own reading progress mark. It decides nothing."],
-  ["Finish", "ends the session and hands everything you raised to the agent for the next revision."],
+  ["Finish", "ends the session and hands everything you raised to the agent, who proposes the next revision before writing it."],
   ["Approve", "accepts this revision as the agreed design — implementation starts from it, the review is over."],
 ];
 
@@ -166,7 +167,7 @@ export function FinishSheet(props: {
                 <p className="text-muted-foreground m-0 text-[12.5px]">
                   {clean
                     ? "Ends the session without approving — the agent takes it from there."
-                    : "The session ends and the agent picks up your notes and questions, revises the facts, and opens a new session for the next pass."}
+                    : "The session ends and the agent reads your notes and questions, proposes what the next revision should change, and writes it once you agree."}
                 </p>
               </div>
               <div className="border-line-soft rounded-lg border p-3">

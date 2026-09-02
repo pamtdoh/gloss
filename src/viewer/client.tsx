@@ -27,12 +27,14 @@ import {
 } from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
 import {
+  ROOT,
   buildRows,
   changeStatus,
   contentMap,
   dirOf,
   factStats,
   indexFactOf,
+  isRoot,
   nextId,
   normalizeSidecar,
   previousRevision,
@@ -41,7 +43,7 @@ import {
   type ReviewData,
   type Row,
 } from "./model.js";
-import { QUICK_COMMENTS, type Composer, type QuickComment } from "./common.js";
+import type { Composer } from "./common.js";
 import { ChangeBadge, DirView, SelBubble, TreeRow, rowLabel } from "./components.js";
 import { DiffView } from "./compare.js";
 import { useMermaidHtml } from "./mermaid.js";
@@ -50,7 +52,6 @@ import { Panel } from "./panel.js";
 import { SHORTCUTS } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
-import { Kbd } from "./ui/kbd.js";
 import {
   Select,
   SelectContent,
@@ -96,13 +97,15 @@ type Scope = "all" | "changed" | "raised";
 const SCOPES: Scope[] = ["all", "changed", "raised"];
 const SCOPE_LABEL: Record<Scope, string> = { all: "All", changed: "Changed", raised: "Raised" };
 
-// the URL names the page being viewed: "#dir/" or "#dir/fact.md", so
-// back/forward walk previously viewed pages and links survive a reload
+// the URL names the page being viewed: "#/" for the front page, "#dir/"
+// or "#dir/fact.md" below it, so back/forward walk previously viewed
+// pages and links survive a reload
 function cursorFromHash(facts: Fact[]): Row | null {
   const raw = decodeURI(location.hash.slice(1));
   if (!raw) return null;
   if (raw.endsWith("/")) {
     const path = raw.slice(0, -1);
+    if (path === "") return ROOT;
     return facts.some((f) => f.path.startsWith(`${path}/`))
       ? { kind: "dir", path, depth: 0 }
       : null;
@@ -190,7 +193,6 @@ function App(): React.JSX.Element {
   const [cursor, setCursor] = useState<Row | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [seenVersion, setSeenVersion] = useState(0);
-  const [selection, setSelection] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState<Composer | null>(null);
   const [overlay, setOverlay] = useState<"help" | "finish" | null>(null);
   const pswpRef = useRef<PhotoSwipe | null>(null);
@@ -290,7 +292,6 @@ function App(): React.JSX.Element {
     setData(next);
     // deep links land on their page; revision switches keep the place
     setCursor(cursorFromHash(next.facts));
-    setSelection(new Set());
     setComposer(null);
     setFilter("");
     setScope("all"); // like the text filter: a new revision starts unscoped
@@ -572,9 +573,15 @@ function App(): React.JSX.Element {
   }, [scopedFacts, filter]);
   const filtering = filter.trim().length > 0;
   const narrowing = filtering || scope !== "all";
+  // the front page is always there to land on; under a filter or scope it
+  // stays only when its overview fact is one of the matches. Never before
+  // the data is in: a row before load would become the cursor, and the
+  // URL effect would overwrite a deep link with "#/" before load reads it.
+  const withRoot =
+    data !== null && (!narrowing || filteredFacts.some((f) => f.path === "_index.md"));
   const rows = useMemo(
-    () => buildRows(filteredFacts, (dir) => (narrowing ? true : !collapsed.has(dir))),
-    [filteredFacts, collapsed, narrowing],
+    () => buildRows(filteredFacts, (dir) => (narrowing ? true : !collapsed.has(dir)), withRoot),
+    [filteredFacts, collapsed, narrowing, withRoot],
   );
   const effectiveCursor: Row | null = cursor ?? rows[0] ?? null;
   const cursorIndex = rows.findIndex(
@@ -699,7 +706,6 @@ function App(): React.JSX.Element {
       setCompareData(baseReview);
       setScope("changed"); // the changes are what a comparison is for
       setComposer(null);
-      setSelection(new Set());
       setOpenThreadId(null);
       setPendingSel(null);
       setLiveSel(null);
@@ -800,40 +806,6 @@ function App(): React.JSX.Element {
       });
       return { ...current, facts };
     });
-  }
-
-  function applyQuickComment(note: QuickComment, paths?: string[]): void {
-    if (!data || readOnly) return;
-    const bulk = !paths && selection.size > 0;
-    // ghosts can't get here: not selectable, and the cursor case is guarded
-    const targets =
-      paths ?? (bulk ? [...selection] : targetFact && !targetIsGhost ? [targetFact.path] : []);
-    if (!targets.length) return;
-    const created: { path: string; id: string }[] = [];
-    for (const path of targets) {
-      mutateFact(path, (sidecar) => {
-        const items = (sidecar.items ??= []);
-        const id = nextId(items, "c");
-        items.push({ id, type: "comment", text: note.text });
-        created.push({ path, id });
-        if (!bulk) undoStack.current.push({ path, id });
-      });
-    }
-    if (!bulk) closeSheetIfOverlay();
-    if (bulk) {
-      setSelection(new Set());
-      setToast({
-        message: `Commented “${note.label}” on ${targets.length} facts`,
-        undo: () => {
-          for (const c of created) {
-            mutateFact(c.path, (sidecar) => {
-              sidecar.items = sidecar.items?.filter((i) => i.id !== c.id);
-            });
-          }
-          setToast(null);
-        },
-      });
-    }
   }
 
   function beginItem(type: SidecarItem["type"]): void {
@@ -986,8 +958,12 @@ function App(): React.JSX.Element {
     for (let step = 1; step <= rows.length; step++) {
       const index = (from + direction * step + rows.length * step) % rows.length;
       const row = rows[index]!;
-      if (row.kind !== "fact") continue;
-      const fact = data.facts.find((f) => f.path === row.path);
+      // a directory row stands for its index fact — the overview, for the
+      // front page — so a question raised there is reachable like any other
+      const fact =
+        row.kind === "fact"
+          ? data.facts.find((f) => f.path === row.path)
+          : indexFactOf(data.facts, row.path);
       if (fact && predicate(fact)) {
         setCursor(row);
         return;
@@ -1006,20 +982,6 @@ function App(): React.JSX.Element {
     if (seen.has(targetFact.path) && !advance) unmarkSeen(targetFact.path);
     else markSeen(targetFact);
     if (advance) moveCursorWhere((f) => !seen.has(f.path) && f.path !== targetFact.path, 1);
-  }
-
-  function toggleSelect(path?: string): void {
-    if (readOnly) return;
-    // explicit paths come from table checkboxes, which ghosts never render
-    const target =
-      path ?? (effectiveCursor?.kind === "fact" && !targetIsGhost ? effectiveCursor.path : null);
-    if (!target) return;
-    setSelection((current) => {
-      const next = new Set(current);
-      if (next.has(target)) next.delete(target);
-      else next.add(target);
-      return next;
-    });
   }
 
   // One protocol for both terminal actions: drain unsaved writes first
@@ -1074,7 +1036,7 @@ function App(): React.JSX.Element {
     nextQuestion: () => moveCursorWhere((f) => factStats(f).questions > 0, 1),
     prevQuestion: () => moveCursorWhere((f) => factStats(f).questions > 0, -1),
     expand: () => {
-      if (effectiveCursor?.kind === "dir") {
+      if (effectiveCursor?.kind === "dir" && !isRoot(effectiveCursor)) {
         setCollapsed((c) => {
           const next = new Set(c);
           next.delete(effectiveCursor.path);
@@ -1083,16 +1045,12 @@ function App(): React.JSX.Element {
       }
     },
     collapse: () => {
-      if (effectiveCursor?.kind === "dir") {
+      if (effectiveCursor?.kind === "dir" && !isRoot(effectiveCursor)) {
         setCollapsed((c) => new Set(c).add(effectiveCursor.path));
       }
     },
-    notNeeded: () => applyQuickComment(QUICK_COMMENTS[0]!),
-    simplify: () => applyQuickComment(QUICK_COMMENTS[1]!),
-    defer: () => applyQuickComment(QUICK_COMMENTS[2]!),
     seen: () => toggleSeen(false),
     seenAdvance: () => toggleSeen(true),
-    select: () => toggleSelect(),
     comment: () => beginItem("comment"),
     question: () => beginItem("question"),
     undo: () => undoLast(),
@@ -1115,7 +1073,6 @@ function App(): React.JSX.Element {
         lastSpan.current = null;
         window.getSelection()?.removeAllRanges();
       } else if (openThreadId) openThread(null);
-      else if (selection.size) setSelection(new Set());
       else if (compareOn) exitCompare();
     },
   };
@@ -1547,7 +1504,6 @@ function App(): React.JSX.Element {
                   prev={baseMap}
                   fact={row.kind === "fact" ? factMap.get(row.path) : undefined}
                   seen={seen}
-                  selection={selection}
                   collapsed={collapsed}
                   isCursor={
                     row.kind === effectiveCursor?.kind && row.path === effectiveCursor?.path
@@ -1611,25 +1567,10 @@ function App(): React.JSX.Element {
                 facts={filteredFacts}
                 prev={baseMap}
                 seen={seen}
-                selection={selection}
-                readonly={readOnly}
                 indexHtml={factHtmlProp}
                 readRef={readRef}
                 indexFact={targetFact}
                 onOpen={openRow}
-                onToggleSelect={toggleSelect}
-                onSelectAll={(paths, on) => {
-                  if (readOnly) return;
-                  setSelection((current) => {
-                    const next = new Set(current);
-                    for (const p of paths) {
-                      if (on) next.add(p);
-                      else next.delete(p);
-                    }
-                    return next;
-                  });
-                }}
-                onQuickComment={(path, note) => applyQuickComment(note, [path])}
               />
             ) : targetFact ? (
               <>
@@ -1709,20 +1650,6 @@ function App(): React.JSX.Element {
                 </button>
               </nav>
             )}
-            {selection.size > 0 && (
-              <div className="bulkbar" id="bulkbar" role="toolbar" aria-label="Bulk quick comments">
-                <span className="stat" aria-live="polite">
-                  {selection.size} selected
-                </span>
-                {QUICK_COMMENTS.map((note) => (
-                  <button key={note.key} onClick={() => applyQuickComment(note)}>
-                    <Kbd className="mr-1">{note.key}</Kbd>
-                    {note.label}
-                  </button>
-                ))}
-                <button onClick={() => setSelection(new Set())}>esc clear</button>
-              </div>
-            )}
           </div>
         </main>
 
@@ -1744,13 +1671,14 @@ function App(): React.JSX.Element {
             <Panel
               fact={notesFact}
               ghost={targetIsGhost}
+              root={effectiveCursor !== null && isRoot(effectiveCursor)}
               anchorStates={anchorStates}
               composer={composer}
               openThreadId={openThreadId}
               readonlyRevision={readonlyRevision}
               onOpenThread={openThread}
               onReplySubmit={submitReply}
-              onQuickComment={(note) => applyQuickComment(note)}
+              onBegin={beginItem}
               onFocusItem={setFocusItemId}
               onEdit={(item) =>
                 targetFact &&

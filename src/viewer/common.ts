@@ -1,15 +1,6 @@
 import type { SidecarItem } from "../summary.js";
 import type { Anchor } from "./anchor.js";
 
-// Quick Comment — the old "decisions": one-tap whole-fact comments with
-// canned text. One concept, simpler files.
-export interface QuickComment { key: string; label: string; text: string }
-export const QUICK_COMMENTS: QuickComment[] = [
-  { key: "1", label: "Not needed", text: "Not needed." },
-  { key: "2", label: "Simplify", text: "Simplify." },
-  { key: "3", label: "Defer", text: "Defer." },
-];
-
 // replies have no composer mode: they live in the thread subpage,
 // which owns its own always-visible reply box
 export type Composer =

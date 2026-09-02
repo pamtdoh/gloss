@@ -17,7 +17,9 @@ change it, ask to understand it, approve to build it.
 3. You review with the moves you know from code review. **Comment**
    on a fact to change the design: the agent resolves every comment
    in the next revision of the tree. **Ask** to understand: the agent
-   answers in the thread, live, while you keep reading.
+   answers in the thread, live, while you keep reading. Notes on the
+   overview, the tree's front page, speak to the review as a whole —
+   its altitude, its focus, or a request for a cold read.
 4. When the tree says what you mean, approve it. The approved design
    is what the agent implements.
 

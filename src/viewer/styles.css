@@ -210,7 +210,6 @@ body {
   .hamburger { display: inline-flex; }
   .hdr h1 { display: none; }
   .facttable .trow { flex-wrap: wrap; }
-  .facttable .decide { width: 100%; order: 9; justify-content: flex-end; }
   .progress { font-size: 12px; }
   .tree-col {
     position: fixed; left: 0; top: 46px; bottom: 0; z-index: 15;
@@ -227,8 +226,6 @@ body {
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   }
   .read-col { padding: 18px 16px; }
-  .facttable .decide { opacity: 1; } /* no hover on touch — always show */
-  .bulkbar { bottom: 8px; flex-wrap: wrap; }
 }
 
 /* ------------------------------------------------------------- header */
@@ -344,6 +341,9 @@ body {
 .tree .name { overflow: hidden; text-overflow: ellipsis; }
 .tree .row.unseen .name { font-weight: 650; }
 .tree .dirname { color: var(--muted); font-weight: 600; }
+/* the front page sits above the tree, not among its siblings */
+.tree .row.root { border-bottom: 1px solid var(--line-soft); margin-bottom: 4px; }
+.tree .row.root .name { font-weight: 600; }
 .tree-empty { padding: 10px 14px; color: var(--muted); font-size: 13px; }
 .badges { margin-left: auto; display: flex; gap: 4px; align-items: center; flex: none; }
 .chip {
@@ -515,32 +515,6 @@ body {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
 .facttable .trow.unseen .title { font-weight: 650; }
-.facttable .decide { display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
-.facttable .trow:hover .decide, .facttable .trow:focus-within .decide { opacity: 1; }
-/* invisible buttons must not reserve row width: on fine layouts the quick
-   comments overlay the row's right edge on hover/focus, so the title gets
-   the full row (its hidden state also swallows no clicks) */
-@media (min-width: 861px) {
-  .facttable .trow { position: relative; }
-  .facttable .decide {
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    padding-left: 8px; background: var(--panel-2); pointer-events: none;
-  }
-  .facttable .trow:hover .decide, .facttable .trow:focus-within .decide { pointer-events: auto; }
-}
-.bulkbar {
-  position: sticky; bottom: 16px; z-index: 5;
-  display: flex; align-items: center; gap: 10px; margin-top: 10px;
-  background: var(--text); color: var(--bg); border-radius: var(--radius); padding: 8px 14px;
-  box-shadow: var(--elev-3);
-  animation: rk-pop var(--dur-fast) var(--ease-out);
-}
-.bulkbar button {
-  border: 1px solid color-mix(in srgb, var(--bg) 35%, transparent); background: none;
-  color: var(--bg); border-radius: 6px; padding: 2px 10px;
-  transition: background-color var(--dur-hover) var(--ease-out);
-}
-.bulkbar button:hover { background: color-mix(in srgb, var(--bg) 15%, transparent); }
 
 /* ------------------------------------------------------------- panel */
 .panel h2 {

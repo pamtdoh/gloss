@@ -10,7 +10,6 @@ import {
   SquarePlus,
 } from "lucide-react";
 import type { SidecarItem } from "../summary.js";
-import { QUICK_COMMENTS, type QuickComment } from "./common.js";
 import { rangeForSourceSpan } from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
 import {
@@ -19,6 +18,8 @@ import {
   childFactsOf,
   dirStats,
   factStats,
+  indexFactOf,
+  isRoot,
   nameOf,
   titleOf,
   type ChangeStatus,
@@ -27,9 +28,9 @@ import {
   type Row,
 } from "./model.js";
 import { Button } from "./ui/button.js";
-import { Checkbox } from "./ui/checkbox.js";
 
 export function rowLabel(row: Row): string {
+  if (isRoot(row)) return "Overview";
   return row.kind === "dir" ? `${nameOf(row.path)}/` : nameOf(row.path);
 }
 
@@ -154,7 +155,6 @@ export function TreeRow(props: {
   prev: Map<string, string> | null;
   fact: Fact | undefined;
   seen: Set<string>;
-  selection: Set<string>;
   collapsed: Set<string>;
   isCursor: boolean;
   onOpen: () => void;
@@ -163,6 +163,42 @@ export function TreeRow(props: {
   const { row, data } = props;
   const pad = `${10 + row.depth * 16}px`;
   const rowId = `row-${row.kind}-${row.path}`;
+  if (isRoot(row)) {
+    // the front page: its badges are the overview fact's own notes, not
+    // the tree's totals (the header already counts those)
+    const index = indexFactOf(data.facts, "");
+    const stats = index ? factStats(index) : null;
+    return (
+      <li
+        id={rowId}
+        className={`row dir root ${props.isCursor ? "cursor" : ""}`}
+        style={{ paddingLeft: pad }}
+        data-path=""
+        data-kind="dir"
+        role="treeitem"
+        aria-level={1}
+        aria-selected={props.isCursor}
+        tabIndex={props.isCursor ? 0 : -1}
+        onClick={props.onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") props.onOpen();
+        }}
+      >
+        <span className="caret-spacer" aria-hidden="true" />
+        <span className="name">Overview</span>
+        <span className="badges">
+          {index && <ChangeGlyph status={changeStatus(props.prev, index)} />}
+          {stats && stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
+          {stats && stats.items - stats.questions > 0 && (
+            <span className="chip count">{stats.items - stats.questions}</span>
+          )}
+          {index && props.seen.has(index.path) && (
+            <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
+          )}
+        </span>
+      </li>
+    );
+  }
   if (row.kind === "dir") {
     const stats = dirStats(data.facts, row.path);
     const isCollapsed = props.collapsed.has(row.path);
@@ -226,9 +262,6 @@ export function TreeRow(props: {
       }}
     >
       <span className="caret-spacer" aria-hidden="true" />
-      {props.selection.has(fact.path) && (
-        <Checkbox checked aria-label={`${fact.path} selected`} tabIndex={-1} />
-      )}
       <span className="name">{nameOf(fact.path)}</span>
       <span className="badges">
         <ChangeGlyph status={status} />
@@ -244,6 +277,9 @@ export function TreeRow(props: {
   );
 }
 
+/** A directory page: its index fact (the overview, for the root), the
+ * group's totals, and a table of its entries. The root's page is the
+ * review's front page — the review name stands in for a directory name. */
 export function DirView(props: {
   dir: string;
   data: ReviewData;
@@ -251,28 +287,20 @@ export function DirView(props: {
   facts: Fact[];
   prev: Map<string, string> | null;
   seen: Set<string>;
-  selection: Set<string>;
-  /** compare mode: no checkboxes, no quick comments */
-  readonly?: boolean;
   /** already wrapped in the stable {__html} object — see factHtmlProp */
   indexHtml: { __html: string };
   indexFact: Fact | null;
   readRef: React.MutableRefObject<HTMLElement | null>;
   onOpen: (row: Row) => void;
-  onToggleSelect: (path: string) => void;
-  onSelectAll: (paths: string[], on: boolean) => void;
-  onQuickComment: (path: string, note: QuickComment) => void;
 }): React.JSX.Element {
   const children = childFactsOf(props.facts, props.dir);
   const entries = childEntries(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
-  const selectable = props.readonly ? [] : children.filter((f) => !f.ghost);
-  const allSelected =
-    selectable.length > 0 && selectable.every((f) => props.selection.has(f.path));
+  const label = props.dir ? `${nameOf(props.dir)}/` : props.data.review;
   return (
     <div className="dirview" id="dir-view">
       <div className="crumb">
-        <span>{props.dir}/</span>
+        <span>{props.dir ? `${props.dir}/` : props.data.review}</span>
       </div>
       {props.indexFact ? (
         <article
@@ -283,29 +311,18 @@ export function DirView(props: {
           dangerouslySetInnerHTML={props.indexHtml}
         />
       ) : (
-        <h1 className="text-[22px] font-[650] my-2">{nameOf(props.dir)}/</h1>
+        <h1 className="text-[22px] font-[650] my-2">{label}</h1>
       )}
       <div className="dirstats stat">
         {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.items} note
         {stats.items === 1 ? "" : "s"} · {stats.questions} open question
         {stats.questions === 1 ? "" : "s"}
       </div>
-      <div className="facttable" id="fact-table" aria-label={`Facts in ${props.dir}`}>
-        {selectable.length > 0 && (
-          <div className="selectall flex items-center gap-2.5 border-b border-line-soft px-1.5 py-1.5">
-            <Checkbox
-              aria-label="Select all facts in this directory"
-              checked={allSelected}
-              onCheckedChange={(on) =>
-                props.onSelectAll(
-                  selectable.map((f) => f.path),
-                  on === true,
-                )
-              }
-            />
-            <span className="text-muted-foreground text-[12px]">select all</span>
-          </div>
-        )}
+      <div
+        className="facttable"
+        id="fact-table"
+        aria-label={props.dir ? `Facts in ${props.dir}` : "Facts in the review"}
+      >
         {entries.map((entry) => {
           if (entry.kind === "dir") {
             const dir = entry.path;
@@ -336,16 +353,7 @@ export function DirView(props: {
               data-path={fact.path}
               onClick={() => props.onOpen({ kind: "fact", path: fact.path, depth: 0 })}
             >
-              {ghost || props.readonly ? (
-                <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
-              ) : (
-                <Checkbox
-                  aria-label={`Select ${fact.path}`}
-                  checked={props.selection.has(fact.path)}
-                  onCheckedChange={() => props.onToggleSelect(fact.path)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              )}
+              <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
               <span className="title">{titleOf(fact)}</span>
               <span className="badges">
                 <ChangeBadge status={changeStatus(props.prev, fact)} />
@@ -357,20 +365,6 @@ export function DirView(props: {
                   <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                 )}
               </span>
-              {!ghost && !props.readonly && (
-                <span className="decide" onClick={(e) => e.stopPropagation()}>
-                  {QUICK_COMMENTS.map((note) => (
-                    <Button
-                      key={note.key}
-                      variant="outline"
-                      size="xs"
-                      onClick={() => props.onQuickComment(fact.path, note)}
-                    >
-                      {note.label}
-                    </Button>
-                  ))}
-                </span>
-              )}
             </div>
           );
         })}

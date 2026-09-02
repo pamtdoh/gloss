@@ -106,11 +106,15 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
   await expect(page).toHaveScreenshot("mobile-fact.png");
 });
 
-test("the review panel opens as a bottom sheet; quick comments write and close it", async () => {
+test("the review panel opens as a bottom sheet; a whole-fact comment writes and closes it", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
   await expect(page).toHaveScreenshot("mobile-panel.png");
-  await page.locator('#quick-comment [data-quick="Simplify"]').tap();
+  // no keyboard on a phone: the panel's buttons are the whole-fact path
+  await page.locator("#note-comment").tap();
+  await expect(page.locator(".panel-col.panel #item-form")).toBeVisible();
+  await page.locator("#item-input").fill("Simplify.");
+  await page.locator("#item-save").tap();
   await expect
     .poll(
       () =>

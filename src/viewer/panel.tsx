@@ -1,9 +1,17 @@
 import * as React from "react";
 import { useEffect, useRef } from "react";
 import { DropdownMenu as DM } from "radix-ui";
-import { ArrowLeft, ChevronRight, MoreHorizontal, PanelRightClose, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  MessageCircleQuestion,
+  MessageSquare,
+  MoreHorizontal,
+  PanelRightClose,
+  Sparkles,
+} from "lucide-react";
 import type { SidecarItem, ThreadEntry } from "../summary.js";
-import { QUICK_COMMENTS, type Composer, type QuickComment } from "./common.js";
+import type { Composer } from "./common.js";
 import { Md } from "./components.js";
 import { answeredByAgent, type AnchorState, type Fact } from "./model.js";
 import { MOD } from "./shortcuts.js";
@@ -184,16 +192,20 @@ export function Panel(props: {
    * comparing, the viewed fact otherwise (null for a ghost or a dir) */
   fact: Fact | null;
   ghost: boolean;
+  /** the review's front page: its notes speak to the review as a whole */
+  root: boolean;
   anchorStates: Map<string, AnchorState>;
   composer: Composer | null;
   /** id of the question thread opened as a subpage */
   openThreadId: string | null;
   /** compare / stale-revision mode: the notes belong to this revision
-   * and nothing writes — no quick comments, menus, composer, or replies */
+   * and nothing writes — no Comment/Ask buttons, menus, composer, or replies */
   readonlyRevision: number | null;
   onOpenThread: (id: string | null) => void;
   onReplySubmit: (id: string, text: string) => void;
-  onQuickComment: (note: QuickComment) => void;
+  /** open the composer for the whole fact, or the live selection if any —
+   * the buttons' path for readers without a keyboard */
+  onBegin: (type: SidecarItem["type"]) => void;
   onFocusItem: (id: string | null) => void;
   onEdit: (item: SidecarItem) => void;
   onDelete: (id: string) => void;
@@ -250,26 +262,35 @@ export function Panel(props: {
       ) : (
         <>
           <h2 className="flex items-center justify-between">
-            Quick comment
+            Notes
             {collapse}
           </h2>
-          <div id="quick-comment" className="flex flex-wrap gap-1.5" role="group" aria-label="Quick comment">
-            {QUICK_COMMENTS.map((note) => (
-              <Button
-                key={note.key}
-                variant="outline"
-                size="sm"
-                data-quick={note.label}
-                aria-keyshortcuts={note.key}
-                disabled={!fact}
-                onClick={() => props.onQuickComment(note)}
-              >
-                <Kbd>{note.key}</Kbd>
-                {note.label}
-              </Button>
-            ))}
+          <div id="note-actions" className="flex flex-wrap gap-1.5" role="group" aria-label="Raise a note">
+            <Button
+              variant="outline"
+              size="sm"
+              id="note-comment"
+              aria-keyshortcuts="c"
+              title={props.root ? "Comment on the review (c)" : "Comment on the whole fact (c)"}
+              disabled={!fact}
+              onClick={() => props.onBegin("comment")}
+            >
+              <MessageSquare aria-hidden="true" />
+              Comment
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              id="note-ask"
+              aria-keyshortcuts="q"
+              title={props.root ? "Ask about the review (q)" : "Ask about the whole fact (q)"}
+              disabled={!fact}
+              onClick={() => props.onBegin("question")}
+            >
+              <MessageCircleQuestion aria-hidden="true" />
+              Ask
+            </Button>
           </div>
-          <h2>Notes</h2>
         </>
       )}
       <div id="panel-items">
@@ -394,29 +415,45 @@ export function Panel(props: {
         )}
         {/* the empty state is the manual: the one moment the reviewer will
             read what Comment and Ask actually set in motion */}
-        {!readonly && fact && items.length === 0 && (
+        {!readonly && fact && items.length === 0 && props.root && (
           <p className="text-muted-foreground text-[13px]">
-            No notes on this fact. Select text in it, then{" "}
-            <strong className="text-foreground font-[650]">Comment</strong> to request a change
-            (the agent addresses it in the next revision) or{" "}
-            <strong className="text-foreground font-[650]">Ask</strong> to get a live answer —
-            or decide the whole fact with a quick comment above.
+            No notes on the review yet. A note here speaks to the whole review — the
+            altitude, what to deepen or drop, where to focus next.{" "}
+            <strong className="text-foreground font-[650]">Comment</strong> sets the direction
+            of the next revision;{" "}
+            <strong className="text-foreground font-[650]">Ask</strong> gets a live answer,
+            including a cold read of this revision.
+          </p>
+        )}
+        {!readonly && fact && items.length === 0 && !props.root && (
+          <p className="text-muted-foreground text-[13px]">
+            No notes on this fact. Select text in it, or use the buttons above for the whole
+            fact, then <strong className="text-foreground font-[650]">Comment</strong> to
+            request a change (the agent addresses it in the next revision) or{" "}
+            <strong className="text-foreground font-[650]">Ask</strong> to get a live answer.
           </p>
         )}
         {!readonly && !fact && (
           <p className="text-muted-foreground text-[13px]">
             {props.ghost
               ? "This fact was removed — read-only, nothing to note."
-              : "This directory has no _index.md — select a fact to review it."}
+              : props.root
+                ? "This review has no overview fact (an _index.md at the revision root), so there is nowhere to note the review as a whole — select a fact to review it."
+                : "This directory has no _index.md — select a fact to review it."}
           </p>
         )}
       </div>
       {!readonly && props.composer?.mode === "new" && (
-        <ComposerBox composer={props.composer} onCommit={props.onCommit} onCancel={props.onCancel} />
+        <ComposerBox
+          composer={props.composer}
+          root={props.root}
+          onCommit={props.onCommit}
+          onCancel={props.onCancel}
+        />
       )}
       {!readonly && (
         <p className="keys-hint">
-          j/k move · 1–3 quick comment · v seen · c/q raise · f filter · <Kbd>?</Kbd> help
+          j/k move · v seen · c/q raise · f filter · <Kbd>?</Kbd> help
         </p>
       )}
     </div>
@@ -428,6 +465,8 @@ export function ComposerBox(props: {
   /** rendered inside an item card: the card is the box, so no border,
    * no padding, and no "edit — q3" label restating what the card shows */
   bare?: boolean;
+  /** on the front page an unanchored note is about the whole review */
+  root?: boolean;
   onCommit: (text: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -436,9 +475,10 @@ export function ComposerBox(props: {
     ref.current?.focus();
   }, []);
   const composer = props.composer;
+  const whole = props.root ? " — whole review" : " — whole fact";
   const label =
     composer.mode === "new"
-      ? composer.type + (composer.anchor ? ` — “${composer.anchor.quote}”` : " — whole fact")
+      ? composer.type + (composer.anchor ? ` — “${composer.anchor.quote}”` : whole)
       : `edit ${composer.id}`;
   return (
     <form

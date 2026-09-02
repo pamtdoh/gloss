@@ -43,7 +43,9 @@ it — agents follow it by instruction.
 Revisions are standalone copies — no shared data, no lineage metadata.
 Inside a revision the agent shapes the tree: one condensed, decidable fact
 per `.md` file; a directory that forms a coherent group may carry an
-`_index.md` (a fact about the group as a whole). Everything sorts
+`_index.md` (a fact about the group as a whole), and the revision root
+carries one as the overview — the fact the viewer opens on, whose
+sidecar holds notes on the review as a whole. Everything sorts
 alphabetically, so numeric filename prefixes (`10-auth.md`) make narrative
 order the reading order where a group tells a story. Facts are rich
 Markdown: GFM tables, fenced code, Mermaid diagrams, and images. Every
@@ -80,9 +82,9 @@ All review state for a fact lives in a sidecar next to it —
 }
 ```
 
-- Item types are `comment` and `question`. No decision field: the viewer's
-  quick-comment presets are just comments with canned text. An absent
-  sidecar means the fact stands as written — silence is agreement.
+- Item types are `comment` and `question`, both typed by the human; no
+  decision field. An absent sidecar means the fact stands as written —
+  silence is agreement.
 - `anchor.quote` is the verbatim selected text; optional `prefix`/`suffix`
   (W3C TextQuoteSelector) disambiguate. No anchor means the whole fact.
   The viewer fuzzy-re-anchors drifted quotes and shows broken ones as
@@ -101,9 +103,9 @@ All review state for a fact lives in a sidecar next to it —
   incoming copy lacks is re-inserted), so a stale tab can never erase an
   answer, even if something does edit the file directly mid-session.
 - Resolving an item deletes it from `items`; delete the sidecar when
-  nothing remains. Revision-level notes may go in `_review.json` at the
-  revision root, same schema minus anchors — a file convention only; the
-  viewer does not surface it.
+  nothing remains. Notes on the review as a whole are the root
+  `_index.md`'s sidecar, like any other fact's — there is no separate
+  revision-level file.
 
 ## The session
 
@@ -142,7 +144,8 @@ over the same API and writes nothing.
   copying the revision and resolving sidecar items, and promotes the
   accepted revision to `approved/`. During a live session it treats the
   served revision and the reviewed code as fixed — feedback lands in
-  the next revision, code changes wait for approval.
+  the next revision whether it arrives in the viewer or in
+  conversation, and code changes wait for approval.
 - **gloss-apply** implements from `approved/` and refuses to start
   without it. It never modifies `.gloss/`.
 

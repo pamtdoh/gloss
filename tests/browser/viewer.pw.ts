@@ -198,7 +198,7 @@ test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
   page = await context.newPage();
   await page.goto(url);
-  await expect(page.locator(".tree .row")).toHaveCount(11); // 4 dirs + 7 facts
+  await expect(page.locator(".tree .row")).toHaveCount(12); // front page + 4 dirs + 7 facts
 });
 
 test.afterAll(async () => {
@@ -209,12 +209,12 @@ test.afterAll(async () => {
 
 test("initial render: nested tree, first fact shown", async () => {
   await expect(page.locator("#review-name")).toHaveText("design-review");
-  await expect(page.locator("#progress")).toContainText("0 / 10 reviewed");
-  // root sorts dirs and facts together: architecture.md leads
-  await expect(page.locator(".tree .row").first()).toHaveAttribute(
-    "data-path",
-    "architecture.md",
-  );
+  await expect(page.locator("#progress")).toContainText("0 / 11 reviewed");
+  // the front page leads and is the landing page; below it the root sorts
+  // dirs and facts together, so architecture.md comes next
+  await expect(page.locator(".tree .row").first()).toHaveClass(/root/);
+  await expect(page.locator(".tree .row.cursor")).toHaveClass(/root/);
+  await expect(page.locator(".tree .row").nth(1)).toHaveAttribute("data-path", "architecture.md");
   // interdiff badges from revision 1 -> 2 (14px glyphs in the tree)
   await expect(
     page.locator('.tree .row[data-path="storage/whole-file-writes.md"] .gbadge.changed'),
@@ -225,7 +225,57 @@ test("initial render: nested tree, first fact shown", async () => {
   await expect(page).toHaveScreenshot("viewer-initial.png");
 });
 
+test("the overview is the front page; notes on it are notes on the review", async () => {
+  // the front page renders the root _index.md above the table of contents
+  await expect(page.locator(".tree .row.root")).toContainText("Overview");
+  await expect(page.locator("#dir-view .crumb")).toHaveText("design-review");
+  await expect(page.locator("#fact-content h1")).toHaveText(
+    "linkbox is three small parts sharing one JSON file",
+  );
+  await expect(page.locator("#fact-table .trow")).toHaveCount(5); // architecture.md + 4 dirs
+  await expect(page).toHaveURL(/#\/$/);
+  // the panel says what a note here means; the buttons raise one on the
+  // whole review (the path for readers without a keyboard)
+  await expect(page.locator("#panel-items")).toContainText("speaks to the whole review");
+  await page.locator("#note-comment").click();
+  await expect(page.locator("#item-form-label")).toContainText("comment — whole review");
+  await page.locator("#item-input").fill("Too deep for a first read — stay at the design decisions.");
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => existsSync(snap2("_index.review.json")) && readSidecar("_index.review.json"))
+    .toEqual({
+      items: [
+        { id: "c1", type: "comment", text: "Too deep for a first read — stay at the design decisions." },
+      ],
+    });
+  await expect(page.locator(".tree .row.root .chip.count")).toHaveText("1");
+
+  // a question on the overview reaches the agent like any other, and n
+  // (next open question) finds the front page from anywhere in the tree
+  await page.locator("#note-ask").click();
+  await expect(page.locator("#item-form-label")).toContainText("question — whole review");
+  await page.locator("#item-input").fill("Can you read this revision cold?");
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => stdoutLines.find((l) => l.event === "question.asked" && l.path === "_index.md"))
+    .toMatchObject({ id: "q1" });
+  await page.locator('.tree .row[data-path="architecture.md"]').click();
+  await page.keyboard.press("n");
+  await expect(page.locator(".tree .row.cursor")).toHaveClass(/root/);
+  await page.locator('.card[data-id="q1"] .menu-btn').click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect.poll(() => readSidecar("_index.review.json").items).toHaveLength(1);
+  await page.locator('#toast button[aria-label="Dismiss"]').click();
+
+  // #/ deep-links to the front page
+  await page.reload();
+  await expect(page.locator(".tree .row.cursor")).toHaveClass(/root/);
+  await expect(page.locator('.card[data-id="c1"]')).toBeVisible();
+});
+
 test("j/k walk the tree; a directory row shows its _index fact", async () => {
+  await page.keyboard.press("j"); // architecture.md, first below the front page
+  await expect(page.locator(".tree .row.cursor")).toHaveAttribute("data-path", "architecture.md");
   await page.keyboard.press("j"); // cli/ directory
   await expect(page.locator(".tree .row.cursor")).toHaveAttribute("data-path", "cli");
   await expect(page.locator("#dir-view")).toBeVisible();
@@ -249,52 +299,6 @@ test("j/k walk the tree; a directory row shows its _index fact", async () => {
     "data-path",
     "cli/add-and-list.md",
   );
-});
-
-test("quick-comment keys write comment items; u undoes them", async () => {
-  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
-  await page.keyboard.press("1");
-  await expect
-    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
-  await expect(
-    page.locator('.tree .row[data-path="http/create-link.md"] .chip.count'),
-  ).toHaveText("1");
-
-  await page.keyboard.press("u"); // undo — resolution is deletion
-  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
-
-  await page.keyboard.press("2");
-  await expect
-    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
-    .toEqual({ items: [{ id: "c1", type: "comment", text: "Simplify." }] });
-
-  await page.keyboard.press("j");
-  await page.keyboard.press("3");
-  await expect
-    .poll(() => existsSync(snap2("http/redirect.review.json")) && readSidecar("http/redirect.review.json"))
-    .toEqual({ items: [{ id: "c1", type: "comment", text: "Defer." }] });
-});
-
-test("directory table: bulk quick comments with undo toast", async () => {
-  await page.locator('.tree .row[data-path="storage"]').click();
-  await expect(page.locator("#fact-table .trow")).toHaveCount(2);
-  for (const path of ["storage/hit-counting.md", "storage/whole-file-writes.md"]) {
-    await page.locator(`#fact-table .trow[data-path="${path}"] [role=checkbox]`).click();
-  }
-  await expect(page.locator("#bulkbar")).toContainText("2 selected");
-  await page.locator('#bulkbar button:has-text("Not needed")').click();
-  await expect
-    .poll(() => existsSync(snap2("storage/hit-counting.review.json")) && readSidecar("storage/hit-counting.review.json"))
-    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
-  await expect
-    .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")) && readSidecar("storage/whole-file-writes.review.json"))
-    .toEqual({ items: [{ id: "c1", type: "comment", text: "Not needed." }] });
-
-  await expect(page.locator("#toast")).toContainText("Commented “Not needed” on 2 facts");
-  await page.locator('#toast button:has-text("Undo")').click();
-  await expect.poll(() => existsSync(snap2("storage/hit-counting.review.json"))).toBe(false);
-  await expect.poll(() => existsSync(snap2("storage/whole-file-writes.review.json"))).toBe(false);
 });
 
 test("reading a fact marks it seen automatically; v unmarks", async () => {
@@ -323,7 +327,7 @@ test("selection comment stores the verbatim quote and paints a highlight", async
     localStorage.setItem(`rk-seen2:${review.review}`, JSON.stringify(store));
   });
   await page.reload();
-  await expect(page.locator("#progress")).toContainText("10 / 10 reviewed");
+  await expect(page.locator("#progress")).toContainText("11 / 11 reviewed");
 
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   // the staged diagram's first render splices new innerHTML — let it
@@ -426,7 +430,7 @@ test("a gloss reply lands in the folded card; retries dedupe", async () => {
   const unknown = replyTo("slugs/collision-retry.md", "q9");
   expect(unknown.status).toBe(1);
   expect(JSON.parse(unknown.err)).toMatchObject({ ok: false, error: "no item q9 on slugs/collision-retry.md" });
-  const toComment = replyTo("http/create-link.md", "c1");
+  const toComment = replyTo("_index.md", "c1");
   expect(toComment.status).toBe(1);
   expect(JSON.parse(toComment.err).error).toContain("c1 is a comment");
 
@@ -492,7 +496,7 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
   await expect(page.locator("#thread-page")).toBeVisible();
   await page.locator("#thread-back").click();
   await expect(page.locator("#thread-page")).toHaveCount(0);
-  await expect(page.locator("#quick-comment")).toBeVisible();
+  await expect(page.locator("#note-actions")).toBeVisible();
 });
 
 test("notes can be edited and deleted from the card menu", async () => {
@@ -530,8 +534,7 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   );
   await expect(page.locator(".card[data-id=c9]")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
-  // and survive navigating away and back (architecture.md is the first
-  // row, so away is forward)
+  // and survive navigating away and back
   await page.locator("#nav-next").click();
   await page.locator("#nav-prev").click();
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
@@ -574,7 +577,7 @@ test("tree filter narrows the tree; ? opens help", async () => {
   await page.locator("#tree-filter").focus();
   await page.keyboard.press("Escape");
   await expect(page.locator("#tree-filter")).toHaveValue("");
-  await expect(page.locator(".tree .row")).toHaveCount(11);
+  await expect(page.locator(".tree .row")).toHaveCount(12);
   await expect(page.locator(".tree .row.cursor")).toHaveAttribute(
     "data-path",
     "slugs/collision-retry.md",
@@ -592,6 +595,7 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
   await expect(page.locator("#scope-btn")).toContainText("Changed");
   // changed: storage/whole-file-writes; new: architecture; removed ghost: slugs/legacy-dedupe
   await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
+  await expect(page.locator(".tree .row.root")).toHaveCount(0); // the overview is unchanged
   await expect(page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]')).toHaveClass(
     /ghost/,
   );
@@ -610,16 +614,18 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
   ).toHaveCount(0);
 
   // raised = facts carrying comments or questions at this point in the run:
-  // http/create-link, http/redirect, slugs/collision-retry, storage/whole-file-writes
+  // the overview, slugs/collision-retry, storage/whole-file-writes — the
+  // front page stays in a scope only when its overview is one of the matches
   await page.locator("#scope-btn").click();
   await page.locator("#scope-raised").click();
-  await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(4);
+  await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(2);
+  await expect(page.locator(".tree .row.root")).toHaveCount(1);
   await expect(page.locator('.tree .row[data-path="storage/whole-file-writes.md"]')).toBeVisible();
   await expect(page.locator('.tree .row[data-path="slugs/collision-retry.md"]')).toBeVisible();
 
   // d cycles back around to all
   await page.keyboard.press("d");
-  await expect(page.locator(".tree .row")).toHaveCount(11);
+  await expect(page.locator(".tree .row")).toHaveCount(12);
 });
 
 test("the URL names the page; back and forward walk the visited pages", async () => {
@@ -665,12 +671,11 @@ test("a revision the session doesn't serve is read-only", async () => {
   await expect(page.locator("#stale-banner")).toContainText(
     "Viewing revision 1 read-only — the session serves 2",
   );
-  // no composer, no quick-comment writes, no seen marks
+  // no composer, no Comment/Ask buttons, no seen marks
   await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toHaveCount(0);
-  await page.keyboard.press("1");
-  await expect(page.locator("#quick-comment")).toHaveCount(0); // read-only panel
+  await expect(page.locator("#note-actions")).toHaveCount(0); // read-only panel
   await expect(page.locator(".panel h2").first()).toContainText("Notes on revision 1");
   // the server refuses the write even if a client tries
   const put = await page.evaluate(async () => {
@@ -709,7 +714,7 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   // unmark one changed fact so the no-auto-seen guard is observable
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await page.keyboard.press("v");
-  await expect(page.locator("#progress")).toContainText("9 / 10 reviewed");
+  await expect(page.locator("#progress")).toContainText("10 / 11 reviewed");
 
   await page.locator("#btn-compare").click();
   await expect(page.locator("#compare-bar")).toContainText("Changes from revision");
@@ -765,13 +770,12 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await expect(page.locator("#diff-view .dline.add").last()).toContainText("write-through cache");
 
   // compare is read-only even on a live, changed fact: no composer, no
-  // quick-comment writes, and dwelling on a diff marks nothing seen
+  // Comment/Ask buttons, and dwelling on a diff marks nothing seen
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toHaveCount(0);
-  await page.keyboard.press("1");
-  expect(readSidecar("storage/whole-file-writes.review.json").items).toHaveLength(1);
+  await expect(page.locator("#note-actions")).toHaveCount(0);
   await page.waitForTimeout(2000); // past the 1.5s auto-seen dwell
-  await expect(page.locator("#progress")).toContainText("9 / 10 reviewed");
+  await expect(page.locator("#progress")).toContainText("10 / 11 reviewed");
 
   // split layout: old text left with its line number, new text right
   await page.locator("#diff-split").click();
@@ -793,13 +797,13 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   // escape leaves compare mode and restores the full tree
   await page.keyboard.press("Escape");
   await expect(page.locator("#compare-bar")).toHaveCount(0);
-  await expect(page.locator(".tree .row")).toHaveCount(11);
+  await expect(page.locator(".tree .row")).toHaveCount(12);
   rmSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"));
 });
 
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   await page.locator("#btn-finish").click();
-  await expect(page.locator("#finish-sheet")).toContainText("4 facts with notes");
+  await expect(page.locator("#finish-sheet")).toContainText("3 facts with notes");
   await expect(page.locator("#finish-sheet")).toContainText("1 open question");
   await page.locator("#confirm-finish").click();
   await expect(page.locator("#done")).toBeVisible();
@@ -808,8 +812,8 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   const expectedSummary = {
     review: "design-review",
     revision: 2,
-    facts: 10,
-    comments: 3, // two quick comments + one selection comment
+    facts: 11,
+    comments: 2, // the whole-review comment + one selection comment
     openQuestions: 1,
     approved: false,
   };

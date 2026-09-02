@@ -67,6 +67,11 @@ needs it.
    - A directory that forms a coherent group may carry an
      `_index.md` — a fact about the group as a whole that also holds
      the group's shared context.
+   - The revision root carries an `_index.md` too: the overview, one
+     fact stating the scope, the altitude, and how the tree is laid
+     out. The viewer opens on it, so it is the first thing the
+     reviewer reads, and notes left on it are notes on the review as
+     a whole.
    - State the design, don't review it: facts describe what the
      design does, sharp edges included, in neutral terms. The
      verdict belongs to the human.
@@ -133,6 +138,20 @@ before answering, verify what you assert, take the time a correct
 answer needs. The human asked because they are deciding something —
 a fast wrong answer costs more than a slow right one.
 
+**Feedback on the review as a whole comes two ways, and they mean the
+same thing.** In the viewer it lands on the root `_index.md`, the
+overview; in the terminal it is the human talking to you while the
+session runs. Either way, when it asks for a change — the altitude
+was wrong, a branch deserves more or less, start over — treat it as a
+comment: acknowledge it, hold it for the next revision, and keep the
+session open. The human is still reading, Finish is theirs to click,
+and a revision started under a live session would split their
+attention between two trees. When it asks for an answer, treat it as
+a question, and "read this revision cold" is a fair one: a cold read
+only reads, so run it now, exactly as in generation step 5, and reply
+with what the reader found. What carries into the next revision is
+the human's call.
+
 **Answer through `gloss reply`.**
 
 ```
@@ -154,9 +173,11 @@ is an iteration act, never a live-session one.
 
 When the session finishes with sidecars present:
 
-1. Read every `*.review.json` in the revision wholesale, then
-   propose next steps to the human before rewriting anything they'd
-   rather discuss.
+1. Read every `*.review.json` in the revision wholesale — the root
+   `_index.review.json` first, since notes there set the direction
+   for everything below — together with whatever the human told you
+   in conversation during the session, then propose next steps to
+   the human before rewriting anything they'd rather discuss.
 2. Copy `.gloss/<review>/<n>` to `.gloss/<review>/<n+1>`
    recursively. Revisions are standalone copies — no links, no
    shared state — and revision `n` stays exactly as reviewed.

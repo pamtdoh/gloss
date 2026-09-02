@@ -7,7 +7,7 @@ export interface ShortcutDef {
   keys: string[];
   /** display form for the help overlay */
   shown: string;
-  section: "Navigate" | "Decide" | "Items" | "Everywhere";
+  section: "Navigate" | "Progress" | "Items" | "Everywhere";
   label: string;
   allowRepeat?: boolean;
   /** fires even when a field has focus (palette toggle, escape) */
@@ -31,12 +31,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "scope", keys: ["d"], shown: "d", section: "Navigate", label: "Cycle scope: all / changed / raised" },
   { id: "help", keys: ["Shift+?"], shown: "?", section: "Everywhere", label: "Keyboard help" },
   { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection", raw: true },
-  { id: "notNeeded", keys: ["1"], shown: "1", section: "Decide", label: "Quick comment: not needed" },
-  { id: "simplify", keys: ["2"], shown: "2", section: "Decide", label: "Quick comment: simplify" },
-  { id: "defer", keys: ["3"], shown: "3", section: "Decide", label: "Quick comment: defer" },
-  { id: "seen", keys: ["v"], shown: "v", section: "Decide", label: "Toggle seen" },
-  { id: "seenAdvance", keys: ["Shift+Enter"], shown: "⇧↵", section: "Decide", label: "Mark seen, go to next unseen" },
-  { id: "select", keys: ["x"], shown: "x", section: "Decide", label: "Select fact for bulk quick comments" },
+  { id: "seen", keys: ["v"], shown: "v", section: "Progress", label: "Toggle seen" },
+  { id: "seenAdvance", keys: ["Shift+Enter"], shown: "⇧↵", section: "Progress", label: "Mark seen, go to next unseen" },
   { id: "comment", keys: ["c", "a"], shown: "c", section: "Items", label: "Comment on selection (or whole fact)" },
   { id: "question", keys: ["q"], shown: "q", section: "Items", label: "Ask a question" },
   { id: "undo", keys: ["u"], shown: "u", section: "Items", label: "Undo last comment" },
