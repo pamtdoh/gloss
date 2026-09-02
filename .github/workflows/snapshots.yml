@@ -1,0 +1,28 @@
+# Regenerates the browser suite's screenshot baselines on Linux, the
+# platform they are committed for, and uploads them as an artifact. Run
+# by hand (workflow_dispatch) after a viewer change; download the
+# artifact, copy the PNGs into tests/browser/*-snapshots/, commit.
+name: snapshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run build
+      - run: bun x playwright install --with-deps chromium
+      - name: Regenerate the Linux baselines
+        run: bun x playwright test --update-snapshots
+      - name: Verify the suite passes against them
+        run: bun x playwright test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-snapshots
+          path: tests/browser/*-snapshots/*-chromium-linux.png
+          if-no-files-found: error
