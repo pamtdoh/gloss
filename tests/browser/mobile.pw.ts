@@ -110,7 +110,10 @@ test("the review panel opens as a bottom sheet; a whole-fact comment writes and 
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
   await expect(page).toHaveScreenshot("mobile-panel.png");
-  // no keyboard on a phone: the panel's buttons are the whole-fact path
+  // no keyboard on a phone: the buttons are the whole-fact path and the
+  // key hint is not shown
+  await expect(page.locator("#note-actions")).toBeVisible();
+  await expect(page.locator(".keys-hint")).toHaveCount(0);
   await page.locator("#note-comment").tap();
   await expect(page.locator(".panel-col.panel #item-form")).toBeVisible();
   await page.locator("#item-input").fill("Simplify.");
@@ -220,6 +223,14 @@ test("a question thread opens as a subpage inside the bottom sheet", async () =>
   await expect(page.locator(".panel-col.panel")).toHaveCount(0);
 });
 
+test("help on a phone lists the concepts, not keys it cannot press", async () => {
+  await page.keyboard.press("Shift+?");
+  await expect(page.locator("#help-sheet")).toBeVisible();
+  await expect(page.locator("#help-sheet h3")).toHaveText(["Concepts"]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#help-sheet")).toHaveCount(0);
+});
+
 test("compare mode works at phone width without sideways scroll", async () => {
   await page.locator("#btn-compare").tap();
   await expect(page.locator("#compare-bar")).toBeVisible();
@@ -231,6 +242,12 @@ test("compare mode works at phone width without sideways scroll", async () => {
     () => document.scrollingElement!.scrollWidth - document.scrollingElement!.clientWidth,
   );
   expect(overflow).toBe(0);
+  // read-only: the sheet offers neither the buttons nor a composer
+  await page.locator("#panel-fab").tap();
+  await expect(page.locator(".panel-col.panel")).toBeVisible();
+  await expect(page.locator("#note-actions")).toHaveCount(0);
+  await page.locator('[aria-label="Collapse panel"]').tap();
+  await expect(page.locator(".panel-col.panel")).toHaveCount(0);
   await page.locator("#compare-exit").tap();
   await expect(page.locator("#compare-bar")).toHaveCount(0);
 });

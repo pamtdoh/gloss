@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Search } from "lucide-react";
-import { keepFocusOutOfFields } from "./common.js";
+import { COARSE, keepFocusOutOfFields } from "./common.js";
 import { titleOf, type Fact, type ReviewData } from "./model.js";
 import { SHORTCUTS } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
@@ -19,10 +19,12 @@ const CONCEPTS: [string, string][] = [
   ["Fact", "one small claim about the design, one file. Let it stand or raise something on it — silence is agreement."],
   ["Overview", "the review's front page, the root fact. Notes on it speak to the review as a whole: its altitude, its focus, what to deepen or drop — or ask for a cold read."],
   ["Revision", "one pass of the review. After your feedback the agent writes the next one; each is a standalone copy."],
+  ["Note", "a comment or a question, raised on a fact or on the overview."],
   ["Comment", "requests a change — the agent addresses it when it revises the facts, like a review comment on an MR."],
   ["Ask", "a live question — the agent answers in a thread on the fact while you keep reviewing."],
   ["Seen", "your own reading progress mark. It decides nothing."],
-  ["Finish", "ends the session and hands everything you raised to the agent, who proposes the next revision before writing it."],
+  ["Raised", "the scope that keeps only facts with notes; d cycles All, Changed, Raised."],
+  ["Finish", "ends the session; the agent writes the next revision from everything you raised and serves it."],
   ["Approve", "accepts this revision as the agreed design — implementation starts from it, the review is over."],
 ];
 
@@ -38,22 +40,26 @@ export function Help(props: { open: boolean; onClose: () => void }): React.JSX.E
         <DialogHeader>
           <DialogTitle>Help</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-x-7 gap-y-1">
-          {sections.map((section) => (
-            <div key={section}>
-              <h3 className="text-muted-foreground mt-3 mb-1 text-[11px] font-[650] tracking-wide uppercase">
-                {section}
-              </h3>
-              {SHORTCUTS.filter((s) => s.section === section).map((s) => (
-                <div key={s.id} className="flex justify-between gap-3 py-0.5 text-[13px]">
-                  <span>{s.label}</span>
-                  <Kbd>{s.shown}</Kbd>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="border-line-soft border-t pt-3" id="help-concepts">
+        {/* no keyboard on a touch screen: the shortcut sections would
+            list keys the reader cannot press */}
+        {!COARSE && (
+          <div className="grid grid-cols-2 gap-x-7 gap-y-1">
+            {sections.map((section) => (
+              <div key={section}>
+                <h3 className="text-muted-foreground mt-3 mb-1 text-[11px] font-[650] tracking-wide uppercase">
+                  {section}
+                </h3>
+                {SHORTCUTS.filter((s) => s.section === section).map((s) => (
+                  <div key={s.id} className="flex justify-between gap-3 py-0.5 text-[13px]">
+                    <span>{s.label}</span>
+                    <Kbd>{s.shown}</Kbd>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={COARSE ? "" : "border-line-soft border-t pt-3"} id="help-concepts">
           <h3 className="text-muted-foreground mb-1 text-[11px] font-[650] tracking-wide uppercase">
             Concepts
           </h3>
@@ -166,8 +172,8 @@ export function FinishSheet(props: {
                 </div>
                 <p className="text-muted-foreground m-0 text-[12.5px]">
                   {clean
-                    ? "Ends the session without approving — the agent takes it from there."
-                    : "The session ends and the agent reads your notes and questions, proposes what the next revision should change, and writes it once you agree."}
+                    ? "Ends the session without notes — continue with the agent in the terminal."
+                    : "The session ends and the agent writes the next revision from your notes and serves it."}
                 </p>
               </div>
               <div className="border-line-soft rounded-lg border p-3">

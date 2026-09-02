@@ -43,7 +43,7 @@ import {
   type ReviewData,
   type Row,
 } from "./model.js";
-import type { Composer } from "./common.js";
+import { COARSE, type Composer } from "./common.js";
 import { ChangeBadge, DirView, SelBubble, TreeRow, rowLabel } from "./components.js";
 import { DiffView } from "./compare.js";
 import { useMermaidHtml } from "./mermaid.js";
@@ -117,7 +117,6 @@ function cursorFromHash(facts: Fact[]): Row | null {
 // callout and collapses the selection on any tap — floating popovers near
 // the selection are unwinnable there). Fine pointers get a bubble at the
 // selection instead.
-const COARSE = window.matchMedia("(pointer: coarse)").matches;
 
 async function fetchReview(revision?: number): Promise<ReviewData> {
   const res = await fetch("/api/review" + (revision ? `?revision=${revision}` : ""));
@@ -1418,7 +1417,7 @@ function App(): React.JSX.Element {
                 <Input
                   id="tree-filter"
                   className="pl-7"
-                  placeholder="Filter facts (f)"
+                  placeholder={COARSE ? "Filter facts" : "Filter facts (f)"}
                   aria-label="Filter facts"
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
@@ -1473,7 +1472,7 @@ function App(): React.JSX.Element {
                   }`
                 : scope === "changed"
                   ? `${scopeCounts.changed} changed since revision ${basisRevision ?? "—"}`
-                  : `${scopeCounts.raised} with notes or questions`}
+                  : `${scopeCounts.raised} with notes`}
             </div>
           )}
           {rows.length === 0 ? (
@@ -1482,7 +1481,7 @@ function App(): React.JSX.Element {
                 ? `Nothing matches “${filter.trim()}”.`
                 : scope === "changed"
                   ? "Nothing changed in this revision."
-                  : "No facts with notes or questions."}
+                  : "No facts with notes."}
             </div>
           ) : (
             <ul

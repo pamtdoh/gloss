@@ -86,8 +86,7 @@ describe("summarize", () => {
             { id: "q1", type: "question", thread: [{ who: "human", text: "why?" }] },
           ],
         },
-        // legacy annotation items count as comments
-        { items: [{ id: "a1", type: "annotation", text: "nice" }] },
+        undefined,
         undefined,
         undefined,
       ],
@@ -96,7 +95,7 @@ describe("summarize", () => {
       review: "r",
       revision: 2,
       facts: 4,
-      comments: 3,
+      comments: 2,
       openQuestions: 1,
       approved: true,
     });

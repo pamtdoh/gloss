@@ -131,7 +131,7 @@ Call each concept by one name everywhere; introduce a long term in
 full once, then use one consistent short form. Keep asides out of
 the middle of sentences — an aside usually deserves a sentence of
 its own. State a sharp edge the way a warning is written, condition
-first: "If you delete a sidecar item during a live session, the
+first: "If you delete a note from a sidecar during a live session, the
 viewer treats it as resolved." These are directions, not rules to
 audit — when a sentence reads clearly aloud, it is done.
 
@@ -163,7 +163,7 @@ they are judging, so when the subject is visual, the fact carries a
 figure. (When to capture is workflow: SKILL.md step 2.)
 
 - **A screenshot of the running app, not a mockup.** Staged state
-  is fine (seeded data, planted review items), but the fact must
+  is fine (seeded data, planted notes), but the fact must
   say so, so the reviewer doesn't mistake sample data for their
   own.
 - **Stored in `images/` at the revision root**, referenced

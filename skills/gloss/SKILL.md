@@ -76,21 +76,27 @@ needs it.
      design does, sharp edges included, in neutral terms. The
      verdict belongs to the human.
 
-5. **Offer verification, then hand it over.** Tell the human they
-   can ask for a verification pass before reading. If they do, send
-   a fresh-context subagent the revision directory, the review's
-   prompt, and the writing guide, and ask where a cold reader
-   stumbles: claims they cannot decide or check from the fact alone,
-   terms met before they are defined, promised detail that is
-   missing, facts that contradict each other. Fresh eyes, not your
-   own re-read — the author fills gaps from memory. Apply what's
-   real, drop what's invented. If you cannot spawn subagents, do the
-   cold read yourself against the actual guide and tell the human it
-   was the author's re-read, so they can weigh it.
+5. **Hand it over.** Show the tree of `.gloss/<review>/1/` and serve
+   the session.
 
-   Then show the tree of `.gloss/<review>/1/` and run the session.
+## A cold read, only when asked
 
-## Run the session under one supervisor
+A cold read is a fresh-context subagent given the revision directory,
+the review's prompt, and the writing guide, asked where a cold reader
+stumbles: claims they cannot decide or check from the fact alone,
+terms met before they are defined, promised detail that is missing,
+facts that contradict each other. Fresh eyes, not your own re-read —
+the author fills gaps from memory. Apply what's real, drop what's
+invented; if you cannot spawn subagents, read it yourself and say so.
+
+It happens only when the human asked for it in so many words, in a
+note or in this session, and it applies to whichever revision they
+named. Never have a revision read cold on your own initiative — not
+because it is large, not because it seems useful, not because you are
+running unattended and cannot ask. When you show a tree, say once
+that they can ask for one.
+
+## Serve the session under one supervisor
 
 ```
 gloss session <review>
@@ -103,7 +109,7 @@ didn't open), `question.asked`, `question.replied` (the human
 replied in an existing thread), `session.finished` — then a final
 JSON summary.
 
-One supervisor owns this process for its whole life: run it as a
+One supervisor owns this process for its whole life: start it as a
 background process whose stdout streams into your context as lines
 arrive. In Claude Code that is the Monitor tool with
 `persistent: true`; each stdout line wakes you, and the process
@@ -138,20 +144,6 @@ before answering, verify what you assert, take the time a correct
 answer needs. The human asked because they are deciding something —
 a fast wrong answer costs more than a slow right one.
 
-**Feedback on the review as a whole comes two ways, and they mean the
-same thing.** In the viewer it lands on the root `_index.md`, the
-overview; in the terminal it is the human talking to you while the
-session runs. Either way, when it asks for a change — the altitude
-was wrong, a branch deserves more or less, start over — treat it as a
-comment: acknowledge it, hold it for the next revision, and keep the
-session open. The human is still reading, Finish is theirs to click,
-and a revision started under a live session would split their
-attention between two trees. When it asks for an answer, treat it as
-a question, and "read this revision cold" is a fair one: a cold read
-only reads, so run it now, exactly as in generation step 5, and reply
-with what the reader found. What carries into the next revision is
-the human's call.
-
 **Answer through `gloss reply`.**
 
 ```
@@ -166,7 +158,7 @@ hand: the viewer is writing the same files, and a second writer is
 how questions and replies get duplicated. If `gloss reply` says no
 session is running, don't fall back to editing the file — the review
 isn't live, so restart the session or treat the question as
-iteration feedback. Deleting a sidecar item means *resolved*, which
+iteration feedback. Deleting a note from a sidecar means *resolved*, which
 is an iteration act, never a live-session one.
 
 ## Iterate
@@ -176,24 +168,27 @@ When the session finishes with sidecars present:
 1. Read every `*.review.json` in the revision wholesale — the root
    `_index.review.json` first, since notes there set the direction
    for everything below — together with whatever the human told you
-   in conversation during the session, then propose next steps to
-   the human before rewriting anything they'd rather discuss.
+   in conversation during the session. The notes are the
+   instruction: do not propose, write.
 2. Copy `.gloss/<review>/<n>` to `.gloss/<review>/<n+1>`
    recursively. Revisions are standalone copies — no links, no
    shared state — and revision `n` stays exactly as reviewed.
 3. In the new revision, resolve what was raised: rewrite, amend,
    split, deepen, or delete facts per the comments; answer or settle
-   questions. A comment asking for more detail moves that branch's
-   altitude down. When you judge an item resolved, delete it from
-   the sidecar; delete the sidecar when nothing remains. Carry
-   unresolved items forward untouched.
-4. Offer verification as in generation step 5 — rewritten text can
-   carry new gaps — then run another session. Silence is agreement:
-   a revision with no sidecars is fully addressed.
+   questions. A comment asking for more detail moves that group's
+   altitude down. A note on the overview may speak to the review as
+   a whole — the altitude, a group to expand or drop, a cold read of
+   the next revision — and is resolved like any other note. When you
+   judge a note resolved, delete it from the sidecar; delete the
+   sidecar when nothing remains. Carry unresolved notes forward
+   untouched.
+4. Serve the next session. Silence is agreement: a revision with no
+   sidecars is fully addressed.
 
-When a session finishes with no sidecars and no approval, ask the
-human how to proceed — a comment-free finish is not approval, and
-you never create `approved/` on your own.
+When a session finishes with no notes and no approval, the human has
+moved the conversation to the terminal. Report the session summary
+and wait for them there. Do not serve the revision again, do not
+write a new one, and never create `approved/` on your own.
 
 ## Approval
 

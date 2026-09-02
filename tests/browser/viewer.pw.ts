@@ -234,11 +234,15 @@ test("the overview is the front page; notes on it are notes on the review", asyn
   );
   await expect(page.locator("#fact-table .trow")).toHaveCount(5); // architecture.md + 4 dirs
   await expect(page).toHaveURL(/#\/$/);
-  // the panel says what a note here means; the buttons raise one on the
-  // whole review (the path for readers without a keyboard)
+  // the panel says what a note here means. With a keyboard there are no
+  // buttons, only the key hint; c raises a note on the whole review, and
+  // the composer submits with the verb that opened it
   await expect(page.locator("#panel-items")).toContainText("speaks to the whole review");
-  await page.locator("#note-comment").click();
+  await expect(page.locator("#note-actions")).toHaveCount(0);
+  await expect(page.locator(".keys-hint")).toBeVisible();
+  await page.keyboard.press("c");
   await expect(page.locator("#item-form-label")).toContainText("comment — whole review");
+  await expect(page.locator("#item-save")).toHaveText("Comment");
   await page.locator("#item-input").fill("Too deep for a first read — stay at the design decisions.");
   await page.locator("#item-save").click();
   await expect
@@ -252,8 +256,9 @@ test("the overview is the front page; notes on it are notes on the review", asyn
 
   // a question on the overview reaches the agent like any other, and n
   // (next open question) finds the front page from anywhere in the tree
-  await page.locator("#note-ask").click();
+  await page.keyboard.press("q");
   await expect(page.locator("#item-form-label")).toContainText("question — whole review");
+  await expect(page.locator("#item-save")).toHaveText("Ask");
   await page.locator("#item-input").fill("Can you read this revision cold?");
   await page.locator("#item-save").click();
   await expect
@@ -482,12 +487,13 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
   await expect(page.locator("#thread-page .msg").last()).toContainText("Keeping it, then.");
   await expect(page.locator("#thread-reply-input")).toHaveValue("draft in progress");
 
-  // escape in the reply box only leaves the field (the draft is kept);
-  // the next escape closes the thread
+  // escape in the reply box cancels the draft and leaves the field; the
+  // next escape closes the thread. Reply is the box's verb, like the cards
+  await expect(page.locator("#thread-send")).toHaveText("Reply");
   await page.locator("#thread-reply-input").focus();
   await page.keyboard.press("Escape");
   await expect(page.locator("#thread-page")).toBeVisible();
-  await expect(page.locator("#thread-reply-input")).toHaveValue("draft in progress");
+  await expect(page.locator("#thread-reply-input")).toHaveValue("");
   await page.keyboard.press("Escape");
   await expect(page.locator("#thread-page")).toHaveCount(0);
 
@@ -496,7 +502,7 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
   await expect(page.locator("#thread-page")).toBeVisible();
   await page.locator("#thread-back").click();
   await expect(page.locator("#thread-page")).toHaveCount(0);
-  await expect(page.locator("#note-actions")).toBeVisible();
+  await expect(page.locator(".keys-hint")).toBeVisible();
 });
 
 test("notes can be edited and deleted from the card menu", async () => {
@@ -585,6 +591,14 @@ test("tree filter narrows the tree; ? opens help", async () => {
 
   await page.keyboard.press("Shift+?");
   await expect(page.locator("#help-sheet")).toBeVisible();
+  // with a keyboard the shortcut sections show, the c/q/u one under "Notes"
+  await expect(page.locator("#help-sheet h3")).toHaveText([
+    "Navigate",
+    "Everywhere",
+    "Progress",
+    "Notes",
+    "Concepts",
+  ]);
   await page.keyboard.press("Escape");
   await expect(page.locator("#help-sheet")).toHaveCount(0);
 });
@@ -671,11 +685,11 @@ test("a revision the session doesn't serve is read-only", async () => {
   await expect(page.locator("#stale-banner")).toContainText(
     "Viewing revision 1 read-only — the session serves 2",
   );
-  // no composer, no Comment/Ask buttons, no seen marks
+  // no composer, no key hint, no seen marks
   await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toHaveCount(0);
-  await expect(page.locator("#note-actions")).toHaveCount(0); // read-only panel
+  await expect(page.locator(".keys-hint")).toHaveCount(0); // read-only panel
   await expect(page.locator(".panel h2").first()).toContainText("Notes on revision 1");
   // the server refuses the write even if a client tries
   const put = await page.evaluate(async () => {
@@ -770,10 +784,10 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await expect(page.locator("#diff-view .dline.add").last()).toContainText("write-through cache");
 
   // compare is read-only even on a live, changed fact: no composer, no
-  // Comment/Ask buttons, and dwelling on a diff marks nothing seen
+  // key hint, and dwelling on a diff marks nothing seen
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toHaveCount(0);
-  await expect(page.locator("#note-actions")).toHaveCount(0);
+  await expect(page.locator(".keys-hint")).toHaveCount(0);
   await page.waitForTimeout(2000); // past the 1.5s auto-seen dwell
   await expect(page.locator("#progress")).toContainText("10 / 11 reviewed");
 

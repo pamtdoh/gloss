@@ -9,9 +9,7 @@ export interface ThreadEntry {
 
 export interface SidecarItem {
   id: string;
-  /** "annotation" is legacy (the owner settled on "comment", round 4);
-   *  it is still rendered and counted as a comment. */
-  type: "comment" | "question" | "annotation";
+  type: "comment" | "question";
   anchor?: { quote: string; prefix?: string; suffix?: string };
   text?: string;
   thread?: ThreadEntry[];
@@ -70,7 +68,7 @@ export function summarize(input: {
   for (const sidecar of input.sidecars) {
     for (const item of sidecar?.items ?? []) {
       if (item.type === "question") openQuestions++;
-      else comments++; // comment, or legacy annotation
+      else comments++;
     }
   }
   return {

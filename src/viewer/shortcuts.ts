@@ -7,7 +7,7 @@ export interface ShortcutDef {
   keys: string[];
   /** display form for the help overlay */
   shown: string;
-  section: "Navigate" | "Progress" | "Items" | "Everywhere";
+  section: "Navigate" | "Progress" | "Notes" | "Everywhere";
   label: string;
   allowRepeat?: boolean;
   /** fires even when a field has focus (palette toggle, escape) */
@@ -21,8 +21,8 @@ export const MOD = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘" : "Ct
 export const SHORTCUTS: ShortcutDef[] = [
   { id: "next", keys: ["j"], shown: "j", section: "Navigate", label: "Next fact", allowRepeat: true },
   { id: "prev", keys: ["k"], shown: "k", section: "Navigate", label: "Previous fact", allowRepeat: true },
-  { id: "nextItems", keys: ["Shift+J"], shown: "J", section: "Navigate", label: "Next fact with items" },
-  { id: "prevItems", keys: ["Shift+K"], shown: "K", section: "Navigate", label: "Previous fact with items" },
+  { id: "nextItems", keys: ["Shift+J"], shown: "J", section: "Navigate", label: "Next fact with notes" },
+  { id: "prevItems", keys: ["Shift+K"], shown: "K", section: "Navigate", label: "Previous fact with notes" },
   { id: "nextQuestion", keys: ["n"], shown: "n", section: "Navigate", label: "Next open question" },
   { id: "prevQuestion", keys: ["p"], shown: "p", section: "Navigate", label: "Previous open question" },
   { id: "expand", keys: ["ArrowRight"], shown: "→", section: "Navigate", label: "Expand directory" },
@@ -33,7 +33,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection", raw: true },
   { id: "seen", keys: ["v"], shown: "v", section: "Progress", label: "Toggle seen" },
   { id: "seenAdvance", keys: ["Shift+Enter"], shown: "⇧↵", section: "Progress", label: "Mark seen, go to next unseen" },
-  { id: "comment", keys: ["c", "a"], shown: "c", section: "Items", label: "Comment on selection (or whole fact)" },
-  { id: "question", keys: ["q"], shown: "q", section: "Items", label: "Ask a question" },
-  { id: "undo", keys: ["u"], shown: "u", section: "Items", label: "Undo last comment" },
+  { id: "comment", keys: ["c", "a"], shown: "c", section: "Notes", label: "Comment on selection (or whole fact)" },
+  { id: "question", keys: ["q"], shown: "q", section: "Notes", label: "Ask a question" },
+  { id: "undo", keys: ["u"], shown: "u", section: "Notes", label: "Undo last comment" },
 ];

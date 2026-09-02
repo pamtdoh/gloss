@@ -82,7 +82,7 @@ All review state for a fact lives in a sidecar next to it —
 }
 ```
 
-- Item types are `comment` and `question`, both typed by the human; no
+- A note is a `comment` or a `question`, both typed by the human; no
   decision field. An absent sidecar means the fact stands as written —
   silence is agreement.
 - `anchor.quote` is the verbatim selected text; optional `prefix`/`suffix`
@@ -98,14 +98,12 @@ All review state for a fact lives in a sidecar next to it —
   no session is running. With no session live, the agent edits sidecars
   directly as ever (resolution during iteration is file deletion).
 - The viewer PUTs its whole in-memory copy; the server merges on write
-  instead of overwriting — the viewer owns the item set (creations,
+  instead of overwriting — the viewer owns the set of notes (creations,
   edits, deletions win), the agent owns its thread entries (an entry the
   incoming copy lacks is re-inserted), so a stale tab can never erase an
   answer, even if something does edit the file directly mid-session.
-- Resolving an item deletes it from `items`; delete the sidecar when
-  nothing remains. Notes on the review as a whole are the root
-  `_index.md`'s sidecar, like any other fact's — there is no separate
-  revision-level file.
+- Resolving a note deletes it from `items`; delete the sidecar when
+  nothing remains.
 
 ## The session
 
@@ -139,9 +137,9 @@ over the same API and writes nothing.
 
 ## Skills
 
-- **gloss** generates revision `1` from the user's prompt, runs the
+- **gloss** generates revision `1` from the user's prompt, serves the
   session, answers questions live through `gloss reply`, iterates by
-  copying the revision and resolving sidecar items, and promotes the
+  copying the revision and resolving its notes, and promotes the
   accepted revision to `approved/`. During a live session it treats the
   served revision and the reviewed code as fixed — feedback lands in
   the next revision whether it arrives in the viewer or in

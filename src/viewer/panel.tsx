@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { SidecarItem, ThreadEntry } from "../summary.js";
-import type { Composer } from "./common.js";
+import { COARSE, type Composer } from "./common.js";
 import { Md } from "./components.js";
 import { answeredByAgent, type AnchorState, type Fact } from "./model.js";
 import { MOD } from "./shortcuts.js";
@@ -77,7 +77,6 @@ function ThreadView(props: {
   onReplySubmit?: (id: string, text: string) => void;
 }): React.JSX.Element {
   const item = props.item;
-  const ref = useRef<HTMLTextAreaElement>(null);
   // a takeover view moves focus in with it, so keyboard and screen-reader
   // users land where they are (the close control), not on <body>
   const backRef = useRef<HTMLButtonElement>(null);
@@ -104,42 +103,20 @@ function ThreadView(props: {
       {item.anchor?.quote && <blockquote>{item.anchor.quote}</blockquote>}
       <Turns thread={item.thread ?? []} />
       {props.onReplySubmit && (
-        <form
-          className="composer thread-reply"
-          id="thread-reply"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const text = ref.current?.value ?? "";
-            if (!text.trim()) return;
-            props.onReplySubmit!(item.id, text);
-            if (ref.current) ref.current.value = "";
-          }}
-        >
-          <Textarea
-            id="thread-reply-input"
-            aria-label="Reply"
-            placeholder="Reply…"
-            ref={ref}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                // keep the draft: first escape leaves the field, the next
-                // (global) closes the thread
-                e.stopPropagation();
-                e.currentTarget.blur();
-              }
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                e.currentTarget.form?.requestSubmit();
-              }
-            }}
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <Button type="submit" size="sm" id="thread-send">
-              Reply
-            </Button>
-            <span className="text-muted-foreground ml-auto text-[11px]">{MOD}↵ send</span>
-          </div>
-        </form>
+        // the reply box is the question composer with a different verb; it
+        // stays put, so commit and cancel clear it instead of closing it
+        <NoteComposer
+          kind="reply"
+          submitLabel="Reply"
+          formId="thread-reply"
+          inputId="thread-reply-input"
+          submitId="thread-send"
+          cancelId="thread-cancel"
+          className="thread-reply"
+          persistent
+          autoFocus={false}
+          onCommit={(text) => props.onReplySubmit!(item.id, text)}
+        />
       )}
     </div>
   );
@@ -265,32 +242,36 @@ export function Panel(props: {
             Notes
             {collapse}
           </h2>
-          <div id="note-actions" className="flex flex-wrap gap-1.5" role="group" aria-label="Raise a note">
-            <Button
-              variant="outline"
-              size="sm"
-              id="note-comment"
-              aria-keyshortcuts="c"
-              title={props.root ? "Comment on the review (c)" : "Comment on the whole fact (c)"}
-              disabled={!fact}
-              onClick={() => props.onBegin("comment")}
-            >
-              <MessageSquare aria-hidden="true" />
-              Comment
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              id="note-ask"
-              aria-keyshortcuts="q"
-              title={props.root ? "Ask about the review (q)" : "Ask about the whole fact (q)"}
-              disabled={!fact}
-              onClick={() => props.onBegin("question")}
-            >
-              <MessageCircleQuestion aria-hidden="true" />
-              Ask
-            </Button>
-          </div>
+          {/* the buttons exist for readers without a keyboard; with one, c
+              and q are the whole-fact path and the hint below names them */}
+          {COARSE && (
+            <div id="note-actions" className="flex flex-wrap gap-1.5" role="group" aria-label="Raise a note">
+              <Button
+                variant="outline"
+                size="sm"
+                id="note-comment"
+                aria-keyshortcuts="c"
+                title={props.root ? "Comment on the review (c)" : "Comment on the whole fact (c)"}
+                disabled={!fact}
+                onClick={() => props.onBegin("comment")}
+              >
+                <MessageSquare aria-hidden="true" />
+                Comment
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                id="note-ask"
+                aria-keyshortcuts="q"
+                title={props.root ? "Ask about the review (q)" : "Ask about the whole fact (q)"}
+                disabled={!fact}
+                onClick={() => props.onBegin("question")}
+              >
+                <MessageCircleQuestion aria-hidden="true" />
+                Ask
+              </Button>
+            </div>
+          )}
         </>
       )}
       <div id="panel-items">
@@ -421,15 +402,16 @@ export function Panel(props: {
             altitude, what to deepen or drop, where to focus next.{" "}
             <strong className="text-foreground font-[650]">Comment</strong> sets the direction
             of the next revision;{" "}
-            <strong className="text-foreground font-[650]">Ask</strong> gets a live answer,
-            including a cold read of this revision.
+            <strong className="text-foreground font-[650]">Ask</strong> gets a live answer. To
+            have the next revision read cold before you see it, say so in a comment.
           </p>
         )}
         {!readonly && fact && items.length === 0 && !props.root && (
           <p className="text-muted-foreground text-[13px]">
-            No notes on this fact. Select text in it, or use the buttons above for the whole
-            fact, then <strong className="text-foreground font-[650]">Comment</strong> to
-            request a change (the agent addresses it in the next revision) or{" "}
+            No notes on this fact. Select text in it, or{" "}
+            {COARSE ? "use the buttons above" : "press c or q"} for the whole fact, then{" "}
+            <strong className="text-foreground font-[650]">Comment</strong> to request a change
+            (the agent addresses it in the next revision) or{" "}
             <strong className="text-foreground font-[650]">Ask</strong> to get a live answer.
           </p>
         )}
@@ -451,7 +433,7 @@ export function Panel(props: {
           onCancel={props.onCancel}
         />
       )}
-      {!readonly && (
+      {!readonly && !COARSE && (
         <p className="keys-hint">
           j/k move · v seen · c/q raise · f filter · <Kbd>?</Kbd> help
         </p>
@@ -460,72 +442,135 @@ export function Panel(props: {
   );
 }
 
+/** The composer for a new note or an edit: the kind, the anchor context,
+ * and the verb that opened it, on the shared box below. */
 export function ComposerBox(props: {
   composer: Composer;
-  /** rendered inside an item card: the card is the box, so no border,
-   * no padding, and no "edit — q3" label restating what the card shows */
+  /** rendered inside an item card: the card is the box and already names
+   * the kind, so no border and no header */
   bare?: boolean;
   /** on the front page an unanchored note is about the whole review */
   root?: boolean;
   onCommit: (text: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
   const composer = props.composer;
-  const whole = props.root ? " — whole review" : " — whole fact";
-  const label =
-    composer.mode === "new"
-      ? composer.type + (composer.anchor ? ` — “${composer.anchor.quote}”` : whole)
-      : `edit ${composer.id}`;
+  const isNew = composer.mode === "new";
+  const context = !isNew
+    ? undefined
+    : composer.anchor
+      ? `“${composer.anchor.quote}”`
+      : props.root
+        ? "whole review"
+        : "whole fact";
+  const submitLabel = !isNew ? "Save" : composer.type === "question" ? "Ask" : "Comment";
+  return (
+    <NoteComposer
+      kind={isNew ? composer.type : "comment"}
+      context={context}
+      submitLabel={submitLabel}
+      initial={isNew ? "" : composer.initial}
+      bare={props.bare}
+      formId="item-form"
+      inputId="item-input"
+      submitId="item-save"
+      cancelId="item-cancel"
+      labelId="item-form-label"
+      onCommit={props.onCommit}
+      onCancel={props.onCancel}
+    />
+  );
+}
+
+/** The one box the reviewer types into — a new note, an edit inside a
+ * card, or a reply in a thread — styled as the card its text becomes:
+ * the kind's left border and uppercase word, then the context, the
+ * textarea, and the verb that raised it. Cancel is Cancel everywhere. */
+export function NoteComposer(props: {
+  kind: "comment" | "question" | "reply";
+  /** under the kind word: "whole fact", "whole review", or the quote */
+  context?: string;
+  submitLabel: string;
+  initial?: string;
+  /** inside a card: the card is the box and already names the kind */
+  bare?: boolean;
+  /** a box that stays (the thread reply): commit and cancel clear it
+   * instead of closing it, and a blank commit is a no-op */
+  persistent?: boolean;
+  autoFocus?: boolean;
+  className?: string;
+  formId: string;
+  inputId: string;
+  submitId: string;
+  cancelId: string;
+  labelId?: string;
+  onCommit: (text: string) => void;
+  onCancel?: () => void;
+}): React.JSX.Element {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const autoFocus = props.autoFocus !== false;
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus();
+  }, [autoFocus]);
+  const commit = (): void => {
+    const text = ref.current?.value ?? "";
+    if (props.persistent && !text.trim()) return;
+    props.onCommit(text);
+    if (props.persistent && ref.current) ref.current.value = "";
+  };
+  const cancel = (): void => {
+    if (props.persistent && ref.current) {
+      // clear and leave the field; the next escape (global) closes the thread
+      ref.current.value = "";
+      ref.current.blur();
+    }
+    props.onCancel?.();
+  };
+  const tone = props.kind === "comment" ? "item-comment" : "item-question";
+  const extra = props.className ? ` ${props.className}` : "";
   return (
     <form
-      className={props.bare ? "composer mt-2" : "composer mt-3 rounded-lg border p-3"}
-      id="item-form"
+      className={props.bare ? `composer composer-bare${extra}` : `composer card ${tone}${extra}`}
+      id={props.formId}
       onSubmit={(e) => {
         e.preventDefault();
-        props.onCommit(ref.current?.value ?? "");
+        commit();
       }}
     >
       {!props.bare && (
-        <div className="text-muted-foreground mb-2 text-[12px] whitespace-pre-wrap" id="item-form-label">
-          {label}
+        <div className="composer-head" id={props.labelId}>
+          <span className="kind-word">{props.kind}</span>
+          {props.context && <span className="ctx"> — {props.context}</span>}
         </div>
       )}
-      {/* first-contact teaching: what each verb sets in motion */}
-      {composer.mode === "new" && (
-        <p className="text-muted-foreground mt-0 mb-2 text-[11.5px]">
-          {composer.type === "question"
-            ? "A question gets a live answer: the agent replies in a thread on this fact while you keep reviewing."
-            : "A comment requests a change: the agent addresses it when it revises the facts, like a review comment on an MR."}
-        </p>
-      )}
       <Textarea
-        id="item-input"
-        aria-label="Item text"
+        id={props.inputId}
+        aria-label={props.kind === "reply" ? "Reply" : "Note text"}
         ref={ref}
-        defaultValue={composer.mode === "edit" ? composer.initial : ""}
+        defaultValue={props.initial ?? ""}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.stopPropagation();
-            props.onCancel();
+            cancel();
           }
           if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            props.onCommit(e.currentTarget.value);
+            commit();
           }
         }}
       />
       <div className="mt-2 flex items-center gap-2">
-        <Button type="submit" size="sm" id="item-save">
-          Save
+        <Button type="submit" size="sm" id={props.submitId}>
+          {props.submitLabel}
         </Button>
-        <Button type="button" variant="outline" size="sm" id="item-cancel" onClick={props.onCancel}>
+        <Button type="button" variant="outline" size="sm" id={props.cancelId} onClick={cancel}>
           Cancel
         </Button>
-        <span className="text-muted-foreground ml-auto text-[11px]">{MOD}↵ save · esc cancel</span>
+        {!COARSE && (
+          <span className="text-muted-foreground ml-auto text-[11px]">
+            {MOD}↵ · esc cancel
+          </span>
+        )}
       </div>
     </form>
   );
