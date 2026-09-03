@@ -23,7 +23,7 @@ const CONCEPTS: [string, string][] = [
   ["Comment", "requests a change — the agent addresses it when it revises the facts, like a review comment on an MR."],
   ["Ask", "a live question — the agent answers in a thread on the fact while you keep reviewing."],
   ["Seen", "your own reading progress mark. It decides nothing."],
-  ["Raised", "the scope that keeps only facts with notes; d cycles All, Changed, Raised."],
+  ["Raised", "the scope that keeps only facts with notes; s cycles All, Changed, Raised."],
   ["Finish", "ends the session; the agent writes the next revision from everything you raised and serves it."],
   ["Approve", "accepts this revision as the agreed design — implementation starts from it, the review is over."],
 ];

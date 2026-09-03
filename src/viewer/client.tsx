@@ -16,11 +16,12 @@ import {
   Sun,
   X,
 } from "lucide-react";
-import PhotoSwipe from "photoswipe";
+import PhotoSwipe, { type SlideData } from "photoswipe";
 import type { Sidecar, SidecarItem } from "../summary.js";
 import { describeAnchor, resolveAnchor, type Anchor } from "./anchor.js";
 import {
   clearHighlight,
+  paintNotes,
   rangeForSourceSpan,
   setHighlight,
   sourceSpanForSelection,
@@ -49,9 +50,10 @@ import { DiffView } from "./compare.js";
 import { useMermaidHtml } from "./mermaid.js";
 import { Help, FinishSheet } from "./overlays.js";
 import { Panel } from "./panel.js";
-import { SHORTCUTS } from "./shortcuts.js";
+import { SHORTCUTS, keyFor } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
 import { Input } from "./ui/input.js";
+import { Kbd } from "./ui/kbd.js";
 import {
   Select,
   SelectContent,
@@ -151,6 +153,32 @@ const PANEL_W_KEY = "rk-panel-w";
 const savedPanelW = Number(localStorage.getItem(PANEL_W_KEY));
 if (savedPanelW) document.documentElement.style.setProperty("--panel-w", `${savedPanelW}px`);
 
+// what the lightbox opens: the images and diagrams of one fact body
+const FIGURE = "img, .rk-mermaid svg";
+
+// A Mermaid diagram in the lightbox: the live SVG as html content, so it
+// stays vector-crisp at every zoom and keeps the page's fonts and theme.
+// A vector has no native size to stop at, so it is declared four
+// viewports wide — room for PhotoSwipe's zoom ladder (fit, 3× fit,
+// 4× fit), which images get from their pixel size. The wrapper carries
+// pswp__img because PhotoSwipe's mouse click handler keys on that class
+// alone (tapAction covers touch only); it is what makes click-to-zoom
+// and the zoom cursors work on a diagram.
+function diagramSlide(svg: SVGSVGElement): SlideData {
+  const box = svg.viewBox.baseVal;
+  const width = box.width || svg.clientWidth || 800;
+  const height = box.height || svg.clientHeight || 600;
+  const scale = Math.max(1, (4 * window.innerWidth) / width);
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.removeAttribute("style"); // mermaid's inline max-width; the CSS sizes it
+  return {
+    type: "html",
+    html: `<div class="rk-mermaid-zoom pswp__img">${clone.outerHTML}</div>`,
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
+
 function PanelResizer(): React.JSX.Element {
   const [active, setActive] = useState(false);
   return (
@@ -214,8 +242,15 @@ function App(): React.JSX.Element {
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   // compare mode: head is the viewed revision, the human picks the base
   // (GitHub's single-axis picker); the base revision held whole is the
-  // whole of the mode's state
+  // mode's state. Beside it, what a toggle must not lose — the base last
+  // compared against and the scope on each side — so leaving and
+  // returning is lossless.
   const [compareData, setCompareData] = useState<ReviewData | null>(null);
+  const compareMemo = useRef<{ base: number | null; inside: Scope; outside: Scope }>({
+    base: null,
+    inside: "changed",
+    outside: "all",
+  });
   const [diffLayout, setDiffLayout] = useState<"rendered" | "unified" | "split">(() => {
     const stored = localStorage.getItem("rk-diff-layout");
     return stored === "unified" || stored === "split" ? stored : "rendered";
@@ -696,14 +731,22 @@ function App(): React.JSX.Element {
   // ---------- compare mode ----------
   async function startCompare(base: number): Promise<void> {
     if (!data || base >= data.revision) return;
+    const entering = compareData === null;
     try {
       // fetched fresh even for the previous revision already in hand:
       // the files are the record, and anything may have written them
       // since load
       const baseReview = await fetchReview(base);
       serverOk();
+      if (entering) {
+        // the scope outside is kept for the way back; the mode resumes
+        // the scope it last had — "changed" at first, since the changes
+        // are what a comparison is for
+        compareMemo.current.outside = scope;
+        setScope(compareMemo.current.inside);
+      }
+      compareMemo.current.base = base;
       setCompareData(baseReview);
-      setScope("changed"); // the changes are what a comparison is for
       setComposer(null);
       setOpenThreadId(null);
       setPendingSel(null);
@@ -714,9 +757,31 @@ function App(): React.JSX.Element {
   }
 
   function exitCompare(): void {
+    compareMemo.current.inside = scope;
+    setScope(compareMemo.current.outside);
     setCompareData(null);
     setOpenThreadId(null); // a base-revision thread must not carry over
-    setScope("all");
+  }
+
+  // the one switch between the diff and the revision itself: back to
+  // the base last chosen (the previous revision until one is), with the
+  // scope and layout each side had
+  function toggleCompare(): void {
+    if (!data) return;
+    if (compareData !== null) {
+      exitCompare();
+      return;
+    }
+    if (prevData === null) {
+      setToast({ message: "Nothing to compare — this is the first revision." });
+      return;
+    }
+    const remembered = compareMemo.current.base;
+    const base =
+      remembered !== null && remembered < data.revision && data.revisions.includes(remembered)
+        ? remembered
+        : prevData.revision;
+    void startCompare(base);
   }
 
   // ---------- sidecar writes ----------
@@ -1025,6 +1090,50 @@ function App(): React.JSX.Element {
   const approve = (): Promise<void> =>
     endSession("Approve", `Revision ${data?.revision} approved — promoted to approved/.`);
 
+  // ---------- lightbox ----------
+  // The images and diagrams of one fact body open in one gallery. Fact
+  // HTML is innerHTML-injected, so the click is delegated from the
+  // reading column rather than carried by the figures themselves.
+  function openGallery(target: Element): void {
+    const figure = target.closest(FIGURE);
+    const body = figure?.closest(".fact-body");
+    if (!figure || !body) return;
+    const figures = Array.from(body.querySelectorAll(FIGURE));
+    const pswp = new PhotoSwipe({
+      dataSource: figures.map((el) =>
+        el instanceof HTMLImageElement
+          ? {
+              src: el.currentSrc || el.src,
+              // the clicked image is loaded, siblings may still be lazy —
+              // natural sizes are a hint, PhotoSwipe corrects after decode
+              width: el.naturalWidth || 1600,
+              height: el.naturalHeight || 1200,
+              alt: el.alt,
+              // already-loaded pixels as placeholder while full decodes
+              msrc: el.currentSrc || el.src,
+            }
+          : diagramSlide(el as SVGSVGElement),
+      ),
+      index: Math.max(0, figures.indexOf(figure)),
+      wheelToZoom: true,
+      // instant open/close (owner call, after trying zoom and fade):
+      // figures here are opened to inspect, many times a session — any
+      // transition is one you end up watching
+      showHideAnimationType: "none",
+    });
+    // html content is unzoomable by PhotoSwipe's default; a diagram is
+    // opened precisely to zoom into it
+    pswp.addFilter(
+      "isContentZoomable",
+      (zoomable, content) => zoomable || content.data.type === "html",
+    );
+    pswp.on("destroy", () => {
+      if (pswpRef.current === pswp) pswpRef.current = null;
+    });
+    pswpRef.current = pswp;
+    pswp.init();
+  }
+
   // ---------- keyboard: built from the SHORTCUTS table ----------
   const actions = useRef<Record<string, () => void>>({});
   actions.current = {
@@ -1060,6 +1169,7 @@ function App(): React.JSX.Element {
         const order = SCOPES.filter((x) => x !== "changed" || baseMap !== null);
         return order[(order.indexOf(s) + 1) % order.length] ?? "all";
       }),
+    compare: toggleCompare,
     close: () => {
       // PhotoSwipe closes itself on Escape; this keeps the same keypress
       // from ALSO falling through to clear selection underneath
@@ -1091,6 +1201,9 @@ function App(): React.JSX.Element {
           : (e) => {
               const target = e.target as HTMLElement | null;
               if (e.isComposing) return;
+              // an element that handled the key itself (a card opening on
+              // Enter, a menu item) must not also fire the shortcut
+              if (e.defaultPrevented) return;
               if (target?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
               if (e.repeat && !def.allowRepeat) return;
               e.preventDefault();
@@ -1147,43 +1260,26 @@ function App(): React.JSX.Element {
     // the reading pane holds the viewed fact; while comparing it exists
     // only for an unchanged fact, whose text the base notes were raised
     // on too — so notesFact's anchors resolve against it either way
-    if (!readRef.current || !notesFact) return;
-    const buckets: Record<string, Range[]> = {
-      "rk-anno": [],
-      "rk-question": [],
-      "rk-focused-anno": [],
-      "rk-focused-q": [],
-      "rk-pending": [],
-    };
-    for (const item of notesFact.sidecar?.items ?? []) {
-      if (!item.anchor) continue;
-      const resolved = resolveAnchor(notesFact.content, item.anchor);
-      if (!resolved) continue;
-      const range = rangeForSourceSpan(readRef.current as HTMLElement, resolved.start, resolved.end);
-      if (!range) continue;
-      const question = item.type === "question";
-      if (item.id === litItemId) {
-        buckets[question ? "rk-focused-q" : "rk-focused-anno"]!.push(range);
-      } else {
-        buckets[question ? "rk-question" : "rk-anno"]!.push(range);
-      }
-    }
+    const pane = readRef.current;
+    if (!pane || !notesFact) return;
+    const clearNotes = paintNotes(notesFact.sidecar?.items ?? [], litItemId, (anchor) => {
+      const resolved = resolveAnchor(notesFact.content, anchor);
+      const range = resolved && rangeForSourceSpan(pane, resolved.start, resolved.end);
+      return range ? [range] : [];
+    });
     // On fine pointers the native selection IS the highlight while it is
     // live (every studied implementation — Hypothesis, medium-editor,
     // Plate, tiptap — relies on it); rk-pending paints only once the
     // composer owns the screen and the native selection is free to
     // collapse. Touch paints throughout — iOS collapses on any tap.
-    if (pendingSel && pendingSel.path === notesFact.path && (COARSE || composer)) {
-      const range = rangeForSourceSpan(
-        readRef.current as HTMLElement,
-        pendingSel.start,
-        pendingSel.end,
-      );
-      if (range) buckets["rk-pending"]!.push(range);
-    }
-    for (const [name, ranges] of Object.entries(buckets)) setHighlight(name, ranges);
+    const pending =
+      pendingSel && pendingSel.path === notesFact.path && (COARSE || composer)
+        ? rangeForSourceSpan(pane, pendingSel.start, pendingSel.end)
+        : null;
+    setHighlight("rk-pending", pending ? [pending] : []);
     return () => {
-      for (const name of Object.keys(buckets)) clearHighlight(name);
+      clearNotes();
+      clearHighlight("rk-pending");
     };
     // keyed on factHtmlProp, not factHtml: the mermaid splice rewrites
     // innerHTML without changing factHtml, detaching every Range the
@@ -1216,6 +1312,42 @@ function App(): React.JSX.Element {
 
   const yourTurn = openQuestions.answered;
   const latestRevision = Math.max(...data.revisions);
+
+  // The viewed fact's body — its text, or its diff while comparing (an
+  // unchanged fact reads as itself, said so). One element for both
+  // pages: the fact page, and the directory page whose index fact it is
+  // (the overview, on the front page), so the diff reaches there too.
+  const targetStatus = targetFact ? changeStatus(baseMap, targetFact) : undefined;
+  const factArticle = targetFact && (
+    <article
+      className="fact-body"
+      id="fact-content"
+      data-fact-path={targetFact.path}
+      ref={readRef as React.RefObject<HTMLElement>}
+      dangerouslySetInnerHTML={factHtmlProp}
+    />
+  );
+  const factPane: React.ReactNode = !targetFact ? null : !compareOn ? (
+    factArticle
+  ) : targetStatus === undefined ? (
+    <>
+      <div className="unchanged-note" id="unchanged-note" role="status">
+        Unchanged since revision {compareBase}.
+      </div>
+      {factArticle}
+    </>
+  ) : (
+    <DiffView
+      before={baseMap?.get(targetFact.path) ?? ""}
+      after={targetFact.ghost ? "" : targetFact.content}
+      layout={diffLayout}
+      baseAsset={`/asset/${compareBase}/`}
+      headAsset={`/asset/${data.revision}/`}
+      factDir={dirOf(targetFact.path)}
+      notes={notesFact?.sidecar?.items}
+      litId={litItemId}
+    />
+  );
 
   return (
     <div className="app">
@@ -1292,11 +1424,11 @@ function App(): React.JSX.Element {
             className={compareOn ? "compare-active" : ""}
             aria-label={compareOn ? "Exit compare" : "Compare revisions"}
             aria-pressed={compareOn}
-            title={compareOn ? "Exit compare" : "Compare revisions"}
-            onClick={() => {
-              if (compareOn) exitCompare();
-              else if (prevData !== null) void startCompare(prevData.revision);
-            }}
+            aria-keyshortcuts={keyFor("compare")}
+            title={`${compareOn ? "Exit compare" : "Compare revisions"}${
+              COARSE ? "" : ` (${keyFor("compare")})`
+            }`}
+            onClick={toggleCompare}
           >
             <GitCompareArrows />
           </Button>
@@ -1404,6 +1536,11 @@ function App(): React.JSX.Element {
           <button className="compare-exit" id="compare-exit" onClick={exitCompare}>
             Exit compare
           </button>
+          {/* the toggle is learned here, where it matters most: the
+              key flips between the diff and the revision itself */}
+          {!COARSE && (
+            <Kbd title="Toggle compare">{keyFor("compare")}</Kbd>
+          )}
         </div>
       )}
 
@@ -1525,38 +1662,7 @@ function App(): React.JSX.Element {
         <main
           className="read-col"
           ref={readColRef as React.RefObject<HTMLElement>}
-          onClick={(e) => {
-            // delegated: fact HTML is innerHTML-injected, so images can't
-            // carry their own React handlers
-            const target = e.target as HTMLElement;
-            if (!(target instanceof HTMLImageElement)) return;
-            const body = target.closest(".fact-body");
-            if (!body) return;
-            const imgs = Array.from(body.querySelectorAll("img"));
-            // the clicked image is loaded, siblings may still be lazy —
-            // natural sizes are a hint, PhotoSwipe corrects after decode
-            const pswp = new PhotoSwipe({
-              dataSource: imgs.map((el) => ({
-                src: el.currentSrc || el.src,
-                width: el.naturalWidth || 1600,
-                height: el.naturalHeight || 1200,
-                alt: el.alt,
-                // already-loaded pixels as placeholder while full decodes
-                msrc: el.currentSrc || el.src,
-              })),
-              index: Math.max(0, imgs.indexOf(target)),
-              wheelToZoom: true,
-              // instant open/close (owner call, after trying zoom and
-              // fade): images here are opened to inspect, many times a
-              // session — any transition is one you end up watching
-              showHideAnimationType: "none",
-            });
-            pswp.on("destroy", () => {
-              if (pswpRef.current === pswp) pswpRef.current = null;
-            });
-            pswpRef.current = pswp;
-            pswp.init();
-          }}
+          onClick={(e) => openGallery(e.target as Element)}
         >
           <div className="read-inner">
             {effectiveCursor?.kind === "dir" ? (
@@ -1566,16 +1672,14 @@ function App(): React.JSX.Element {
                 facts={filteredFacts}
                 prev={baseMap}
                 seen={seen}
-                indexHtml={factHtmlProp}
-                readRef={readRef}
-                indexFact={targetFact}
+                indexBody={factPane}
                 onOpen={openRow}
               />
             ) : targetFact ? (
               <>
                 <div className="crumb">
                   <span>{targetFact.path}</span>
-                  <ChangeBadge status={changeStatus(baseMap, targetFact)} />
+                  <ChangeBadge status={targetStatus} />
                   {seen.has(targetFact.path) && (
                     <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
                   )}
@@ -1586,37 +1690,7 @@ function App(): React.JSX.Element {
                     {basisRevision}. Read-only.
                   </div>
                 )}
-                {compareOn ? (
-                  changeStatus(baseMap, targetFact) === undefined ? (
-                    <>
-                      <div className="unchanged-note" id="unchanged-note" role="status">
-                        Unchanged since revision {compareBase}.
-                      </div>
-                      <article
-                        className="fact-body"
-                        id="fact-content"
-                        dangerouslySetInnerHTML={factHtmlProp}
-                      />
-                    </>
-                  ) : (
-                    <DiffView
-                      before={baseMap?.get(targetFact.path) ?? ""}
-                      after={targetFact.ghost ? "" : targetFact.content}
-                      layout={diffLayout}
-                      baseAsset={`/asset/${compareBase}/`}
-                      headAsset={`/asset/${data.revision}/`}
-                      factDir={dirOf(targetFact.path)}
-                    />
-                  )
-                ) : (
-                  <article
-                    className="fact-body"
-                    id="fact-content"
-                    data-fact-path={targetFact.path}
-                    ref={readRef as React.RefObject<HTMLElement>}
-                    dangerouslySetInnerHTML={factHtmlProp}
-                  />
-                )}
+                {factPane}
               </>
             ) : (
               <p className="text-muted-foreground">
@@ -1694,6 +1768,7 @@ function App(): React.JSX.Element {
               onCollapse={() => setPanelOpen(false)}
               onCommit={commitComposer}
               onCancel={cancelComposer}
+              canCompare={prevData !== null}
             />
           </aside>
         ) : (

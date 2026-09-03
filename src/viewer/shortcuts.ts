@@ -28,7 +28,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "expand", keys: ["ArrowRight"], shown: "→", section: "Navigate", label: "Expand directory" },
   { id: "collapse", keys: ["ArrowLeft"], shown: "←", section: "Navigate", label: "Collapse directory" },
   { id: "filter", keys: ["f", "/"], shown: "f or /", section: "Navigate", label: "Filter the fact tree" },
-  { id: "scope", keys: ["d"], shown: "d", section: "Navigate", label: "Cycle scope: all / changed / raised" },
+  { id: "scope", keys: ["s"], shown: "s", section: "Navigate", label: "Cycle scope: all / changed / raised" },
+  { id: "compare", keys: ["d"], shown: "d", section: "Navigate", label: "Toggle diff against the previous revision" },
   { id: "help", keys: ["Shift+?"], shown: "?", section: "Everywhere", label: "Keyboard help" },
   { id: "close", keys: ["Escape"], shown: "esc", section: "Everywhere", label: "Close / clear selection", raw: true },
   { id: "seen", keys: ["v"], shown: "v", section: "Progress", label: "Toggle seen" },
@@ -37,3 +38,6 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "question", keys: ["q"], shown: "q", section: "Notes", label: "Ask a question" },
   { id: "undo", keys: ["u"], shown: "u", section: "Notes", label: "Undo last comment" },
 ];
+
+/** The printed key of one shortcut, for hints at the point of use. */
+export const keyFor = (id: string): string => SHORTCUTS.find((s) => s.id === id)?.shown ?? "";

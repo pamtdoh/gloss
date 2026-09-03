@@ -14,7 +14,7 @@ import type { SidecarItem, ThreadEntry } from "../summary.js";
 import { COARSE, type Composer } from "./common.js";
 import { Md } from "./components.js";
 import { answeredByAgent, type AnchorState, type Fact } from "./model.js";
-import { MOD } from "./shortcuts.js";
+import { MOD, keyFor } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
 import { Kbd } from "./ui/kbd.js";
 import { Textarea } from "./ui/textarea.js";
@@ -103,22 +103,79 @@ function ThreadView(props: {
       {item.anchor?.quote && <blockquote>{item.anchor.quote}</blockquote>}
       <Turns thread={item.thread ?? []} />
       {props.onReplySubmit && (
-        // the reply box is the question composer with a different verb; it
-        // stays put, so commit and cancel clear it instead of closing it
-        <NoteComposer
-          kind="reply"
-          submitLabel="Reply"
-          formId="thread-reply"
-          inputId="thread-reply-input"
-          submitId="thread-send"
-          cancelId="thread-cancel"
-          className="thread-reply"
-          persistent
-          autoFocus={false}
-          onCommit={(text) => props.onReplySubmit!(item.id, text)}
-        />
+        <ReplyBox onSubmit={(text) => props.onReplySubmit!(item.id, text)} />
       )}
     </div>
+  );
+}
+
+/** The keyboard contract every box in the panel shares: the modifier
+ * chord commits, and Escape is the box's own exit. */
+function boxKeys(
+  commit: () => void,
+  onEscape: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void,
+): (e: React.KeyboardEvent<HTMLTextAreaElement>) => void {
+  return (e) => {
+    if (e.key === "Escape") onEscape(e);
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      commit();
+    }
+  };
+}
+
+/** The chord and the exit, printed where there is a keyboard. */
+function KeyHint(props: { escape: string }): React.JSX.Element | null {
+  if (COARSE) return null;
+  return (
+    <span className="text-muted-foreground ml-auto text-[11px]">
+      {MOD}↵ · esc {props.escape}
+    </span>
+  );
+}
+
+/** The thread's reply box: a field and its verb, nothing more — the
+ * subpage is the frame, so no card around it, and there is no state to
+ * cancel out of. It stays put: a reply clears it, a blank reply is a
+ * no-op, Escape drops a draft and leaves the field, and Escape on an
+ * empty field falls through to the global close, which shuts the
+ * thread. Focus stays on the Back control the subpage opened with. */
+function ReplyBox(props: { onSubmit: (text: string) => void }): React.JSX.Element {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const commit = (): void => {
+    const text = ref.current?.value ?? "";
+    if (!text.trim()) return;
+    props.onSubmit(text);
+    if (ref.current) ref.current.value = "";
+  };
+  return (
+    <form
+      className="thread-reply"
+      id="thread-reply"
+      onSubmit={(e) => {
+        e.preventDefault();
+        commit();
+      }}
+    >
+      <Textarea
+        id="thread-reply-input"
+        aria-label="Reply"
+        placeholder="Reply…"
+        ref={ref}
+        onKeyDown={boxKeys(commit, (e) => {
+          if (!e.currentTarget.value) return; // nothing to drop: the thread closes
+          e.stopPropagation();
+          e.currentTarget.value = "";
+          e.currentTarget.blur();
+        })}
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <Button type="submit" size="sm" id="thread-send">
+          Reply
+        </Button>
+        <KeyHint escape="clears" />
+      </div>
+    </form>
   );
 }
 
@@ -190,6 +247,8 @@ export function Panel(props: {
   onCollapse: () => void;
   onCommit: (text: string) => void;
   onCancel: () => void;
+  /** a previous revision exists, so the diff toggle does something */
+  canCompare: boolean;
 }): React.JSX.Element {
   const fact = props.fact;
   const readonly = props.readonlyRevision !== null;
@@ -435,7 +494,9 @@ export function Panel(props: {
       )}
       {!readonly && !COARSE && (
         <p className="keys-hint">
-          j/k move · v seen · c/q raise · f filter · <Kbd>?</Kbd> help
+          j/k move · v seen · c/q raise · f filter ·{" "}
+          {props.canCompare && `${keyFor("compare")} diff · `}
+          <Kbd>?</Kbd> help
         </p>
       )}
     </div>
@@ -482,55 +543,36 @@ export function ComposerBox(props: {
   );
 }
 
-/** The one box the reviewer types into — a new note, an edit inside a
- * card, or a reply in a thread — styled as the card its text becomes:
- * the kind's left border and uppercase word, then the context, the
- * textarea, and the verb that raised it. Cancel is Cancel everywhere. */
+/** The box a note is typed into — a new one, or an edit inside its
+ * card — styled as the card its text becomes: the kind's left border
+ * and uppercase word, then the context, the textarea, and the verb that
+ * raised it. Cancel closes it without saving. (A thread reply is not a
+ * note in the making; it has its own box above.) */
 export function NoteComposer(props: {
-  kind: "comment" | "question" | "reply";
+  kind: "comment" | "question";
   /** under the kind word: "whole fact", "whole review", or the quote */
   context?: string;
   submitLabel: string;
   initial?: string;
   /** inside a card: the card is the box and already names the kind */
   bare?: boolean;
-  /** a box that stays (the thread reply): commit and cancel clear it
-   * instead of closing it, and a blank commit is a no-op */
-  persistent?: boolean;
-  autoFocus?: boolean;
-  className?: string;
   formId: string;
   inputId: string;
   submitId: string;
   cancelId: string;
   labelId?: string;
   onCommit: (text: string) => void;
-  onCancel?: () => void;
+  onCancel: () => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const autoFocus = props.autoFocus !== false;
   useEffect(() => {
-    if (autoFocus) ref.current?.focus();
-  }, [autoFocus]);
-  const commit = (): void => {
-    const text = ref.current?.value ?? "";
-    if (props.persistent && !text.trim()) return;
-    props.onCommit(text);
-    if (props.persistent && ref.current) ref.current.value = "";
-  };
-  const cancel = (): void => {
-    if (props.persistent && ref.current) {
-      // clear and leave the field; the next escape (global) closes the thread
-      ref.current.value = "";
-      ref.current.blur();
-    }
-    props.onCancel?.();
-  };
+    ref.current?.focus();
+  }, []);
+  const commit = (): void => props.onCommit(ref.current?.value ?? "");
   const tone = props.kind === "comment" ? "item-comment" : "item-question";
-  const extra = props.className ? ` ${props.className}` : "";
   return (
     <form
-      className={props.bare ? `composer composer-bare${extra}` : `composer card ${tone}${extra}`}
+      className={props.bare ? "composer composer-bare" : `composer card ${tone}`}
       id={props.formId}
       onSubmit={(e) => {
         e.preventDefault();
@@ -545,32 +587,28 @@ export function NoteComposer(props: {
       )}
       <Textarea
         id={props.inputId}
-        aria-label={props.kind === "reply" ? "Reply" : "Note text"}
+        aria-label="Note text"
         ref={ref}
         defaultValue={props.initial ?? ""}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            cancel();
-          }
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            commit();
-          }
-        }}
+        onKeyDown={boxKeys(commit, (e) => {
+          e.stopPropagation();
+          props.onCancel();
+        })}
       />
       <div className="mt-2 flex items-center gap-2">
         <Button type="submit" size="sm" id={props.submitId}>
           {props.submitLabel}
         </Button>
-        <Button type="button" variant="outline" size="sm" id={props.cancelId} onClick={cancel}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          id={props.cancelId}
+          onClick={props.onCancel}
+        >
           Cancel
         </Button>
-        {!COARSE && (
-          <span className="text-muted-foreground ml-auto text-[11px]">
-            {MOD}↵ · esc cancel
-          </span>
-        )}
+        <KeyHint escape="cancel" />
       </div>
     </form>
   );

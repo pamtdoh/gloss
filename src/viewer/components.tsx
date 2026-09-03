@@ -287,12 +287,12 @@ export function DirView(props: {
   facts: Fact[];
   prev: Map<string, string> | null;
   seen: Set<string>;
-  /** already wrapped in the stable {__html} object — see factHtmlProp */
-  indexHtml: { __html: string };
-  indexFact: Fact | null;
-  readRef: React.MutableRefObject<HTMLElement | null>;
+  /** the index fact's body as the caller renders it — its text, or its
+   * diff while comparing; null when the directory has no index fact */
+  indexBody: React.ReactNode;
   onOpen: (row: Row) => void;
 }): React.JSX.Element {
+  const index = indexFactOf(props.data.facts, props.dir);
   const children = childFactsOf(props.facts, props.dir);
   const entries = childEntries(props.facts, props.dir);
   const stats = dirStats(props.facts, props.dir);
@@ -301,18 +301,9 @@ export function DirView(props: {
     <div className="dirview" id="dir-view">
       <div className="crumb">
         <span>{props.dir ? `${props.dir}/` : props.data.review}</span>
+        {index && <ChangeBadge status={changeStatus(props.prev, index)} />}
       </div>
-      {props.indexFact ? (
-        <article
-          className="fact-body"
-          id="fact-content"
-          data-fact-path={props.indexFact.path}
-          ref={props.readRef as React.RefObject<HTMLElement>}
-          dangerouslySetInnerHTML={props.indexHtml}
-        />
-      ) : (
-        <h1 className="text-[22px] font-[650] my-2">{label}</h1>
-      )}
+      {props.indexBody ?? <h1 className="text-[22px] font-[650] my-2">{label}</h1>}
       <div className="dirstats stat">
         {stats.facts} fact{stats.facts === 1 ? "" : "s"} · {stats.items} note
         {stats.items === 1 ? "" : "s"} · {stats.questions} open question

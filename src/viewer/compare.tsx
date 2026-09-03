@@ -1,8 +1,11 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef } from "react";
-import { computeBlockDiff, computeDiff, type DiffLine } from "./diff.js";
+import type { SidecarItem } from "../summary.js";
+import { resolveAnchor, type Anchor } from "./anchor.js";
+import { computeBlockDiff, computeDiff, type BlockRow, type DiffLine } from "./diff.js";
 import {
   clearHighlight,
+  paintNotes,
   pointForSourceOffset,
   rangeForSourceSpan,
   setHighlight,
@@ -33,6 +36,48 @@ function Text({ line }: { line: DiffLine }): React.JSX.Element {
   );
 }
 
+/** The DOM ranges one note's anchor covers across the diff's blocks. A
+ * block renders from its own source slice, so a span in the whole fact
+ * is clipped to the block and shifted to the block's origin. The base
+ * resolution paints the rows that show base text (context, removed);
+ * the target resolution paints the rows that show target text (added,
+ * the new side of a changed pair) — where the quoted words went. */
+function anchorRanges(
+  blocks: NodeListOf<HTMLElement>,
+  rows: BlockRow[],
+  before: string,
+  after: string,
+  anchor: Anchor,
+): Range[] {
+  const ranges: Range[] = [];
+  const paint = (
+    span: { start: number; end: number } | null,
+    origin: (row: BlockRow) => number | undefined,
+  ): void => {
+    if (!span) return;
+    rows.forEach((row, i) => {
+      const el = blocks[i];
+      const start = origin(row);
+      if (!el || start === undefined) return;
+      const local = { start: span.start - start, end: span.end - start };
+      if (local.end <= 0 || local.start >= row.source.length) return;
+      const range = rangeForSourceSpan(
+        el,
+        Math.max(0, local.start),
+        Math.min(row.source.length, local.end),
+      );
+      if (range) ranges.push(range);
+    });
+  };
+  paint(resolveAnchor(before, anchor), (row) =>
+    row.kind === "context" || row.kind === "del" ? row.oldStart : undefined,
+  );
+  paint(resolveAnchor(after, anchor), (row) =>
+    row.kind === "add" || row.kind === "changed" ? row.newStart : undefined,
+  );
+  return ranges;
+}
+
 /** The default compare view: each block rendered as itself — tables,
  * images, and code as the reader sees them — tinted by what happened to
  * it, with the changed pair's added words marked via the same CSS
@@ -44,6 +89,10 @@ function RenderedDiff(props: {
   baseAsset: string;
   headAsset: string;
   factDir: string;
+  /** the base revision's notes, raised on the text the diff shows leaving */
+  notes: SidecarItem[] | undefined;
+  /** the note whose anchor is lit — hovered, focused, or open as a thread */
+  litId: string | null;
 }): React.JSX.Element {
   const diff = useMemo(
     () => computeBlockDiff(props.before, props.after),
@@ -62,18 +111,42 @@ function RenderedDiff(props: {
     [diff, props.baseAsset, props.headAsset, props.factDir],
   );
   const htmls = useMermaidHtml(rawHtmls);
+  const { notes, litId } = props;
+
+  // Three effects, in this order, over one rendered DOM. All are keyed
+  // on htmls, not diff alone: the mermaid splice rewrites a row's
+  // innerHTML, detaching every Range and del the row held.
+  //
+  // 1. The notes' anchors as DOM ranges, per note. Built before any text
+  // node is split by the splice below: a Range straddling a splice point
+  // follows the split (the DOM keeps live Ranges valid), while one built
+  // afterwards would stop at the stamped run's first text node.
+  const noteRanges = useRef(new Map<string, Range[]>());
   useEffect(() => {
     if (!rootRef.current) return;
     const blocks = rootRef.current.querySelectorAll<HTMLElement>("[data-row]");
-    // Each edit region owns one added-words range and one struck removed
-    // run, spliced side by side (git word-diff grouping). They must be
-    // handled together: the <del> lands exactly at the range's start
-    // boundary, where the DOM's split rules would leave it INSIDE the
-    // range — the green highlight would paint across the red strike — so
-    // the range start is moved past the del after insertion. Regions run
-    // in descending offset order to keep earlier insertion points valid.
-    // Code blocks and tables get no splice: struck raw source inside
-    // them confuses more than it informs; the source layouts carry those.
+    noteRanges.current = new Map(
+      (notes ?? []).flatMap((item) =>
+        item.anchor
+          ? [[item.id, anchorRanges(blocks, diff.rows, props.before, props.after, item.anchor)]]
+          : [],
+      ),
+    );
+  }, [diff, htmls, notes]);
+
+  // 2. The word-level edits. Each edit region owns one added-words range
+  // and one struck removed run, spliced side by side (git word-diff
+  // grouping). They must be handled together: the <del> lands exactly at
+  // the range's start boundary, where the DOM's split rules would leave
+  // it INSIDE the range — the green highlight would paint across the red
+  // strike — so the range start is moved past the del after insertion.
+  // Regions run in descending offset order to keep earlier insertion
+  // points valid. Code blocks and tables get no splice: struck raw source
+  // inside them confuses more than it informs; the source layouts carry
+  // those.
+  useEffect(() => {
+    if (!rootRef.current) return;
+    const blocks = rootRef.current.querySelectorAll<HTMLElement>("[data-row]");
     const ranges: Range[] = [];
     const inserted: HTMLElement[] = [];
     diff.rows.forEach((row, i) => {
@@ -111,9 +184,16 @@ function RenderedDiff(props: {
       clearHighlight("rk-diff-ins");
       for (const el of inserted) el.remove();
     };
-    // keyed on htmls, not diff alone: the mermaid splice rewrites a row's
-    // innerHTML, detaching every Range and del the row held
   }, [diff, htmls]);
+
+  // 3. The notes painted under their names. Keyed on the lit note too, so
+  // a hover repaints from the ranges kept above without rebuilding them
+  // or re-splicing the blocks.
+  useEffect(
+    () => paintNotes(notes ?? [], litId, (_anchor, item) => noteRanges.current.get(item.id) ?? []),
+    [diff, htmls, notes, litId],
+  );
+
   const untouched = diff.added + diff.removed + diff.changed === 0;
   return (
     <div className="rdiff" ref={rootRef}>
@@ -132,10 +212,13 @@ function RenderedDiff(props: {
       )}
       {diff.rows.map((row, i) => (
         <div key={i} className={`rblock ${row.kind}`}>
-          {row.kind === "del" && <span className="rtag del">removed</span>}
-          {row.kind === "add" && <span className="rtag add">added</span>}
+          {/* the tint and edge say added or removed to the eye — the
+              universal diff colors; the word is for readers who get
+              neither, and the source-only note carries what color can't */}
+          {row.kind === "del" && <span className="sr-only">removed: </span>}
+          {row.kind === "add" && <span className="sr-only">added: </span>}
           {row.invisible && (
-            <span className="rtag invisible">changed in source only — a link, path, or formatting edit; see the source layout</span>
+            <span className="rtag-invisible">changed in source only — a link, path, or formatting edit; see the source layout</span>
           )}
           <div
             className="fact-body rblock-body"
@@ -205,6 +288,10 @@ export function DiffView(props: {
   baseAsset: string;
   headAsset: string;
   factDir: string;
+  /** the base revision's notes, lit in the rendered layout — the source
+   * layouts carry no offsets to anchor to */
+  notes: SidecarItem[] | undefined;
+  litId: string | null;
 }): React.JSX.Element {
   return (
     <div className="diffview" id="diff-view">
@@ -215,6 +302,8 @@ export function DiffView(props: {
           baseAsset={props.baseAsset}
           headAsset={props.headAsset}
           factDir={props.factDir}
+          notes={props.notes}
+          litId={props.litId}
         />
       ) : (
         <SourceDiff before={props.before} after={props.after} layout={props.layout} />

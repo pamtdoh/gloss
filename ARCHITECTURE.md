@@ -131,9 +131,13 @@ so neither remote peers nor web pages can reach it.
 
 The viewer can also compare any two revisions of the review — each
 fact's changed Markdown blocks rendered as the reader sees them (a
-source-level diff one toggle away), with the base revision's comments
-and questions shown read-only. Comparing reads the same revision files
-over the same API and writes nothing.
+source-level diff one toggle away), the overview included, with the
+base revision's comments and questions shown read-only and their
+anchors lit in the rendered diff where the quoted words stand. One key
+flips between the diff and the revision itself, and the flip is
+lossless: the base last chosen and the scope on each side come back.
+Comparing reads the same revision files over the same API and writes
+nothing.
 
 ## Skills
 

@@ -168,6 +168,12 @@ test.beforeAll(async ({ browser }) => {
     ),
   );
   writeFileSync(snap2("architecture.md"), RICH_FACT);
+  // ...and the overview itself gains a paragraph, so the front page has
+  // a diff of its own to show in compare
+  appendFileSync(
+    snap2("_index.md"),
+    "\nRevision 2 adds the architecture picture and drops the nightly dedupe.\n",
+  );
   writeFileSync(snap2("tree.png"), png(1600, 1000, [122, 140, 118]));
   writeFileSync(snap2("loop.png"), png(1600, 1000, [70, 82, 104]));
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
@@ -228,7 +234,9 @@ test("initial render: nested tree, first fact shown", async () => {
 test("the overview is the front page; notes on it are notes on the review", async () => {
   // the front page renders the root _index.md above the table of contents
   await expect(page.locator(".tree .row.root")).toContainText("Overview");
-  await expect(page.locator("#dir-view .crumb")).toHaveText("design-review");
+  await expect(page.locator("#dir-view .crumb")).toContainText("design-review");
+  // the overview is a fact like any other: its change badge sits in the crumb
+  await expect(page.locator("#dir-view .crumb .chip.changed")).toBeVisible();
   await expect(page.locator("#fact-content h1")).toHaveText(
     "linkbox is three small parts sharing one JSON file",
   );
@@ -487,9 +495,13 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
   await expect(page.locator("#thread-page .msg").last()).toContainText("Keeping it, then.");
   await expect(page.locator("#thread-reply-input")).toHaveValue("draft in progress");
 
-  // escape in the reply box cancels the draft and leaves the field; the
-  // next escape closes the thread. Reply is the box's verb, like the cards
+  // the reply box is not a note composer: no card border, no Cancel —
+  // the subpage is the frame. Reply is its verb, like the cards
   await expect(page.locator("#thread-send")).toHaveText("Reply");
+  await expect(page.locator("#thread-reply")).not.toHaveClass(/card/);
+  await expect(page.locator("#thread-reply button")).toHaveCount(1);
+  // escape in the reply box drops the draft and leaves the field; the
+  // next escape closes the thread
   await page.locator("#thread-reply-input").focus();
   await page.keyboard.press("Escape");
   await expect(page.locator("#thread-page")).toBeVisible();
@@ -554,17 +566,20 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await expect(page.locator("#sel-pop")).toHaveCount(0);
 });
 
-test("images open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
+test("figures open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
   await page.locator('.tree .row[data-path="architecture.md"]').click();
+  await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
   await page.locator('#fact-content img[alt="fact tree"]').click();
   const box = page.locator(".pswp");
   await expect(box).toBeVisible();
-  await expect(box.locator(".pswp__counter")).toHaveText("1 / 2");
+  // one gallery of the fact's figures, diagrams included, in reading
+  // order: the mermaid diagram comes before the two images
+  await expect(box.locator(".pswp__counter")).toHaveText("2 / 3");
 
   await box.locator(".pswp__button--arrow--next").click();
-  await expect(box.locator(".pswp__counter")).toHaveText("2 / 2");
+  await expect(box.locator(".pswp__counter")).toHaveText("3 / 3");
   await page.keyboard.press("ArrowLeft"); // must page the lightbox, not collapse a tree dir
-  await expect(box.locator(".pswp__counter")).toHaveText("1 / 2");
+  await expect(box.locator(".pswp__counter")).toHaveText("2 / 3");
 
   await box.locator(".pswp__button--zoom").click();
   await expect(box).toHaveClass(/pswp--zoomed-in/);
@@ -573,6 +588,17 @@ test("images open a PhotoSwipe lightbox: navigate, zoom, close", async () => {
   await expect(page.locator(".pswp")).toHaveCount(0);
   // Escape stayed inside the lightbox — the fact page is still up
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
+
+  // a diagram opens the same way, as the live SVG, and zooms — the
+  // point of opening one
+  await page.locator("#fact-content .rk-mermaid svg").click();
+  await expect(box).toBeVisible();
+  await expect(box.locator(".pswp__counter")).toHaveText("1 / 3");
+  await expect(box.locator(".rk-mermaid-zoom svg")).toBeVisible();
+  await box.locator(".pswp__button--zoom").click();
+  await expect(box).toHaveClass(/pswp--zoomed-in/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".pswp")).toHaveCount(0);
 });
 
 test("tree filter narrows the tree; ? opens help", async () => {
@@ -609,7 +635,7 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
   await expect(page.locator("#scope-btn")).toContainText("Changed");
   // changed: storage/whole-file-writes; new: architecture; removed ghost: slugs/legacy-dedupe
   await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
-  await expect(page.locator(".tree .row.root")).toHaveCount(0); // the overview is unchanged
+  await expect(page.locator(".tree .row.root")).toHaveCount(1); // the overview changed too
   await expect(page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"]')).toHaveClass(
     /ghost/,
   );
@@ -637,8 +663,8 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
   await expect(page.locator('.tree .row[data-path="storage/whole-file-writes.md"]')).toBeVisible();
   await expect(page.locator('.tree .row[data-path="slugs/collision-retry.md"]')).toBeVisible();
 
-  // d cycles back around to all
-  await page.keyboard.press("d");
+  // s cycles back around to all
+  await page.keyboard.press("s");
   await expect(page.locator(".tree .row")).toHaveCount(12);
 });
 
@@ -714,6 +740,12 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
       items: [
         { id: "c1", type: "comment", text: "Tighten the failure story." },
         {
+          id: "c2",
+          type: "comment",
+          anchor: { quote: "the last write wins" },
+          text: "Say it louder.",
+        },
+        {
           id: "q1",
           type: "question",
           thread: [
@@ -735,6 +767,16 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   // the tree scopes to what moved between 1 and 2, deletions included
   await expect(page.locator("#scope-btn")).toContainText("Changed");
   await expect(page.locator('.tree .row[data-kind="fact"]')).toHaveCount(3);
+  // the bar teaches the toggle key
+  await expect(page.locator("#compare-bar kbd")).toHaveText("d");
+
+  // the front page diffs too: the overview is a fact, and its page
+  // shows its diff above the table of contents
+  await page.locator(".tree .row.root").click();
+  await expect(page.locator("#dir-view #diff-view .rblock.add")).toContainText(
+    "Revision 2 adds the architecture picture",
+  );
+  await expect(page.locator("#dir-view #fact-table")).toBeVisible();
 
   // the default layout renders blocks, not source: a new fact is all
   // added blocks, its table rendered as a table
@@ -750,6 +792,10 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await page.locator('.tree .row[data-path="storage/whole-file-writes.md"]').click();
   await expect(page.locator("#diff-view .rblock.add")).toContainText("write-through cache");
   await expect(page.locator("#diff-view .rblock.context").first()).toBeVisible();
+  // tint and edge alone say added or removed; the only tag is the
+  // screen-reader one
+  await expect(page.locator("#diff-view .rblock.add > :first-child")).toHaveClass(/sr-only/);
+  await expect(page.locator("#diff-view .rblock.add .sr-only")).toHaveText("added:");
   await expect(
     page.locator("#diff-view .rblock.changed .rk-mermaid svg"),
   ).toBeVisible({ timeout: 15_000 });
@@ -765,9 +811,23 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
     );
   });
   expect(delCovered).toBe(false);
-  await expect(page.locator("#panel-items .card.readonly.item-comment")).toContainText(
+  await expect(page.locator("#panel-items .card.readonly.item-comment").first()).toContainText(
     "Tighten the failure story.",
   );
+  // the base note's anchor lights in the diff — on the words as they
+  // stand in the changed block — and follows the hovered card
+  const litIn = (name: string) =>
+    page.evaluate((highlight) => {
+      const registry = (CSS as unknown as { highlights: Map<string, Iterable<Range>> }).highlights;
+      const diff = document.getElementById("diff-view")!;
+      return [...(registry.get(highlight) ?? [])]
+        .filter((range) => diff.contains(range.commonAncestorContainer))
+        .map((range) => range.toString());
+    }, name);
+  await expect.poll(() => litIn("rk-anno")).toEqual(["the last write wins"]);
+  await page.locator('#panel-items .card[data-id="c2"]').hover();
+  await expect.poll(() => litIn("rk-focused-anno")).toEqual(["the last write wins"]);
+  await expect.poll(() => litIn("rk-anno")).toEqual([]);
   // the base question folds like the live panel's and opens read-only
   const foldedBase = page.locator("#panel-items .card.readonly.item-question");
   await expect(foldedBase.locator(".q-meta")).toContainText("1 reply");
@@ -812,6 +872,36 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await page.keyboard.press("Escape");
   await expect(page.locator("#compare-bar")).toHaveCount(0);
   await expect(page.locator(".tree .row")).toHaveCount(12);
+
+  // d flips between the diff and the revision itself, and each side
+  // keeps its scope: raised outside, and inside whatever the diff was
+  // left at (changed, until the reader picks another)
+  await page.keyboard.press("s"); // all -> changed
+  await page.keyboard.press("s"); // changed -> raised
+  await expect(page.locator("#scope-btn")).toContainText("Raised");
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toBeVisible();
+  await expect(page.locator("#scope-btn")).toContainText("Changed");
+  await page.keyboard.press("s"); // changed -> raised
+  await page.keyboard.press("s"); // raised -> all
+  await expect(page.locator("#scope-btn")).toContainText("All");
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toHaveCount(0);
+  await expect(page.locator("#scope-btn")).toContainText("Raised");
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toBeVisible();
+  await expect(page.locator("#scope-btn")).toContainText("All");
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toHaveCount(0);
+  await page.keyboard.press("s"); // raised -> all, for what follows
+  await expect(page.locator("#scope-btn")).toContainText("All");
+  // the toggle works with a button focused too — focus lingers on
+  // whatever was last clicked
+  await page.locator("#btn-theme").focus();
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toBeVisible();
+  await page.keyboard.press("d");
+  await expect(page.locator("#compare-bar")).toHaveCount(0);
   rmSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"));
 });
 

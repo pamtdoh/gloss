@@ -46,23 +46,37 @@ const plain = (text: string): Seg[] => [{ text, changed: false }];
 
 /** Both grains pair the same way: a removed run directly followed by an
  * added run is modification, and its members pair index-wise. Everything
- * else is context, pure removal, or pure addition. */
-function* pairRuns<T>(
-  changes: ArrayChange<T>[],
-): Generator<{ context: T[] } | { dels: T[]; adds: T[] }> {
+ * else is context, pure removal, or pure addition. Each run carries
+ * where it starts on each side — the index of its first member in the
+ * old and in the new sequence — so callers never count for themselves. */
+type Run<T> = ({ context: T[] } | { dels: T[]; adds: T[] }) & { oldAt: number; newAt: number };
+
+function* pairRuns<T>(changes: ArrayChange<T>[]): Generator<Run<T>> {
+  let oldAt = 0;
+  let newAt = 0;
   for (let i = 0; i < changes.length; i++) {
     const change = changes[i]!;
     if (!change.added && !change.removed) {
-      yield { context: change.value };
+      yield { context: change.value, oldAt, newAt };
+      oldAt += change.value.length;
+      newAt += change.value.length;
       continue;
     }
     const next = changes[i + 1];
+    let dels: T[] = [];
+    let adds: T[] = [];
     if (change.removed && next?.added) {
       i++;
-      yield { dels: change.value, adds: next.value };
+      dels = change.value;
+      adds = next.value;
+    } else if (change.removed) {
+      dels = change.value;
     } else {
-      yield { dels: change.removed ? change.value : [], adds: change.added ? change.value : [] };
+      adds = change.value;
     }
+    yield { dels, adds, oldAt, newAt };
+    oldAt += dels.length;
+    newAt += adds.length;
   }
 }
 
@@ -103,6 +117,13 @@ export interface BlockRow {
   source: string;
   /** a changed pair's old source */
   oldSource?: string;
+  /** where the block's old text starts in the base revision (context,
+   * del, and the old side of a changed pair) — how an anchor resolved
+   * against the base fact finds its block */
+  oldStart?: number;
+  /** where the block's new text starts in the target revision (context,
+   * add, and the new side of a changed pair) */
+  newStart?: number;
   /** added-word spans, offsets relative to `source` */
   marks?: { start: number; end: number }[];
   /** removed words with the offset in `source` where each was removed —
@@ -120,14 +141,18 @@ export interface BlockDiff {
   changed: number;
 }
 
-function blocksOf(source: string): string[] {
+/** Top-level blocks with their source offsets, so a row can say where
+ * its text sits in the whole fact. */
+function blocksOf(source: string): { text: string; start: number }[] {
   return parseMarkdown(source)
-    .children.map((child) =>
-      child.position?.start.offset !== undefined && child.position.end.offset !== undefined
-        ? source.slice(child.position.start.offset, child.position.end.offset)
-        : "",
-    )
-    .filter((block) => block.trim() !== "");
+    .children.map((child) => {
+      const start = child.position?.start.offset;
+      const end = child.position?.end.offset;
+      return start !== undefined && end !== undefined
+        ? { text: source.slice(start, end), start }
+        : { text: "", start: 0 };
+    })
+    .filter((block) => block.text.trim() !== "");
 }
 
 /** What the reader would actually see: rendered HTML with the markup
@@ -237,20 +262,39 @@ export function computeBlockDiff(before: string, after: string): BlockDiff {
   let added = 0;
   let removed = 0;
   let changed = 0;
-  for (const run of pairRuns(diffArrays(blocksOf(before), blocksOf(after)))) {
+  const oldBlocks = blocksOf(before);
+  const newBlocks = blocksOf(after);
+  // the diff runs over block text; a run's positions index the block
+  // lists, which is where each row's offset in its revision comes from
+  const oldStartAt = (i: number): number => oldBlocks[i]!.start;
+  const newStartAt = (i: number): number => newBlocks[i]!.start;
+  const runs = diffArrays(
+    oldBlocks.map((b) => b.text),
+    newBlocks.map((b) => b.text),
+  );
+  for (const run of pairRuns(runs)) {
     if ("context" in run) {
-      for (const source of run.context) rows.push({ kind: "context", source });
+      run.context.forEach((source, k) => {
+        rows.push({
+          kind: "context",
+          source,
+          oldStart: oldStartAt(run.oldAt + k),
+          newStart: newStartAt(run.newAt + k),
+        });
+      });
       continue;
     }
     const pairs = Math.min(run.dels.length, run.adds.length);
     for (let j = 0; j < pairs; j++) {
       const oldSource = run.dels[j]!;
       const source = run.adds[j]!;
+      const oldStart = oldStartAt(run.oldAt + j);
+      const newStart = newStartAt(run.newAt + j);
       const edits = pairEdits(oldSource, source);
       if (edits === null) {
         // too dissimilar to be an edit — show as remove plus add
-        rows.push({ kind: "del", source: oldSource });
-        rows.push({ kind: "add", source });
+        rows.push({ kind: "del", source: oldSource, oldStart });
+        rows.push({ kind: "add", source, newStart });
         removed++;
         added++;
         continue;
@@ -261,6 +305,8 @@ export function computeBlockDiff(before: string, after: string): BlockDiff {
         kind: "changed",
         source,
         oldSource,
+        oldStart,
+        newStart,
         marks: edits.marks,
         // an invisible edit's removed words are raw source (a URL, a
         // marker) — the tag explains it better than struck syntax would
@@ -268,12 +314,12 @@ export function computeBlockDiff(before: string, after: string): BlockDiff {
         invisible,
       });
     }
-    for (const source of run.dels.slice(pairs)) {
-      rows.push({ kind: "del", source });
+    for (let j = pairs; j < run.dels.length; j++) {
+      rows.push({ kind: "del", source: run.dels[j]!, oldStart: oldStartAt(run.oldAt + j) });
       removed++;
     }
-    for (const source of run.adds.slice(pairs)) {
-      rows.push({ kind: "add", source });
+    for (let j = pairs; j < run.adds.length; j++) {
+      rows.push({ kind: "add", source: run.adds[j]!, newStart: newStartAt(run.newAt + j) });
       added++;
     }
   }
@@ -285,34 +331,36 @@ export function computeDiff(before: string, after: string): FactDiff {
   const split: SplitRow[] = [];
   let added = 0;
   let removed = 0;
-  let oldNum = 1;
-  let newNum = 1;
 
   // diffLines yields chunks of joined lines; pairRuns wants one line per
-  // element so the members pair up
+  // element so the members pair up. Line numbers are the run's positions,
+  // 1-based.
   const changes = diffLines(before, after).map((change) => ({
     ...change,
     value: toLines(change.value),
   }));
   for (const run of pairRuns(changes)) {
     if ("context" in run) {
-      for (const line of run.context) {
-        const entry: DiffLine = { kind: "context", oldNum, newNum, segs: plain(line) };
+      run.context.forEach((line, k) => {
+        const entry: DiffLine = {
+          kind: "context",
+          oldNum: run.oldAt + k + 1,
+          newNum: run.newAt + k + 1,
+          segs: plain(line),
+        };
         unified.push(entry);
         split.push({ left: entry, right: entry });
-        oldNum++;
-        newNum++;
-      }
+      });
       continue;
     }
-    const dels: DiffLine[] = run.dels.map((line) => ({
+    const dels: DiffLine[] = run.dels.map((line, k) => ({
       kind: "del",
-      oldNum: oldNum++,
+      oldNum: run.oldAt + k + 1,
       segs: plain(line),
     }));
-    const adds: DiffLine[] = run.adds.map((line) => ({
+    const adds: DiffLine[] = run.adds.map((line, k) => ({
       kind: "add",
-      newNum: newNum++,
+      newNum: run.newAt + k + 1,
       segs: plain(line),
     }));
     for (let j = 0; j < Math.min(dels.length, adds.length); j++) {

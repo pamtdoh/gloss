@@ -1,5 +1,8 @@
 // Map between fact-source offsets and the rendered DOM, via the
 // data-s/data-e offsets the markdown renderer stamps on inline runs.
+import type { SidecarItem } from "../summary.js";
+import type { Anchor } from "./anchor.js";
+import { isQuestion } from "./model.js";
 
 /** All offset-carrying text runs inside the rendered fact, in order. A
  * stamped element whose first child is not a text node carries no run:
@@ -99,4 +102,33 @@ export function setHighlight(name: string, ranges: Range[]): void {
 
 export function clearHighlight(name: string): void {
   registry()?.delete(name);
+}
+
+// ------------------------------------------------------------ notes
+// Both fact surfaces — the reading pane and the rendered diff — light
+// the same notes the same way; they differ only in how an anchor becomes
+// DOM ranges, which is the one thing a caller supplies.
+const NOTE_HIGHLIGHTS = ["rk-anno", "rk-question", "rk-focused-anno", "rk-focused-q"] as const;
+
+/** The highlight a note paints under: its kind, lit or not. */
+function noteHighlight(item: SidecarItem, lit: boolean): (typeof NOTE_HIGHLIGHTS)[number] {
+  if (isQuestion(item)) return lit ? "rk-focused-q" : "rk-question";
+  return lit ? "rk-focused-anno" : "rk-anno";
+}
+
+/** Paint every anchored note's ranges; returns the clear. */
+export function paintNotes(
+  items: SidecarItem[],
+  litId: string | null,
+  rangesFor: (anchor: Anchor, item: SidecarItem) => Range[],
+): () => void {
+  const buckets = new Map<string, Range[]>(NOTE_HIGHLIGHTS.map((name) => [name, []]));
+  for (const item of items) {
+    if (!item.anchor) continue;
+    buckets.get(noteHighlight(item, item.id === litId))!.push(...rangesFor(item.anchor, item));
+  }
+  for (const [name, ranges] of buckets) setHighlight(name, ranges);
+  return () => {
+    for (const name of NOTE_HIGHLIGHTS) clearHighlight(name);
+  };
 }

@@ -412,7 +412,16 @@ body {
   background: transparent !important; border: none !important; padding: 0 !important;
   min-height: 140px; display: flex; justify-content: center;
 }
-.rk-mermaid svg { max-width: 100%; user-select: none; } /* svg text can't anchor */
+.rk-mermaid svg { max-width: 100%; user-select: none; cursor: zoom-in; } /* svg text can't anchor */
+/* a diagram in the lightbox: the live SVG, vector-crisp at every zoom,
+   on the panel color — the backdrop is near-black, and light-theme ink
+   would vanish on it */
+.rk-mermaid-zoom {
+  display: flex; box-sizing: border-box; padding: 2%;
+  width: 100%; height: 100%; /* fill the slide PhotoSwipe sizes, at every zoom */
+  background: var(--panel); border-radius: var(--radius-md);
+}
+.rk-mermaid-zoom svg { width: 100%; height: 100%; max-width: none; }
 .rk-mermaid[data-error]::before {
   content: "diagram failed to render"; color: var(--red); font-size: 12px;
 }
@@ -550,9 +559,13 @@ body {
 .card .cardtext p:last-child { margin-bottom: 0; }
 .card .cardtext code { background: var(--panel-2); border-radius: 4px; padding: 0 4px; font-family: ui-monospace, monospace; font-size: 0.92em; }
 .card .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-.composer textarea { field-sizing: content; min-height: 74px; background: var(--bg); }
+.composer textarea, .thread-reply textarea {
+  field-sizing: content; min-height: 74px; background: var(--bg);
+}
 /* the composer is the card its text becomes: the kind's left border and
-   uppercase word, then the context (whole fact, the quote) as plain text */
+   uppercase word, then the context (whole fact, the quote) as plain text;
+   the thread's reply box is the same field without the card — the
+   subpage is its frame */
 .composer.card { margin: 10px 0 0; }
 .composer.composer-bare { margin-top: 8px; }
 .composer-head { font-size: 11px; color: var(--muted); font-weight: 650; margin-bottom: 6px; white-space: pre-wrap; }
@@ -704,13 +717,9 @@ body {
   border-left-color: color-mix(in srgb, var(--red) 45%, transparent);
 }
 .rblock.del .rblock-body { opacity: 0.62; }
-.rtag {
-  display: inline-block; margin: 2px 0 4px; font-size: 11px; font-weight: 650;
-  text-transform: uppercase; letter-spacing: .04em;
-}
-.rtag.add { color: var(--accent); }
-.rtag.del { color: var(--red); }
-.rtag.invisible { color: var(--amber); text-transform: none; font-weight: 500; letter-spacing: 0; }
+/* added and removed blocks say so by tint and edge alone (the diff
+   colors everyone reads); the one worded tag is the edit color can't show */
+.rtag-invisible { display: inline-block; margin: 2px 0 4px; font-size: 11px; color: var(--amber); }
 ::highlight(rk-diff-ins) {
   background-color: color-mix(in srgb, var(--accent) 24%, transparent);
 }
