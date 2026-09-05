@@ -12,22 +12,40 @@
    animate interaction, never data; exits ride --ease-in, faster than
    their enters; hover changes paint only. */
 :root {
-  /* Ink & Moss — Gloss's own palette (owner picks, rounds 3-4): warm
-     near-monochrome ink neutrals, one muted Everforest-green accent,
-     squarer corners. Amber survives as the "changed/stale" semantic. */
+  /* Paper & ink: shadcn's stone neutrals, taken as they ship. The brand's
+     muted green is the primary and appears on the primary action alone;
+     the highlighter marks comments, blue marks questions; green, amber and
+     red are otherwise diff semantics, never interactive identity. */
+  --brand: #4e7837;
+  --on-brand: #ffffff;
   --bg: #fafaf9;
   --panel: #ffffff;
-  --panel-2: #f0efed;
-  --line: #dcdad6;
+  --panel-2: #f5f5f4;
+  --line: #e7e5e4;
   --text: #1c1917;
   --muted: #57534e;
-  --accent: #4e7837;
-  --amber: #8a6a1f;
-  --red: #b91c1c;
-  --blue: #1d4ed8;
-  --on-accent: #ffffff;
+  /* semantic hues in the Everforest spirit, one notch stronger than the
+     first palette so a chip or a diff line reads at a glance; grounds are
+     mixes of the hue, so they sit on any surface */
+  --green: #4f8a2f;
+  --amber: #a8740f;
+  --red: #cf4a45;
+  --blue: #2b78ad;
+  --green-bg: color-mix(in srgb, var(--green) 15%, transparent);
+  --amber-bg: color-mix(in srgb, var(--amber) 15%, transparent);
+  --red-bg: color-mix(in srgb, var(--red) 13%, transparent);
+  --blue-bg: color-mix(in srgb, var(--blue) 13%, transparent);
+  --green-word: color-mix(in srgb, var(--green) 34%, transparent);
+  --red-word: color-mix(in srgb, var(--red) 30%, transparent);
+  /* the two marks, Everforest's yellow and blue: the highlighter for a
+     comment, the blue for a question; the ink is the darker shade the
+     panel's icons wear */
+  --mark: #dfa000;
+  --mark-ink: #b8800a;
+  --ring: #a8a29e;
 
-  --radius: 0.375rem;
+  --radius: 0.625rem;
+  --radius-block: 2px; /* blocks inside the document read square */
 
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-in: cubic-bezier(0.2, 0, 1, 0.9);
@@ -43,15 +61,17 @@
   --elev-3: 0 4px 10px rgba(28, 25, 23, 0.06), 0 16px 40px -12px rgba(56, 40, 12, 0.18);
   --elev-4: 0 8px 16px rgba(28, 25, 23, 0.08), 0 32px 64px -16px rgba(56, 40, 12, 0.22);
   --overlay: #ffffff;
-  --line-soft: color-mix(in srgb, var(--line) 55%, var(--panel));
+  --line-soft: color-mix(in srgb, var(--line) 70%, var(--panel));
   --line-raised: var(--line);
 
-  /* anchor highlight tints (viewer-specific) */
-  /* comments are gray like their count chip; blue stays the question hue,
-     green stays interactive/brand, amber stays "changed" */
-  --anno-tint: color-mix(in srgb, var(--muted) 13%, transparent);
-  --question-tint: color-mix(in srgb, var(--blue) 14%, transparent);
-  --focus-tint: color-mix(in srgb, var(--accent) 26%, transparent);
+  /* marks, Lark's way: a pale wash plus a thin underline in the kind's
+     color. "lit" deepens the wash while the note's card is hovered; the
+     line stays put, so the text never shifts */
+  --mark-tint: color-mix(in srgb, var(--mark) 24%, transparent);
+  --mark-tint-lit: color-mix(in srgb, var(--mark) 45%, transparent);
+  --question-tint: color-mix(in srgb, var(--blue) 11%, transparent);
+  --question-tint-lit: color-mix(in srgb, var(--blue) 24%, transparent);
+  --pending-tint: color-mix(in srgb, var(--text) 14%, transparent);
 }
 
 .dark {
@@ -61,11 +81,26 @@
   --line: #33302c;
   --text: #e7e5e4;
   --muted: #a8a29e;
-  --accent: #a7c080;
-  --amber: #d4b36a;
-  --red: #f87171;
-  --blue: #93b4f8;
-  --on-accent: #121110;
+  --brand: #a7c080;
+  --on-brand: #121110;
+  /* Everforest dark, as it ships */
+  --green: #a7c080;
+  --amber: #dbbc7f;
+  --red: #e67e80;
+  --blue: #7fbbb3;
+  --green-bg: color-mix(in srgb, var(--green) 18%, transparent);
+  --amber-bg: color-mix(in srgb, var(--amber) 18%, transparent);
+  --red-bg: color-mix(in srgb, var(--red) 16%, transparent);
+  --blue-bg: color-mix(in srgb, var(--blue) 16%, transparent);
+  --green-word: color-mix(in srgb, var(--green) 38%, transparent);
+  --red-word: color-mix(in srgb, var(--red) 34%, transparent);
+  --mark: #dbbc7f;
+  --mark-ink: #dbbc7f;
+  --ring: #78716c;
+  --mark-tint: color-mix(in srgb, var(--mark) 16%, transparent);
+  --mark-tint-lit: color-mix(in srgb, var(--mark) 30%, transparent);
+  --question-tint: color-mix(in srgb, var(--blue) 14%, transparent);
+  --question-tint-lit: color-mix(in srgb, var(--blue) 28%, transparent);
 
   --elev-1: inset 0 1px 0 rgba(231, 229, 228, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.4);
   --elev-2: inset 0 1px 0 rgba(231, 229, 228, 0.06), 0 10px 24px -8px rgba(0, 0, 0, 0.5);
@@ -84,8 +119,8 @@
   --color-card-foreground: var(--text);
   --color-popover: var(--overlay);
   --color-popover-foreground: var(--text);
-  --color-primary: var(--accent);
-  --color-primary-foreground: var(--on-accent);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--on-brand);
   --color-secondary: var(--panel-2);
   --color-secondary-foreground: var(--text);
   --color-muted: var(--panel-2);
@@ -96,10 +131,9 @@
   --color-destructive-foreground: #ffffff;
   --color-border: var(--line);
   --color-input: var(--line);
-  --color-ring: var(--accent);
+  --color-ring: var(--ring);
   --color-amber: var(--amber);
   --color-blue: var(--blue);
-  --color-on-accent: var(--on-accent);
   --color-panel: var(--panel);
   --color-panel-2: var(--panel-2);
   --color-line: var(--line);
@@ -150,11 +184,15 @@ body {
 .lucide.size-4 { stroke-width: 2.25; }
 .lucide.size-5 { stroke-width: 1.8; }
 
-/* composable focus ring — verbatim from leetcoach; untransitioned by design */
-:where(a, button, [role="button"], [role="separator"], [role="treeitem"], input, select, textarea, summary):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent), var(--elev-keep, 0 0 #0000);
+/* focus ring for what isn't a shadcn primitive (those carry their own
+   focus-visible utilities): shadcn's geometry — 3px, half-alpha, flush —
+   in the neutral ring color. An outline, so it stacks on any box-shadow
+   the element already draws. */
+:where(a, button, [role="button"], [role="treeitem"], [role="separator"], [tabindex="0"], summary):not([data-slot]):focus-visible {
+  outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent);
 }
+/* a tree row spans the column, so the ring sits inside it or gets clipped */
+.tree .row:focus-visible { outline-offset: -3px; }
 
 /* ------------------------------------------------------------- layout */
 .app { display: flex; flex-direction: column; height: 100dvh; }
@@ -162,16 +200,16 @@ body {
 .tree-col {
   flex: none; width: var(--tree-w, 300px); min-width: 240px; max-width: 50vw;
   background: var(--panel); border-right: 1px solid var(--line-soft);
-  overflow-y: auto; padding: 0 0 8px; box-shadow: var(--elev-1);
+  overflow-y: auto; padding: 0 0 8px;
 }
 .read-col { flex: 1; min-width: 0; overflow-y: auto; padding: 26px clamp(16px, 3vw, 34px); }
 .read-inner { max-width: 72ch; margin-inline: auto; }
 .panel-col {
   flex: none; width: var(--panel-w, 330px); background: var(--panel);
   border-left: 1px solid var(--line-soft); overflow-y: auto; padding: 14px;
-  box-shadow: var(--elev-1);
 }
 .panel-col.rail { width: 46px; padding: 10px 6px; text-align: center; }
+.tree-col.rail { width: 46px; min-width: 0; padding: 10px 6px; text-align: center; }
 .col-resizer {
   flex: none; width: 7px; margin: 0 -3px; cursor: col-resize; z-index: 2;
   position: relative; background: none; border: none; padding: 0;
@@ -180,7 +218,7 @@ body {
   content: ""; position: absolute; inset: 0 3px; background: transparent;
   transition: background-color var(--dur-fast) var(--ease-out);
 }
-.col-resizer:hover::after, .col-resizer[data-active]::after { background: var(--accent); }
+.col-resizer:hover::after, .col-resizer[data-active]::after { background: var(--muted); }
 
 .scrim {
   position: fixed; inset: 0; z-index: 14;
@@ -191,7 +229,7 @@ body {
 
 @media (max-width: 1100px) {
   .pagenav { margin-bottom: 72px; } /* clear the floating Notes button */
-  .col-resizer { display: none; } /* the panel is a fixed overlay here */
+  #panel-resizer { display: none; } /* the panel is a fixed overlay here */
   .panel-col:not(.rail) {
     position: fixed; right: 0; top: 46px; bottom: 0; z-index: 15;
     box-shadow: var(--elev-3); width: min(360px, 92vw);
@@ -200,14 +238,16 @@ body {
   .panel-fab {
     display: inline-flex; position: fixed; right: 16px; bottom: 16px; z-index: 13;
     align-items: center; gap: 6px;
-    background: var(--accent); color: var(--on-accent); border: none;
+    background: var(--brand); color: var(--on-brand); border: none;
     border-radius: 999px; padding: 10px 16px; font-weight: 600;
     box-shadow: var(--elev-3);
   }
-  .panel-fab .chip { background: color-mix(in srgb, var(--on-accent) 25%, transparent); color: var(--on-accent); }
+  .panel-fab .chip { background: color-mix(in srgb, var(--on-brand) 25%, transparent); color: var(--on-brand); }
 }
 @media (max-width: 860px) {
   .hamburger { display: inline-flex; }
+  /* the tree is a drawer here: the hamburger owns it, not the rail */
+  #tree-resizer, #btn-tree-collapse, .tree-col.rail { display: none; }
   .hdr h1 { display: none; }
   .facttable .trow { flex-wrap: wrap; }
   .progress { font-size: 12px; }
@@ -233,9 +273,11 @@ body {
   display: flex; align-items: center; gap: 10px; flex: none;
   height: 46px; padding: 0 14px;
   background: var(--panel); border-bottom: 1px solid var(--line-soft);
-  box-shadow: var(--elev-1); z-index: 3;
+  z-index: 3;
 }
 .hdr h1 { font-size: 14px; font-weight: 650; margin: 0; white-space: nowrap; }
+.brand { display: inline-block; width: 18px; height: 18px; vertical-align: -4px; margin-right: 8px; }
+.brand svg { display: block; width: 100%; height: 100%; }
 /* narrower screens tighten the header (these follow the base rule: an
    override of equal specificity must come later to win). At 390px the
    compare button and the question pill must coexist, and the
@@ -249,20 +291,21 @@ body {
 }
 .hdr .spacer { flex: 1; }
 .progress { color: var(--muted); font-size: 13px; white-space: nowrap; }
-/* the open-questions pill speaks the question hue, like .chip.q and the
-   question highlight; "your turn" intensifies in the same blue */
+/* the open-questions pill is a neutral count until an answer is waiting
+   on you; then it takes the "your turn" blue, like the card chip */
 .pill {
   font-size: 12px; border-radius: 999px; padding: 3px 10px; border: 1px solid transparent;
-  background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue);
+  background: var(--panel-2); color: var(--muted);
   white-space: nowrap;
   transition: background-color var(--dur-hover) var(--ease-out), border-color var(--dur-hover) var(--ease-out);
 }
-.pill:hover { border-color: var(--blue); }
-.pill.attn { background: color-mix(in srgb, var(--blue) 24%, transparent); font-weight: 600; }
+.pill:hover { border-color: var(--line); }
+.pill.attn { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
+.pill.attn:hover { border-color: var(--blue); }
 
 .stale-banner, .conn-banner { flex: none; padding: 6px 14px; font-size: 13px; z-index: 3; }
 .stale-banner {
-  background: color-mix(in srgb, var(--amber) 14%, var(--bg));
+  background: var(--amber-bg);
   color: var(--amber); border-bottom: 1px solid color-mix(in srgb, var(--amber) 30%, var(--line));
 }
 /* "your writes are going nowhere" — red, persistent, but non-blocking:
@@ -270,7 +313,7 @@ body {
    Finish, and the beforeunload guard already stop silent write loss */
 .conn-banner {
   font-weight: 600;
-  background: color-mix(in srgb, var(--red) 12%, var(--bg));
+  background: var(--red-bg);
   color: var(--red); border-bottom: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
 }
 .stale-banner button {
@@ -290,9 +333,8 @@ body {
 .filter-box { position: relative; flex: 1; min-width: 0; }
 .scope-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #scope-btn.scope-active {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 #scope-btn.scope-active .scope-count { color: inherit; }
 .filter-icon {
@@ -318,15 +360,13 @@ body {
 .tree { list-style: none; margin: 0; padding: 0; }
 .tree .row {
   display: flex; align-items: center; gap: 6px;
-  min-height: 30px; padding: 2px 10px; cursor: pointer;
+  min-height: 30px; padding: 2px 10px; margin: 0 8px; cursor: pointer;
+  border-radius: var(--radius-lg);
   white-space: nowrap; overflow: hidden;
   transition: background-color var(--dur-hover) var(--ease-out);
 }
 .tree .row:hover { background: var(--panel-2); }
-.tree .row.cursor {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
+.tree .row.cursor { background: color-mix(in srgb, var(--text) 7%, transparent); }
 .tree .row.checked-off { color: var(--muted); }
 .tree .caret {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
@@ -342,36 +382,43 @@ body {
 .tree .row.unseen .name { font-weight: 650; }
 .tree .dirname { color: var(--muted); font-weight: 600; }
 /* the front page sits above the tree, not among its siblings */
-.tree .row.root { border-bottom: 1px solid var(--line-soft); margin-bottom: 4px; }
+.tree .row.root { margin-bottom: 6px; }
 .tree .row.root .name { font-weight: 600; }
 .tree-empty { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+/* two reserved slots per row — one count, then the change glyph at the
+   far edge — so the right edge never moves as a fact's state changes
+   (GitHub and VS Code end the row with the fixed status column and keep
+   variable-width counts inside it; Slack says unread with weight alone) */
 .badges { margin-left: auto; display: flex; gap: 4px; align-items: center; flex: none; }
+.gslot { display: inline-flex; width: 14px; justify-content: center; flex: none; }
 .chip {
   font-size: 12px; font-weight: 500; border-radius: 999px; padding: 0 7px;
   line-height: 18px; font-variant-numeric: tabular-nums;
+  min-width: 24px; text-align: center;
 }
+.chip.slot { background: transparent; }
 .chip.not-needed { background: var(--panel-2); color: var(--muted); }
-.chip.simplify { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
-.chip.defer { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
+.chip.simplify { background: var(--amber-bg); color: var(--amber); }
+.chip.defer { background: var(--blue-bg); color: var(--blue); }
 .chip.stale { background: transparent; box-shadow: inset 0 0 0 1px currentColor; }
-.chip.changed { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
-.chip.new { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.chip.removed { background: color-mix(in srgb, var(--red) 13%, transparent); color: var(--red); }
+.chip.changed { background: var(--amber-bg); color: var(--amber); }
+.chip.new { background: var(--green-bg); color: var(--green); }
+.chip.removed { background: var(--red-bg); color: var(--red); }
 /* 14px glyph change badges (tree + table): color carries the status */
 .gbadge { display: inline-flex; flex: none; }
 .gbadge.changed { color: var(--amber); }
-.gbadge.new { color: var(--accent); }
+.gbadge.new { color: var(--green); }
 .gbadge.removed { color: var(--red); }
 /* a deleted fact rides along read-only: present, never actionable */
 .row.ghost .name, .trow.ghost .title { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1px; }
 .ghost-banner {
   margin: 10px 0 0; padding: 8px 12px; font-size: 13px; border-radius: 8px;
-  background: color-mix(in srgb, var(--red) 10%, var(--bg));
+  background: var(--red-bg);
   color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 25%, var(--line));
 }
 .chip.count { background: var(--panel-2); color: var(--muted); }
-.chip.q { background: color-mix(in srgb, var(--blue) 14%, transparent); color: var(--blue); }
-.seen-check { color: var(--accent); flex: none; }
+.chip.q { background: var(--blue-bg); color: var(--blue); }
+.seen-check { color: var(--muted); flex: none; }
 
 /* ------------------------------------------------------------- reading */
 .crumb { color: var(--muted); font-size: 12px; margin-bottom: 4px; display: flex; gap: 8px; align-items: center; }
@@ -387,13 +434,17 @@ body {
 .fact-body ul { list-style: disc; }
 .fact-body ol { list-style: decimal; }
 .fact-body li { margin: 0 0 4px; }
-.fact-body a { color: var(--accent); text-underline-offset: 3px; }
+.fact-body a {
+  color: inherit; text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--text) 35%, transparent);
+}
+.fact-body a:hover { text-decoration-color: currentColor; }
 .fact-body code {
-  background: var(--panel-2); border-radius: 4px; padding: 1px 5px;
+  background: var(--panel-2); border-radius: 3px; padding: 1px 5px;
   font-size: 0.92em; font-family: ui-monospace, "SF Mono", monospace;
 }
 .fact-body pre {
-  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--radius-md);
+  background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: var(--radius-block);
   padding: 12px 14px; overflow-x: auto; margin: 0 0 12px;
   font-size: 13px; line-height: 1.5;
 }
@@ -407,7 +458,7 @@ body {
   margin: 0 0 12px; padding: 2px 14px; border-left: 3px solid var(--line);
   color: var(--muted);
 }
-.fact-body img { max-width: 100%; border-radius: var(--radius-md); }
+.fact-body img { max-width: 100%; border-radius: var(--radius-block); }
 .rk-mermaid {
   background: transparent !important; border: none !important; padding: 0 !important;
   min-height: 140px; display: flex; justify-content: center;
@@ -425,38 +476,27 @@ body {
 .rk-mermaid[data-error]::before {
   content: "diagram failed to render"; color: var(--red); font-size: 12px;
 }
-::highlight(rk-anno) {
-  background-color: var(--anno-tint);
+/* a mark, as Lark draws it: a pale wash and a thin underline in the
+   kind's color — the highlighter for a comment, blue for a question.
+   Lighting one deepens the wash only, so the text never shifts. */
+::highlight(rk-anno), ::highlight(rk-focused-anno) {
+  background-color: var(--mark-tint);
   text-decoration: underline;
-  text-decoration-color: var(--muted);
-  text-underline-offset: 3px;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--mark);
+  text-underline-offset: 2px;
 }
-::highlight(rk-question) {
+::highlight(rk-question), ::highlight(rk-focused-q) {
   background-color: var(--question-tint);
-  text-decoration: underline dotted;
-  text-decoration-color: var(--blue);
-  text-underline-offset: 3px;
-}
-/* focus keeps each type's hue and intensifies it — the highlight must not
-   change identity on hover, only strength */
-::highlight(rk-focused-anno) {
-  background-color: color-mix(in srgb, var(--muted) 25%, transparent);
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-decoration-color: var(--muted);
-  text-underline-offset: 3px;
-}
-::highlight(rk-focused-q) {
-  background-color: color-mix(in srgb, var(--blue) 26%, transparent);
   text-decoration: underline;
   text-decoration-thickness: 2px;
   text-decoration-color: var(--blue);
-  text-underline-offset: 3px;
+  text-underline-offset: 2px;
 }
+::highlight(rk-focused-anno) { background-color: var(--mark-tint-lit); }
+::highlight(rk-focused-q) { background-color: var(--question-tint-lit); }
 /* the captured selection: survives iOS collapsing the native selection */
-::highlight(rk-pending) {
-  background-color: var(--focus-tint);
-}
+::highlight(rk-pending) { background-color: var(--pending-tint); }
 @keyframes rk-pop { from { opacity: 0; transform: translateY(3px); } }
 /* fixed action bar for the captured selection — the stable touch surface */
 .sel-bar {
@@ -502,7 +542,7 @@ body {
 }
 .pagenav-label {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
-  color: var(--accent); font-weight: 500;
+  color: var(--text); font-weight: 500;
   transition: color var(--dur-hover) var(--ease-out);
 }
 .pagenav-link:hover:not(:disabled) .pagenav-label { text-decoration: underline; text-underline-offset: 3px; }
@@ -532,28 +572,26 @@ body {
 }
 .panel h2:first-of-type { margin-top: 0; }
 .card {
-  position: relative; border: 1px solid var(--line-soft); border-left-width: 3px;
+  position: relative; border: 1px solid var(--line);
   border-radius: var(--radius-md); padding: 10px 12px; margin-bottom: 8px;
   transition: border-color var(--dur-hover) var(--ease-out);
 }
-.card.item-comment { border-left-color: var(--muted); }
-.card.item-question { border-left-color: var(--blue); }
-/* hover: the border alone intensifies, left-edge-only to full perimeter,
-   in the card's own hue. Background stays put — every wash tried here
-   (type tint, neutral ink) read as louder than the panel deserves. */
-.card:hover, .card:focus-visible, .card.focus {
-  border-color: var(--muted); border-left-width: 3px;
-}
-.card.item-question:hover, .card.item-question:focus-visible, .card.item-question.focus {
-  border-color: var(--blue);
-}
+/* hover: the border alone intensifies, in the card's own hue — the kind
+   word names the type, the hover hue confirms it. Background stays put —
+   every wash tried here (type tint, neutral ink) read as louder than the
+   panel deserves. */
+.card:hover, .card:focus-visible, .card.focus { border-color: var(--ring); }
 .card .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); display: flex; gap: 6px; align-items: center; font-weight: 650; }
-.card blockquote {
+/* the kind's icon wears the color of its mark in the fact: the
+   highlighter's ink for a comment, the question blue for a question */
+.card .kind .lucide, .composer-head .lucide { flex: none; vertical-align: -2px; color: var(--mark-ink); }
+.card.item-question .kind .lucide, .composer-head .lucide.q { color: var(--blue); }
+/* the quote: a plain blockquote — marks live in the fact, not the panel;
+   drift and detachment are said by the chip in the kind row */
+.card blockquote, .thread-page blockquote {
   margin: 6px 0; padding: 1px 10px; border-left: 2px solid var(--line);
   color: var(--muted); font-size: 13px; white-space: pre-wrap;
 }
-.card.drifted blockquote { border-left-style: dashed; }
-.card.detached blockquote { border-left-color: var(--red); }
 .card .cardtext { margin: 6px 0 0; font-size: 13px; }
 .card .cardtext p { margin: 0 0 6px; }
 .card .cardtext p:last-child { margin-bottom: 0; }
@@ -562,15 +600,20 @@ body {
 .composer textarea, .thread-reply textarea {
   field-sizing: content; min-height: 74px; background: var(--bg);
 }
-/* the composer is the card its text becomes: the kind's left border and
-   uppercase word, then the context (whole fact, the quote) as plain text;
+/* the composer is the card its text becomes: the kind's uppercase word,
+   then the context (whole fact, the quote) as plain text;
    the thread's reply box is the same field without the card — the
    subpage is its frame */
 .composer.card { margin: 10px 0 0; }
 .composer.composer-bare { margin-top: 8px; }
-.composer-head { font-size: 11px; color: var(--muted); font-weight: 650; margin-bottom: 6px; white-space: pre-wrap; }
-.composer-head .kind-word { text-transform: uppercase; letter-spacing: .04em; }
-.composer-head .ctx { font-weight: 500; }
+/* one centered row: an inline-flex label would sit on the text baseline
+   by its icon's bottom edge and float above the context */
+.composer-head {
+  display: flex; align-items: center; font-size: 11px; color: var(--muted);
+  font-weight: 650; margin-bottom: 6px; white-space: pre-wrap;
+}
+.composer-head .kind-word { display: inline-flex; align-items: center; gap: 6px; flex: none; text-transform: uppercase; letter-spacing: .04em; }
+.composer-head .ctx { font-weight: 500; min-width: 0; }
 .keys-hint { color: var(--muted); font-size: 12px; margin-top: 18px; }
 
 /* ------------------------------------------------------------- toast */
@@ -581,7 +624,7 @@ body {
   animation: rk-toast-in var(--dur-med) var(--ease-out);
 }
 @keyframes rk-toast-in { from { opacity: 0; transform: translate(-50%, 6px); } }
-.toast button { border: none; background: none; color: color-mix(in srgb, var(--bg) 80%, var(--accent)); font-weight: 650; padding: 2px 4px; border-radius: 4px; }
+.toast button { border: none; background: none; color: inherit; font-weight: 650; padding: 2px 4px; border-radius: 4px; text-decoration: underline; text-underline-offset: 3px; }
 .toast button:hover { background: color-mix(in srgb, var(--bg) 15%, transparent); }
 
 .done-screen {
@@ -592,7 +635,7 @@ body {
 /* .pill in the stale-banner's amber, non-interactive */
 .unsaved-pill, .unsaved-pill:hover {
   color: var(--amber); font-weight: 600;
-  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  background: var(--amber-bg);
   border-color: color-mix(in srgb, var(--amber) 30%, var(--line));
 }
 
@@ -623,17 +666,12 @@ body {
 /* -------------------------------------------------- panel: thread subpage */
 .thread-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .thread-title { font-weight: 650; font-size: 13px; }
-.thread-page blockquote {
-  margin: 6px 0 10px; padding: 1px 10px; border-left: 2px solid var(--line);
-  color: var(--muted); font-size: 13px; white-space: pre-wrap;
-}
 /* a pasted identifier or URL must wrap, not push the 330px panel wide */
 .thread-page blockquote, .card blockquote, .msg-body, .q-text {
   overflow-wrap: anywhere;
 }
-/* two speakers, both left-aligned: the human's turns in a tinted card,
-   the agent's as plain markdown under an icon+label header — tint plus
-   label, never color alone */
+/* two speakers, both left-aligned: the human's turns in a neutral card,
+   the agent's as plain markdown under an icon+label header */
 .msgs { display: flex; flex-direction: column; gap: 12px; margin: 10px 0 14px; }
 .msg { font-size: 13px; }
 .msg-who {
@@ -641,15 +679,9 @@ body {
   font-size: 11px; font-weight: 650; text-transform: uppercase;
   letter-spacing: .04em; color: var(--muted);
 }
-.msg.agent .msg-who { color: var(--accent); }
 .msg.human .msg-body {
-  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--blue) 18%, var(--line-soft));
+  background: var(--panel-2); border: 1px solid var(--line-soft);
   border-radius: 8px; padding: 8px 10px;
-}
-.msg.agent .msg-body {
-  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  padding-left: 10px;
 }
 .msg-body p { margin: 0 0 6px; }
 .msg-body p:last-child { margin-bottom: 0; }
@@ -666,8 +698,8 @@ body {
 
 /* -------------------------------------------------- compare mode */
 #btn-compare.compare-active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .compare-bar {
   flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -684,10 +716,7 @@ body {
 }
 .layout-toggle button:first-child { border-radius: 6px 0 0 6px; }
 .layout-toggle button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
-.layout-toggle button.on {
-  color: var(--accent); font-weight: 600;
-  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
-}
+.layout-toggle button.on { color: var(--text); font-weight: 600; background: var(--panel-2); }
 .compare-exit {
   border: none; background: none; color: var(--text); font-weight: 650;
   text-decoration: underline; text-underline-offset: 3px; padding: 0 2px;
@@ -696,7 +725,7 @@ body {
 
 /* whole-file source diff; lines wrap, the pane never scrolls sideways */
 .diffstats { display: flex; gap: 10px; margin: 6px 0 8px; font-size: 12px; }
-.dstat.add { color: var(--accent); }
+.dstat.add { color: var(--green); }
 .dstat.del { color: var(--red); }
 .dstat.chg { color: var(--amber); }
 .dstat.unit { color: var(--muted); }
@@ -704,31 +733,31 @@ body {
 /* rendered diff: each Markdown block as the reader sees it, tinted by
    what happened to it; added words inside a changed pair get the
    highlight below */
-.rblock { position: relative; border-radius: var(--radius-md); margin: 0 0 4px; }
+.rblock { position: relative; border-radius: var(--radius-block); margin: 0 0 4px; }
 .rblock.add, .rblock.del {
   padding: 8px 12px 2px; border-left: 3px solid;
 }
 .rblock.add {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  border-left-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--green-bg);
+  border-left-color: var(--green);
 }
 .rblock.del {
-  background: color-mix(in srgb, var(--red) 6%, transparent);
-  border-left-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: var(--red-bg);
+  border-left-color: var(--red);
 }
 .rblock.del .rblock-body { opacity: 0.62; }
 /* added and removed blocks say so by tint and edge alone (the diff
    colors everyone reads); the one worded tag is the edit color can't show */
 .rtag-invisible { display: inline-block; margin: 2px 0 4px; font-size: 11px; color: var(--amber); }
 ::highlight(rk-diff-ins) {
-  background-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background-color: var(--green-word);
 }
 /* removed words spliced back into a changed block, suggestion-mode style */
 del.rk-dd {
   color: var(--red);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
-  background: color-mix(in srgb, var(--red) 9%, transparent);
+  background: var(--red-word);
   border-radius: 2px;
   padding: 0 1px;
   margin-right: 3px;
@@ -736,7 +765,7 @@ del.rk-dd {
 .dtable {
   font-family: ui-monospace, "SF Mono", monospace; font-size: 12.5px;
   line-height: 1.55; border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md); overflow: hidden;
+  border-radius: var(--radius-block); overflow: hidden;
 }
 .dnum {
   color: var(--muted); font-size: 11px; text-align: right; padding: 0 6px;
@@ -746,10 +775,10 @@ del.rk-dd {
 .dtext { white-space: pre-wrap; word-break: break-word; padding-right: 8px; min-width: 0; }
 .dmark { color: inherit; border-radius: 2px; background: none; }
 .dtable.unified .dline { display: grid; grid-template-columns: 3em 3em 1.2em 1fr; }
-.dline.add, .dcell.add { background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.dline.del, .dcell.del { background: color-mix(in srgb, var(--red) 8%, transparent); }
-.dline.add .dmark, .dcell.add .dmark { background: color-mix(in srgb, var(--accent) 26%, transparent); }
-.dline.del .dmark, .dcell.del .dmark { background: color-mix(in srgb, var(--red) 22%, transparent); }
+.dline.add, .dcell.add { background: var(--green-bg); }
+.dline.del, .dcell.del { background: var(--red-bg); }
+.dline.add .dmark, .dcell.add .dmark { background: var(--green-word); }
+.dline.del .dmark, .dcell.del .dmark { background: var(--red-word); }
 .dtable.split .drow { display: grid; grid-template-columns: 1fr 1fr; }
 .dtable.split .dcell { display: flex; min-width: 0; }
 .dtable.split .dcell:first-child { border-right: 1px solid var(--line-soft); }

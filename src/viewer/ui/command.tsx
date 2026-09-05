@@ -77,7 +77,7 @@ function CommandDialog({
           {showCloseButton && (
             <DialogPrimitive.Close
               data-slot="dialog-close"
-              className="absolute top-3 right-3 rounded-md p-1 opacity-70 transition-[background-color,opacity,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-secondary hover:opacity-100 active:scale-[0.98] disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+              className="absolute top-3 right-3 rounded-md p-1 opacity-70 transition-[background-color,opacity,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-secondary hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden ring-offset-background active:scale-[0.98] disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
             >
               <XIcon />
               <span className="sr-only">Close</span>

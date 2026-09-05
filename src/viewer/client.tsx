@@ -1,4 +1,5 @@
 import * as React from "react";
+import { BRAND_SVG } from "./brand.js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { tinykeys } from "tinykeys";
@@ -11,6 +12,8 @@ import {
   MessageCircleQuestion,
   MessageSquare,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightOpen,
   Search,
   Sun,
@@ -145,13 +148,20 @@ function writeSeenStore(review: string, store: Record<string, string>): void {
   localStorage.setItem(`rk-seen2:${review}`, JSON.stringify(store));
 }
 
-// Desktop-only drag handle between the reading pane and the review panel.
-// It owns --panel-w on the root (the width .panel-col already reads);
-// double-click resets to the stylesheet default. Hidden below 1101px,
-// where the panel is a fixed overlay with its own width.
+// Desktop-only drag handles beside the tree and the review panel. Each
+// owns one width variable on the root (the width its column already
+// reads); double-click resets to the stylesheet default. The panel's is
+// hidden below 1101px, where the panel is a fixed overlay; the tree's
+// below 861px, where the tree is a drawer.
 const PANEL_W_KEY = "rk-panel-w";
-const savedPanelW = Number(localStorage.getItem(PANEL_W_KEY));
-if (savedPanelW) document.documentElement.style.setProperty("--panel-w", `${savedPanelW}px`);
+const TREE_W_KEY = "rk-tree-w";
+for (const [key, prop] of [
+  [PANEL_W_KEY, "--panel-w"],
+  [TREE_W_KEY, "--tree-w"],
+] as const) {
+  const saved = Number(localStorage.getItem(key));
+  if (saved) document.documentElement.style.setProperty(prop, `${saved}px`);
+}
 
 // what the lightbox opens: the images and diagrams of one fact body
 const FIGURE = "img, .rk-mermaid svg";
@@ -179,14 +189,23 @@ function diagramSlide(svg: SVGSVGElement): SlideData {
   };
 }
 
-function PanelResizer(): React.JSX.Element {
+function ColResizer(props: {
+  id: string;
+  label: string;
+  prop: "--panel-w" | "--tree-w";
+  storageKey: string;
+  /** the column's width when the pointer sits at this clientX */
+  widthAt: (clientX: number) => number;
+  min: number;
+  max: () => number;
+}): React.JSX.Element {
   const [active, setActive] = useState(false);
   return (
     <button
       className="col-resizer"
-      id="panel-resizer"
+      id={props.id}
       aria-orientation="vertical"
-      aria-label="Resize review panel (double-click to reset)"
+      aria-label={`${props.label} (double-click to reset)`}
       title="Drag to resize · double-click resets"
       data-active={active ? "" : undefined}
       onPointerDown={(e) => {
@@ -196,22 +215,45 @@ function PanelResizer(): React.JSX.Element {
       }}
       onPointerMove={(e) => {
         if (!active) return;
-        const max = Math.min(640, window.innerWidth * 0.5);
-        const width = Math.round(Math.min(Math.max(window.innerWidth - e.clientX, 240), max));
-        document.documentElement.style.setProperty("--panel-w", `${width}px`);
-        localStorage.setItem(PANEL_W_KEY, String(width));
+        const width = Math.round(Math.min(Math.max(props.widthAt(e.clientX), props.min), props.max()));
+        document.documentElement.style.setProperty(props.prop, `${width}px`);
+        localStorage.setItem(props.storageKey, String(width));
       }}
       onPointerUp={(e) => {
         e.currentTarget.releasePointerCapture(e.pointerId);
         setActive(false);
       }}
       onDoubleClick={() => {
-        document.documentElement.style.removeProperty("--panel-w");
-        localStorage.removeItem(PANEL_W_KEY);
+        document.documentElement.style.removeProperty(props.prop);
+        localStorage.removeItem(props.storageKey);
       }}
     />
   );
 }
+
+const PanelResizer = (): React.JSX.Element => (
+  <ColResizer
+    id="panel-resizer"
+    label="Resize review panel"
+    prop="--panel-w"
+    storageKey={PANEL_W_KEY}
+    widthAt={(x) => window.innerWidth - x}
+    min={240}
+    max={() => Math.min(640, window.innerWidth * 0.5)}
+  />
+);
+
+const TreeResizer = (): React.JSX.Element => (
+  <ColResizer
+    id="tree-resizer"
+    label="Resize fact tree"
+    prop="--tree-w"
+    storageKey={TREE_W_KEY}
+    widthAt={(x) => x}
+    min={240}
+    max={() => Math.min(520, window.innerWidth * 0.5)}
+  />
+);
 
 function App(): React.JSX.Element {
   const [data, setData] = useState<ReviewData | null>(null);
@@ -229,6 +271,7 @@ function App(): React.JSX.Element {
     () => window.matchMedia("(min-width: 1101px)").matches,
   );
   const [treeOpen, setTreeOpen] = useState(false); // mobile drawer
+  const [treeCollapsed, setTreeCollapsed] = useState(false); // desktop rail, like the panel's
   const isMobile = (): boolean => window.matchMedia("(max-width: 860px)").matches;
   // the panel is an overlay/sheet below 1100px — after an action it should
   // get out of the way instead of covering the fact
@@ -1358,11 +1401,15 @@ function App(): React.JSX.Element {
           className="hamburger"
           id="btn-tree"
           aria-label="Toggle fact tree"
-          onClick={() => setTreeOpen((open) => !open)}
+          onClick={() => {
+            setTreeCollapsed(false); // the drawer always opens whole
+            setTreeOpen((open) => !open);
+          }}
         >
           <Menu />
         </Button>
         <h1>
+          <span className="brand" aria-hidden="true" dangerouslySetInnerHTML={{ __html: BRAND_SVG }} />
           <span id="review-name">{data.review}</span>
         </h1>
         <span className="progress stat" id="progress">
@@ -1546,6 +1593,19 @@ function App(): React.JSX.Element {
 
       <div className="cols">
         {treeOpen && <div className="scrim" onClick={() => setTreeOpen(false)} />}
+        {treeCollapsed ? (
+          <nav className="tree-col rail" aria-label="Facts">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              id="btn-tree-expand"
+              aria-label="Open fact tree"
+              onClick={() => setTreeCollapsed(false)}
+            >
+              <PanelLeftOpen />
+            </Button>
+          </nav>
+        ) : (
         <nav className="tree-col" aria-label="Facts" data-open={treeOpen ? "" : undefined}>
           {/* pinned while the tree scrolls; the input and scope chip share the row */}
           <div className="tree-filter">
@@ -1595,6 +1655,15 @@ function App(): React.JSX.Element {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                id="btn-tree-collapse"
+                aria-label="Collapse fact tree"
+                onClick={() => setTreeCollapsed(true)}
+              >
+                <PanelLeftClose />
+              </Button>
           </div>
           <div className="drawer-tools">
             <span className="stat text-muted-foreground flex-1 self-center text-[13px]">
@@ -1658,6 +1727,8 @@ function App(): React.JSX.Element {
             </ul>
           )}
         </nav>
+        )}
+        {!treeCollapsed && <TreeResizer />}
 
         <main
           className="read-col"

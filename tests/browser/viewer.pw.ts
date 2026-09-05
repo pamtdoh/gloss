@@ -317,14 +317,14 @@ test("j/k walk the tree; a directory row shows its _index fact", async () => {
 test("reading a fact marks it seen automatically; v unmarks", async () => {
   await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
   await expect(
-    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-check'),
-  ).toBeVisible({ timeout: 5_000 });
+    page.locator('.tree .row[data-path="slugs/collision-retry.md"]'),
+  ).not.toHaveClass(/unseen/, { timeout: 5_000 });
   const progress = await page.locator("#progress").textContent();
   expect(Number(progress!.split("/")[0])).toBeGreaterThan(0);
   await page.keyboard.press("v");
-  await expect(
-    page.locator('.tree .row[data-path="slugs/collision-retry.md"] .seen-check'),
-  ).toHaveCount(0);
+  await expect(page.locator('.tree .row[data-path="slugs/collision-retry.md"]')).toHaveClass(
+    /unseen/,
+  );
 });
 
 test("selection comment stores the verbatim quote and paints a highlight", async () => {
@@ -649,9 +649,7 @@ test("scope: changed shows changed/new plus a read-only ghost; raised shows note
   await page.keyboard.press("c");
   await expect(page.locator("#item-form")).toHaveCount(0);
   await page.keyboard.press("v");
-  await expect(
-    page.locator('.tree .row[data-path="slugs/legacy-dedupe.md"] .seen-check'),
-  ).toHaveCount(0);
+  await expect(page.locator(".crumb .seen-check")).toHaveCount(0);
 
   // raised = facts carrying comments or questions at this point in the run:
   // the overview, slugs/collision-retry, storage/whole-file-writes — the

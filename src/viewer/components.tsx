@@ -1,7 +1,6 @@
 import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Check,
   ChevronRight,
   MessageCircleQuestion,
   MessageSquare,
@@ -139,6 +138,27 @@ export function ChangeBadge({ status }: { status: ChangeStatus }): React.JSX.Ele
 // tree rows use 14px glyphs instead of word chips — the words cost ~45px
 // of name width in a 300px column (GitHub/GitLab both glyph here)
 const GLYPHS = { changed: SquareDot, new: SquarePlus, removed: SquareMinus } as const;
+/** The one count slot a row gets: how many notes, one number; the title
+ * splits it into comments and questions. Otherwise an empty chip of the
+ * same width, so the right edge of every row lines up whatever its
+ * state. Neutral: blue is kept for "your turn". Seen is not shown here:
+ * an unseen name is already bold, and a second mark for the same fact
+ * was the badge that moved the most. */
+export function CountChip({ stats }: { stats: { items: number; questions: number } | null }): React.JSX.Element {
+  if (!stats || stats.items === 0) return <span className="chip slot" aria-hidden="true" />;
+  const questions = stats.questions;
+  const comments = stats.items - questions;
+  const parts = [
+    comments > 0 && `${comments} comment${comments === 1 ? "" : "s"}`,
+    questions > 0 && `${questions} question${questions === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  return (
+    <span className="chip count" title={parts.join(" · ")} aria-label={parts.join(", ")}>
+      {stats.items}
+    </span>
+  );
+}
+
 export function ChangeGlyph({ status }: { status: ChangeStatus }): React.JSX.Element | null {
   if (!status) return null;
   const Icon = GLYPHS[status];
@@ -187,14 +207,8 @@ export function TreeRow(props: {
         <span className="caret-spacer" aria-hidden="true" />
         <span className="name">Overview</span>
         <span className="badges">
-          {index && <ChangeGlyph status={changeStatus(props.prev, index)} />}
-          {stats && stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
-          {stats && stats.items - stats.questions > 0 && (
-            <span className="chip count">{stats.items - stats.questions}</span>
-          )}
-          {index && props.seen.has(index.path) && (
-            <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
-          )}
+          <CountChip stats={stats} />
+          <span className="gslot">{index && <ChangeGlyph status={changeStatus(props.prev, index)} />}</span>
         </span>
       </li>
     );
@@ -233,8 +247,8 @@ export function TreeRow(props: {
         </button>
         <span className="name dirname">{nameOf(row.path)}/</span>
         <span className="badges">
-          {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
-          {stats.items > 0 && <span className="chip count">{stats.items}</span>}
+          <CountChip stats={stats} />
+          <span className="gslot" aria-hidden="true" />
         </span>
       </li>
     );
@@ -264,14 +278,8 @@ export function TreeRow(props: {
       <span className="caret-spacer" aria-hidden="true" />
       <span className="name">{nameOf(fact.path)}</span>
       <span className="badges">
-        <ChangeGlyph status={status} />
-        {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
-        {stats.items - stats.questions > 0 && (
-          <span className="chip count">{stats.items - stats.questions}</span>
-        )}
-        {props.seen.has(fact.path) && (
-          <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
-        )}
+        <CountChip stats={stats} />
+        <span className="gslot"><ChangeGlyph status={status} /></span>
       </span>
     </li>
   );
@@ -347,14 +355,8 @@ export function DirView(props: {
               <span className="caret-spacer" style={{ width: 16 }} aria-hidden="true" />
               <span className="title">{titleOf(fact)}</span>
               <span className="badges">
+                <CountChip stats={stats} />
                 <ChangeBadge status={changeStatus(props.prev, fact)} />
-                {stats.questions > 0 && <span className="chip q">{stats.questions}?</span>}
-                {stats.items - stats.questions > 0 && (
-                  <span className="chip count">{stats.items - stats.questions}</span>
-                )}
-                {props.seen.has(fact.path) && (
-                  <Check className="lucide size-3.5 seen-check" size={14} aria-label="Seen" />
-                )}
               </span>
             </div>
           );

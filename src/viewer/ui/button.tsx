@@ -5,17 +5,13 @@ import { Slot } from "radix-ui"
 import { cn } from "../lib/utils.js"
 
 const buttonVariants = cva(
-  "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] outline-none active:scale-[0.98] active:shadow-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[busy]:pointer-events-none dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:transition-transform [&_svg]:duration-[var(--dur-fast)] [&_svg]:ease-[var(--ease-out)] [&_svg:not([class*='size-'])]:size-4",
+  "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98] active:shadow-none disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[busy]:pointer-events-none dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:transition-transform [&_svg]:duration-[var(--dur-fast)] [&_svg]:ease-[var(--ease-out)] [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        // --accent-hover: bg-primary/90 was invisible on the teal; mixing 12%
-        // ink flips correctly per theme (darker in light, brighter in dark).
-        // Inline until the token is minted in globals.
-        default:
-          "bg-primary text-primary-foreground shadow-xs [--accent-hover:color-mix(in_oklab,var(--accent),var(--text)_12%)] hover:bg-[var(--accent-hover)]",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-white shadow-xs hover:bg-destructive/90 dark:bg-destructive/60",
+          "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         // The wash alone is illegible here (--color-accent is --panel-2, a
         // ~2% luminance step against bg-background), so the border steps up
         // too — a neutral ink-mix, not primary: a hue change on hover reads

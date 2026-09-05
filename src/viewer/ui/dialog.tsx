@@ -64,7 +64,7 @@ function DialogContent({
         className={cn(
           // zoom settles from 97 (a mechanism seating, not a pop); enter
           // med/ease-out, exit fast/ease-in per the overlay vocabulary
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-line-raised bg-popover p-6 shadow-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-97 data-[state=closed]:duration-[var(--dur-fast)] data-[state=closed]:ease-[var(--ease-in)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-97 data-[state=open]:duration-[var(--dur-med)] data-[state=open]:ease-[var(--ease-out)] sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-line-raised bg-popover p-6 shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-97 data-[state=closed]:duration-[var(--dur-fast)] data-[state=closed]:ease-[var(--ease-in)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-97 data-[state=open]:duration-[var(--dur-med)] data-[state=open]:ease-[var(--ease-out)] sm:max-w-lg",
           className
         )}
         {...props}
@@ -73,7 +73,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-3 right-3 rounded-md p-1 opacity-70 transition-[background-color,opacity,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-secondary hover:opacity-100 active:scale-[0.98] disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute top-3 right-3 rounded-md p-1 opacity-70 transition-[background-color,opacity,transform] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-secondary hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden ring-offset-background active:scale-[0.98] disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">Close</span>

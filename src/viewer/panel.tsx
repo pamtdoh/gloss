@@ -25,12 +25,24 @@ function AnchorChips(props: { state: AnchorState | undefined }): React.JSX.Eleme
   return null;
 }
 
+/** The kind's glyph: a speech square for a comment, a question bubble for
+ * a question — the same two icons the selection bubble offers, so the
+ * card repeats the choice that made it. */
+function KindIcon(props: { kind: string }): React.JSX.Element {
+  return props.kind === "question" ? (
+    <MessageCircleQuestion className="lucide size-3 q" size={12} aria-hidden="true" />
+  ) : (
+    <MessageSquare className="lucide size-3" size={12} aria-hidden="true" />
+  );
+}
+
 function KindRow(props: {
   item: SidecarItem;
   anchorState: AnchorState | undefined;
 }): React.JSX.Element {
   return (
     <span className="kind">
+      <KindIcon kind={props.item.type} />
       {props.item.type === "question" ? "question" : "comment"}
       <AnchorChips state={props.anchorState} />
     </span>
@@ -517,18 +529,16 @@ export function ComposerBox(props: {
 }): React.JSX.Element {
   const composer = props.composer;
   const isNew = composer.mode === "new";
-  const context = !isNew
-    ? undefined
-    : composer.anchor
-      ? `“${composer.anchor.quote}”`
-      : props.root
-        ? "whole review"
-        : "whole fact";
+  // the anchor's quote becomes the card's blockquote; an unanchored note
+  // says its scope beside the kind word instead
+  const quote = isNew && composer.anchor ? composer.anchor.quote : undefined;
+  const scope = isNew && !composer.anchor ? (props.root ? "whole review" : "whole fact") : undefined;
   const submitLabel = !isNew ? "Save" : composer.type === "question" ? "Ask" : "Comment";
   return (
     <NoteComposer
       kind={isNew ? composer.type : "comment"}
-      context={context}
+      quote={quote}
+      scope={scope}
       submitLabel={submitLabel}
       initial={isNew ? "" : composer.initial}
       bare={props.bare}
@@ -550,8 +560,10 @@ export function ComposerBox(props: {
  * note in the making; it has its own box above.) */
 export function NoteComposer(props: {
   kind: "comment" | "question";
-  /** under the kind word: "whole fact", "whole review", or the quote */
-  context?: string;
+  /** the quoted text an anchored note points at, shown as the card's blockquote */
+  quote?: string;
+  /** an unanchored note's scope, "whole fact" or "whole review", beside the kind word */
+  scope?: string;
   submitLabel: string;
   initial?: string;
   /** inside a card: the card is the box and already names the kind */
@@ -581,10 +593,14 @@ export function NoteComposer(props: {
     >
       {!props.bare && (
         <div className="composer-head" id={props.labelId}>
-          <span className="kind-word">{props.kind}</span>
-          {props.context && <span className="ctx"> — {props.context}</span>}
+          <span className="kind-word">
+            <KindIcon kind={props.kind} />
+            {props.kind}
+          </span>
+          {props.scope && <span className="ctx"> — {props.scope}</span>}
         </div>
       )}
+      {!props.bare && props.quote && <blockquote>{props.quote}</blockquote>}
       <Textarea
         id={props.inputId}
         aria-label="Note text"

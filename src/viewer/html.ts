@@ -1,9 +1,12 @@
+import { BRAND_DATA_URI } from "./brand.js";
+
 export const VIEWER_HTML = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review</title>
+<link rel="icon" type="image/svg+xml" href="${BRAND_DATA_URI}">
 <link rel="stylesheet" href="/client.css">
 </head>
 <body>
