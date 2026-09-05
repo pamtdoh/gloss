@@ -39,8 +39,8 @@ resolve() {
 if [ "${1:-}" = "--restore" ]; then
   npm_global uninstall -g gloss-review
   npm_global install -g gloss-review
-  gloss skill install --agent claude --global
-  gloss skill install --agent codex --global
+  gloss skill install --global
+  gloss skill install --agents --global
   echo "restored: $(command -v gloss) -> $(resolve "$(command -v gloss)")"
   exit 0
 fi
@@ -54,7 +54,7 @@ npm_global link
 # Skill text is embedded in the binary at build time, so a fresh build is
 # what makes these write the working tree's SKILL.md files. Both agents,
 # because the two installs are separate directories.
-gloss skill install --agent claude --global
-gloss skill install --agent codex --global
+gloss skill install --global
+gloss skill install --agents --global
 
 echo "linked: $(command -v gloss) -> $(resolve "$(command -v gloss)")"
