@@ -13,6 +13,7 @@ import {
 import type { SidecarItem, ThreadEntry } from "../summary.js";
 import { COARSE, type Composer } from "./common.js";
 import { Md } from "./components.js";
+import type { Drafts } from "./drafts.js";
 import { answeredByAgent, type AnchorState, type Fact } from "./model.js";
 import { MOD, keyFor } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
@@ -85,10 +86,12 @@ function ThreadView(props: {
   anchorState: AnchorState | undefined;
   onBack: () => void;
   /** absent when the notes are read-only (compare, a stale revision):
-   * no reply box, and no "your turn" since there is no turn to take */
-  onReplySubmit?: (id: string, text: string) => void;
+   * no reply box, and no "your turn" since there is no turn to take.
+   * Present, it brings the store the box remembers its text in. */
+  reply?: { drafts: Drafts; path: string; onSubmit: (id: string, text: string) => void };
 }): React.JSX.Element {
   const item = props.item;
+  const reply = props.reply;
   // a takeover view moves focus in with it, so keyboard and screen-reader
   // users land where they are (the close control), not on <body>
   const backRef = useRef<HTMLButtonElement>(null);
@@ -110,12 +113,18 @@ function ThreadView(props: {
         </Button>
         <span className="thread-title">Question</span>
         <AnchorChips state={props.anchorState} />
-        {props.onReplySubmit && answeredByAgent(item) && <span className="chip q">your turn</span>}
+        {reply && answeredByAgent(item) && <span className="chip q">your turn</span>}
       </div>
       {item.anchor?.quote && <blockquote>{item.anchor.quote}</blockquote>}
       <Turns thread={item.thread ?? []} />
-      {props.onReplySubmit && (
-        <ReplyBox onSubmit={(text) => props.onReplySubmit!(item.id, text)} />
+      {reply && (
+        <ReplyBox
+          initial={reply.drafts.get(reply.path, { mode: "reply", id: item.id })?.initial}
+          onSubmit={(text) => reply.onSubmit(item.id, text)}
+          onChange={(text) =>
+            reply.drafts.set({ mode: "reply", path: reply.path, id: item.id, initial: text })
+          }
+        />
       )}
     </div>
   );
@@ -151,8 +160,14 @@ function KeyHint(props: { escape: string }): React.JSX.Element | null {
  * cancel out of. It stays put: a reply clears it, a blank reply is a
  * no-op, Escape drops a draft and leaves the field, and Escape on an
  * empty field falls through to the global close, which shuts the
- * thread. Focus stays on the Back control the subpage opened with. */
-function ReplyBox(props: { onSubmit: (text: string) => void }): React.JSX.Element {
+ * thread. Focus stays on the Back control the subpage opened with.
+ * Every change of the text is reported (Escape's clearing included), so
+ * the caller can keep an unsent reply across leaving the thread. */
+function ReplyBox(props: {
+  initial?: string;
+  onSubmit: (text: string) => void;
+  onChange: (text: string) => void;
+}): React.JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null);
   const commit = (): void => {
     const text = ref.current?.value ?? "";
@@ -174,11 +189,14 @@ function ReplyBox(props: { onSubmit: (text: string) => void }): React.JSX.Elemen
         aria-label="Reply"
         placeholder="Reply…"
         ref={ref}
+        defaultValue={props.initial ?? ""}
+        onChange={(e) => props.onChange(e.currentTarget.value)}
         onKeyDown={boxKeys(commit, (e) => {
           if (!e.currentTarget.value) return; // nothing to drop: the thread closes
           e.stopPropagation();
           e.currentTarget.value = "";
           e.currentTarget.blur();
+          props.onChange("");
         })}
       />
       <div className="mt-2 flex items-center gap-2">
@@ -249,6 +267,9 @@ export function Panel(props: {
   readonlyRevision: number | null;
   onOpenThread: (id: string | null) => void;
   onReplySubmit: (id: string, text: string) => void;
+  /** where the boxes keep their unsent text; null exactly while nothing
+   * writes (compare, a stale revision) */
+  drafts: Drafts | null;
   /** open the composer for the whole fact, or the live selection if any —
    * the buttons' path for readers without a keyboard */
   onBegin: (type: SidecarItem["type"]) => void;
@@ -290,7 +311,11 @@ export function Panel(props: {
         item={openItem}
         anchorState={openItem.anchor ? props.anchorStates.get(openItem.id) : undefined}
         onBack={() => props.onOpenThread(null)}
-        onReplySubmit={readonly ? undefined : props.onReplySubmit}
+        reply={
+          fact && props.drafts
+            ? { drafts: props.drafts, path: fact.path, onSubmit: props.onReplySubmit }
+            : undefined
+        }
       />
     );
   }
@@ -359,6 +384,7 @@ export function Panel(props: {
               key={`edit-${item.id}`}
               composer={composerHere}
               bare
+              drafts={props.drafts}
               onCommit={props.onCommit}
               onCancel={props.onCancel}
             />
@@ -500,6 +526,7 @@ export function Panel(props: {
         <ComposerBox
           composer={props.composer}
           root={props.root}
+          drafts={props.drafts}
           onCommit={props.onCommit}
           onCancel={props.onCancel}
         />
@@ -524,6 +551,9 @@ export function ComposerBox(props: {
   bare?: boolean;
   /** on the front page an unanchored note is about the whole review */
   root?: boolean;
+  /** where the box keeps its text as it goes, and reads it back from
+   * when it mounts — so the text survives the box, not only the fact */
+  drafts: Drafts | null;
   onCommit: (text: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -534,13 +564,14 @@ export function ComposerBox(props: {
   const quote = isNew && composer.anchor ? composer.anchor.quote : undefined;
   const scope = isNew && !composer.anchor ? (props.root ? "whole review" : "whole fact") : undefined;
   const submitLabel = !isNew ? "Save" : composer.type === "question" ? "Ask" : "Comment";
+  const draft = props.drafts?.get(composer.path, composer);
   return (
     <NoteComposer
       kind={isNew ? composer.type : "comment"}
       quote={quote}
       scope={scope}
       submitLabel={submitLabel}
-      initial={isNew ? "" : composer.initial}
+      initial={draft?.initial ?? composer.initial ?? ""}
       bare={props.bare}
       formId="item-form"
       inputId="item-input"
@@ -549,6 +580,7 @@ export function ComposerBox(props: {
       labelId="item-form-label"
       onCommit={props.onCommit}
       onCancel={props.onCancel}
+      onChange={(text) => props.drafts?.set({ ...composer, initial: text })}
     />
   );
 }
@@ -575,10 +607,17 @@ export function NoteComposer(props: {
   labelId?: string;
   onCommit: (text: string) => void;
   onCancel: () => void;
+  /** the text as it changes, for the caller to keep as a draft */
+  onChange: (text: string) => void;
 }): React.JSX.Element {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    ref.current?.focus();
+    // a restored draft continues where it stopped: caret at the end, not
+    // at the start of text already written
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
   }, []);
   const commit = (): void => props.onCommit(ref.current?.value ?? "");
   const tone = props.kind === "comment" ? "item-comment" : "item-question";
@@ -606,6 +645,7 @@ export function NoteComposer(props: {
         aria-label="Note text"
         ref={ref}
         defaultValue={props.initial ?? ""}
+        onChange={(e) => props.onChange(e.currentTarget.value)}
         onKeyDown={boxKeys(commit, (e) => {
           e.stopPropagation();
           props.onCancel();

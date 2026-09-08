@@ -47,9 +47,10 @@ import {
   type ReviewData,
   type Row,
 } from "./model.js";
-import { COARSE, type Composer } from "./common.js";
+import { COARSE, readJson, writeJson, type Composer } from "./common.js";
 import { ChangeBadge, DirView, SelBubble, TreeRow, rowLabel } from "./components.js";
 import { DiffView } from "./compare.js";
+import { Drafts, pruneDrafts } from "./drafts.js";
 import { useMermaidHtml } from "./mermaid.js";
 import { Help, FinishSheet } from "./overlays.js";
 import { Panel } from "./panel.js";
@@ -137,15 +138,11 @@ async function fetchReview(revision?: number): Promise<ReviewData> {
 // revision keeps its seen marks for unchanged facts and clears them exactly
 // where the text changed — GitHub's "Viewed" semantic.
 function seenStore(review: string): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(`rk-seen2:${review}`) ?? "{}");
-  } catch {
-    return {};
-  }
+  return readJson<Record<string, string>>(`rk-seen2:${review}`, {});
 }
 
 function writeSeenStore(review: string, store: Record<string, string>): void {
-  localStorage.setItem(`rk-seen2:${review}`, JSON.stringify(store));
+  writeJson(`rk-seen2:${review}`, store);
 }
 
 // Desktop-only drag handles beside the tree and the review panel. Each
@@ -367,6 +364,8 @@ function App(): React.JSX.Element {
     const prior = previousRevision(next);
     setPrevData(prior === null ? null : await fetchReview(prior));
     setData(next);
+    // drafts for any revision but the served one can no longer be posted
+    pruneDrafts(next.review, next.served);
     // deep links land on their page; revision switches keep the place
     setCursor(cursorFromHash(next.facts));
     setComposer(null);
@@ -732,6 +731,33 @@ function App(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetFact?.path]);
 
+  // ---------- drafts ----------
+  // The text typed into a box is the human's, and outlives the box. The
+  // box remembers it as it goes (panel.tsx) in the browser-local store
+  // bound here; the App decides when a draft is done — a post, a Cancel,
+  // an Escape — and brings the composer back with its draft wherever the
+  // list view of a writable fact shows again: on returning to the fact
+  // (a tree click, back/forward, a reload), on closing a thread that
+  // opened over it, on leaving compare, on the served revision showing
+  // again. An anchored draft brings its highlight back with it.
+  const drafts = data ? new Drafts(data.review, data.served) : null;
+  // the list view of a writable fact is on screen: where a composer can be
+  const composerCanShow =
+    drafts !== null && targetFact !== null && !targetIsGhost && !readOnly && openThreadId === null;
+  useEffect(() => {
+    const fact = targetFact;
+    if (!drafts || !fact || !composerCanShow) return;
+    if (composer && composer.path === fact.path) return;
+    const draft = drafts.noteFor(fact.path, fact.sidecar?.items ?? []);
+    if (!draft) return;
+    setComposer(draft);
+    if (draft.mode !== "new") return;
+    const span = draft.anchor ? resolveAnchor(fact.content, draft.anchor) : null;
+    if (span) setPendingSel({ path: fact.path, start: span.start, end: span.end });
+    else if (!COARSE) setPendingSel(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetFact?.path, composerCanShow]);
+
   // the item whose anchor is lit in the reading pane: the open thread's,
   // else the hovered or focused card's
   const litItemId = openThreadId ?? focusItemId;
@@ -935,6 +961,12 @@ function App(): React.JSX.Element {
     if (!COARSE) {
       setPendingSel(span ? { path: targetFact.path, start: span.start, end: span.end } : null);
     }
+    // a draft already on this fact keeps its text (the box shows it) and
+    // follows the kind and anchor raised now
+    if (drafts) {
+      const prior = drafts.get(targetFact.path, { mode: "new" });
+      if (prior?.mode === "new") drafts.set({ ...prior, type, anchor });
+    }
     setOpenThreadId(null); // the composer renders in the list view
     setComposer({ mode: "new", type, path: targetFact.path, anchor });
     setPanelOpen(true); // on mobile the composer lives in the bottom sheet
@@ -953,7 +985,9 @@ function App(): React.JSX.Element {
     }
   }
 
+  // Cancel and Escape mean it: the draft goes with the box
   function cancelComposer(): void {
+    if (composer) drafts?.delete(composer.path, composer);
     dropComposer();
     closeSheetIfOverlay();
   }
@@ -965,6 +999,7 @@ function App(): React.JSX.Element {
       return;
     }
     const body = text.trim();
+    drafts?.delete(active.path, active);
     setPendingSel(null);
     setLiveSel(null);
     lastSpan.current = null; // a later collapse must not resurrect the bar
@@ -1003,6 +1038,7 @@ function App(): React.JSX.Element {
   function submitReply(id: string, text: string): void {
     const body = text.trim();
     if (!targetFact || targetIsGhost || readOnly || !body) return;
+    drafts?.delete(targetFact.path, { mode: "reply", id });
     mutateFact(targetFact.path, (sidecar) => {
       const item = sidecar.items?.find((i) => i.id === id);
       if (item) (item.thread ??= []).push({ who: "human", text: body });
@@ -1820,6 +1856,7 @@ function App(): React.JSX.Element {
               composer={composer}
               openThreadId={openThreadId}
               readonlyRevision={readonlyRevision}
+              drafts={readOnly ? null : drafts}
               onOpenThread={openThread}
               onReplySubmit={submitReply}
               onBegin={beginItem}
@@ -1913,6 +1950,7 @@ function App(): React.JSX.Element {
         progress={progress}
         openQuestions={openQuestions.total}
         raisedFacts={raisedFacts}
+        drafts={overlay === "finish" && drafts && data ? drafts.count(data.facts) : 0}
         onFinish={() => void finish()}
         onApprove={() => void approve()}
         onClose={() => setOverlay(null)}

@@ -85,6 +85,8 @@ export function FinishSheet(props: {
   progress: { seen: number; total: number };
   openQuestions: number;
   raisedFacts: Fact[];
+  /** boxes with unsent text — a draft survives navigation, not the session */
+  drafts: number;
   onFinish: () => void;
   onApprove: () => void;
   onClose: () => void;
@@ -136,6 +138,19 @@ export function FinishSheet(props: {
               {raised === 1 ? "" : "s"} with notes · {props.openQuestions} open question
               {props.openQuestions === 1 ? "" : "s"}
             </p>
+            {/* a draft outlives the box it was typed in, not the session:
+                the one moment to say so is before the session ends */}
+            {props.drafts > 0 && (
+              <p className="text-[13px]" id="finish-drafts">
+                <strong className="font-[650]">
+                  {props.drafts} unsent draft{props.drafts === 1 ? "" : "s"}
+                </strong>{" "}
+                <span className="text-muted-foreground">
+                  — only posted notes reach the agent. Go back and post or discard{" "}
+                  {props.drafts === 1 ? "it" : "them"} first.
+                </span>
+              </p>
+            )}
             <ul className="max-h-[32vh] list-none overflow-y-auto p-0">
               {props.raisedFacts.map((fact) => {
                 const items = fact.sidecar?.items ?? [];

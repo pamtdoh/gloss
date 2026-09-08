@@ -690,6 +690,87 @@ test("the URL names the page; back and forward walk the visited pages", async ()
   );
 });
 
+test("unsent text survives leaving the fact: back, a tree click, a reload", async () => {
+  const draftStore = () => page.evaluate(() => localStorage.getItem("rk-drafts:design-review:2"));
+
+  // a note mid-sentence, anchored to a selection
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await selectText("Malformed JSON throws inside the request handler");
+  await page.keyboard.press("c");
+  await expect(page.locator("#item-form")).toBeVisible();
+  await page.locator("#item-input").fill("half a thou");
+
+  // a stray tree click loses the box but not the text: back brings the
+  // composer back — kind, quote, highlight, and the caret at the end
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
+  await expect(page.locator("#item-form")).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/#http\/create-link\.md$/);
+  await expect(page.locator("#item-form")).toBeVisible();
+  await expect(page.locator("#item-input")).toHaveValue("half a thou");
+  await expect(page.locator("#item-form-label")).toContainText("comment");
+  await expect(page.locator("#item-form blockquote")).toHaveText("Malformed JSON throws inside the request handler");
+  expect(await page.evaluate(() => [...(CSS as any).highlights.keys()])).toContain("rk-pending");
+  expect(await page.evaluate(() => (document.activeElement as HTMLTextAreaElement).selectionStart)).toBe(
+    "half a thou".length,
+  );
+  await page.locator("#item-input").pressSequentially("ght");
+  await expect(page.locator("#item-input")).toHaveValue("half a thought");
+
+  // ...and so does a reload: the draft is browser-local, not in the files
+  await page.reload();
+  await expect(page.locator("#item-form")).toBeVisible();
+  await expect(page.locator("#item-input")).toHaveValue("half a thought");
+  expect(existsSync(snap2("http/create-link.review.json"))).toBe(false);
+
+  // a reply left in a thread comes back when the thread reopens
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await page.locator(".card.item-question").click();
+  await page.locator("#thread-reply-input").fill("unsent reply");
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+  await page.locator(".card.item-question").click();
+  await expect(page.locator("#thread-reply-input")).toHaveValue("unsent reply");
+
+  // the finish sheet counts what has not been posted
+  await page.locator("#btn-finish").click();
+  await expect(page.locator("#finish-drafts")).toContainText("2 unsent drafts");
+  await page.locator("#finish-sheet").getByRole("button", { name: "Close" }).click();
+  await expect(page.locator("#finish-sheet")).toHaveCount(0);
+  await expect(page.locator("#thread-reply-input")).toHaveValue("unsent reply");
+
+  // posting forgets the draft; so does Escape in the reply box
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await expect(page.locator("#item-input")).toHaveValue("half a thought");
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
+    .toMatchObject({
+      items: [{ id: "c1", type: "comment", anchor: { quote: "Malformed JSON throws inside the request handler" }, text: "half a thought" }],
+    });
+  expect(JSON.parse((await draftStore())!)).toEqual({
+    "slugs/collision-retry.md": {
+      "reply:q1": { mode: "reply", path: "slugs/collision-retry.md", id: "q1", initial: "unsent reply" },
+    },
+  });
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await page.locator(".card.item-question").click();
+  await page.locator("#thread-reply-input").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#thread-reply-input")).toHaveValue("");
+  expect(await draftStore()).toBeNull();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+
+  // leave the review as it was for the tests that follow
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
+  await page.locator('#toast button[aria-label="Dismiss"]').click();
+});
+
 test("theme button toggles dark/light and persists", async () => {
   const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
   expect(await isDark()).toBe(false); // test context is light-scheme

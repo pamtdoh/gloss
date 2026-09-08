@@ -129,6 +129,17 @@ requests with the loopback `Host` and no `Origin` header — a proxied
 request carries the proxy's host and a browser always sends `Origin`,
 so neither remote peers nor web pages can reach it.
 
+Text being typed — a note in the composer, a reply in a thread — is
+not review state until it is posted, so it never touches the files. It
+is not lost before then either: the viewer keeps every unsent box's
+text in the browser (localStorage, per review and revision), and the
+box comes back with it wherever it was left — after a stray back
+button, a tree click, a reload, or a thread opened over it. Only
+posting, Cancel, or Escape forgets a draft. The finish sheet counts
+what is still unsent, since only posted notes reach the agent, and a
+draft lives as long as the browser origin does — a session, while the
+port is ephemeral — never longer than the revision it was typed on.
+
 The viewer can also compare any two revisions of the review — each
 fact's changed Markdown blocks rendered as the reader sees them (a
 source-level diff one toggle away), the overview included, with the
