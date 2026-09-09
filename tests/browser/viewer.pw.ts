@@ -9,10 +9,12 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -110,6 +112,15 @@ function png(width: number, height: number, [r, g, b]: [number, number, number])
   ]);
 }
 
+// two pictures a reviewer pastes into notes; the server names them by
+// content, so the test knows the files before they exist
+const SHOT = png(320, 200, [196, 92, 84]);
+const PASTED = png(300, 300, [84, 92, 196]);
+const noteImage = (bytes: Buffer): string =>
+  createHash("sha1").update(bytes).digest("hex").slice(0, 16) + ".png";
+const SHOT_NAME = noteImage(SHOT);
+const PASTED_NAME = noteImage(PASTED);
+
 async function selectText(needle: string): Promise<void> {
   await page.evaluate((text) => {
     const container = document.getElementById("fact-content")!;
@@ -182,6 +193,11 @@ test.beforeAll(async ({ browser }) => {
     "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in revision 2.\n",
   );
 
+  // a picture nothing references, as a resolved note leaves behind in the
+  // copy the agent iterated — gone once the revision is served
+  mkdirSync(snap2("images/notes"), { recursive: true });
+  writeFileSync(snap2("images/notes/orphan.png"), png(20, 20, [0, 0, 0]));
+
   proc = spawn("node", [cli, "session", "design-review", "--no-browser"], {
     cwd: tmp,
   });
@@ -201,6 +217,8 @@ test.beforeAll(async ({ browser }) => {
     .poll(() => stdoutLines.find((l) => l.event === "session.started"))
     .toBeTruthy();
   const url = stdoutLines.find((l) => l.event === "session.started")!.url as string;
+  expect(existsSync(snap2("images/notes/orphan.png"))).toBe(false);
+  expect(existsSync(snap2("images"))).toBe(false); // and the empty directories with it
   context = await browser.newContext();
   page = await context.newPage();
   await page.goto(url);
@@ -499,7 +517,7 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
   // the subpage is the frame. Reply is its verb, like the cards
   await expect(page.locator("#thread-send")).toHaveText("Reply");
   await expect(page.locator("#thread-reply")).not.toHaveClass(/card/);
-  await expect(page.locator("#thread-reply button")).toHaveCount(1);
+  await expect(page.locator("#thread-reply").getByRole("button", { name: "Cancel" })).toHaveCount(0);
   // escape in the reply box drops the draft and leaves the field; the
   // next escape closes the thread
   await page.locator("#thread-reply-input").focus();
@@ -771,6 +789,122 @@ test("unsent text survives leaving the fact: back, a tree click, a reload", asyn
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
+test("pictures in notes: attach or paste, chips in the box, a file in the revision", async () => {
+  const thumbs = (form: string) => page.locator(`${form} .pic[data-status="done"]`);
+  const upload = (revision: number, type: string, size = 13) =>
+    page.evaluate(
+      async (o) =>
+        (await fetch(`/api/upload?revision=${o.revision}`, {
+          method: "POST",
+          headers: { "content-type": o.type },
+          body: new Uint8Array(o.size),
+        })).status,
+      { revision, type, size },
+    );
+
+  // the attach button feeds a file input
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await page.keyboard.press("c");
+  await expect(page.locator("#item-form")).toBeVisible();
+  await page.locator("#item-file").setInputFiles({ name: "retry-state.png", mimeType: "image/png", buffer: SHOT });
+  await expect(thumbs("#item-form")).toHaveCount(1);
+  expect(existsSync(snap2("images/notes", SHOT_NAME))).toBe(true);
+  await expect(page.locator("#item-form .pic img")).toHaveAttribute(
+    "src",
+    `/asset/2/images/notes/${SHOT_NAME}`,
+  );
+
+  // image data on the clipboard lands the same way (a text paste is untouched)
+  await page.locator("#item-input").focus();
+  await page.evaluate((b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], "image.png", { type: "image/png" }));
+    document
+      .getElementById("item-input")!
+      .dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, PASTED.toString("base64"));
+  await expect(thumbs("#item-form")).toHaveCount(2);
+  await expect(page.locator("#item-input")).toHaveValue("");
+
+  // posted: the words, then one image paragraph per picture, relative to
+  // the fact like a figure — and the card renders them from the revision
+  await page.locator("#item-input").fill("This is what I see after the second retry.");
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json").items[0].text)
+    .toBe(
+      `This is what I see after the second retry.\n\n![retry-state](../images/notes/${SHOT_NAME})\n\n![image](../images/notes/${PASTED_NAME})`,
+    );
+  const cardImages = page.locator('.card[data-id="c1"] .pics img');
+  await expect(cardImages).toHaveCount(2);
+  await expect(cardImages.first()).toHaveAttribute("src", `/asset/2/images/notes/${SHOT_NAME}`);
+  // a picture in a note opens the lightbox like a figure
+  await cardImages.first().click();
+  await expect(page.locator(".pswp")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".pswp")).toHaveCount(0);
+
+  // an edit brings the pictures back as chips; removing one removes its paragraph
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  await expect(page.locator("#item-form .pic")).toHaveCount(2);
+  await expect(page.locator("#item-input")).toHaveValue("This is what I see after the second retry.");
+  await page.locator("#item-form .pic").nth(1).locator(".attach-remove").click();
+  await page.locator("#item-save").click();
+  await expect
+    .poll(() => readSidecar("http/create-link.review.json").items[0].text)
+    .toBe(`This is what I see after the second retry.\n\n![retry-state](../images/notes/${SHOT_NAME})`);
+  // the file it pointed at stays until the session ends (the finish test sees it go)
+  expect(existsSync(snap2("images/notes", PASTED_NAME))).toBe(true);
+
+  // an unsent picture survives a reload like unsent text; the same bytes
+  // are the same file
+  await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
+  await page.keyboard.press("q");
+  await page.locator("#item-file").setInputFiles({ name: "again.png", mimeType: "image/png", buffer: PASTED });
+  await expect(thumbs("#item-form")).toHaveCount(1);
+  await page.reload();
+  await expect(thumbs("#item-form")).toHaveCount(1);
+  await expect(page.locator("#item-form .pic img")).toHaveAttribute(
+    "src",
+    `/asset/2/images/notes/${PASTED_NAME}`,
+  );
+  await page.locator("#item-cancel").click();
+  await expect(page.locator("#item-form")).toHaveCount(0);
+
+  // the thread's reply box takes pictures too; a picture alone is a reply
+  await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
+  await page.locator(".card.item-question").click();
+  await page.locator("#thread-file").setInputFiles({ name: "retry-state.png", mimeType: "image/png", buffer: SHOT });
+  await expect(thumbs("#thread-reply")).toHaveCount(1);
+  await page.locator("#thread-send").click();
+  await expect
+    .poll(() => readSidecar("slugs/collision-retry.review.json").items[0].thread.at(-1).text)
+    .toBe(`![retry-state](../images/notes/${SHOT_NAME})`);
+  await expect(page.locator("#thread-reply .pic")).toHaveCount(0);
+  await expect(page.locator("#thread-page .msg").last().locator("img")).toHaveAttribute(
+    "src",
+    `/asset/2/images/notes/${SHOT_NAME}`,
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#thread-page")).toHaveCount(0);
+  await expect(page.locator(".card.item-question .q-preview")).toContainText("You: [image]");
+
+  // the server takes pictures only, only for the served revision, and
+  // answers an oversize one with the limit rather than a dropped socket
+  expect(await upload(2, "text/plain")).toBe(415);
+  expect(await upload(1, "image/png")).toBe(400);
+  expect(await upload(2, "image/png", 10 * 1024 * 1024 + 1)).toBe(413);
+
+  // leave the review as the tests after expect it
+  await page.locator('.tree .row[data-path="http/create-link.md"]').click();
+  await page.locator('.card[data-id="c1"] .menu-btn').click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
+  await page.locator('#toast button[aria-label="Dismiss"]').click();
+});
+
 test("theme button toggles dark/light and persists", async () => {
   const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
   expect(await isDark()).toBe(false); // test context is light-scheme
@@ -1003,4 +1137,9 @@ test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
   const finished = stdoutLines.find((l) => l.event === "session.finished");
   expect(finished?.summary).toEqual(expectedSummary);
   expect(stdoutLines[stdoutLines.length - 1]).toEqual(expectedSummary);
+
+  // finishing tidies the pictures: the one a reply still shows stays,
+  // the one removed from its note before posting goes
+  expect(existsSync(snap2("images/notes", SHOT_NAME))).toBe(true);
+  expect(existsSync(snap2("images/notes", PASTED_NAME))).toBe(false);
 });

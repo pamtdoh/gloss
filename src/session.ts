@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
+  rmdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -27,6 +29,18 @@ const IMAGE_TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
 };
+
+// Pictures the reviewer pastes into notes: raster only (an SVG can carry
+// script), content-addressed into images/notes/ of the served revision,
+// referenced from the note text like any figure (ARCHITECTURE.md).
+const UPLOAD_TYPES: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+};
+const UPLOAD_LIMIT = 10 * 1024 * 1024;
+const NOTE_IMAGES = "images/notes";
 
 export interface SessionOptions {
   review: string;
@@ -97,6 +111,10 @@ function sidecarPath(revisionDir: string, factPath: string): string {
   return join(revisionDir, factPath.replace(/\.md$/, ".review.json"));
 }
 
+function noteImagesDir(revisionDir: string): string {
+  return join(revisionDir, NOTE_IMAGES);
+}
+
 function readSidecar(revisionDir: string, factPath: string): Sidecar | undefined {
   const path = sidecarPath(revisionDir, factPath);
   if (!existsSync(path)) return undefined;
@@ -107,16 +125,64 @@ function readSidecar(revisionDir: string, factPath: string): Sidecar | undefined
   }
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+/** The request body, or null once it passes the limit. The rest is then
+ * drained, not kept, so the reply still reaches the browser — a destroyed
+ * socket would read as a network failure instead of a 413. */
+async function readBytes(req: IncomingMessage, limit: number): Promise<Buffer | null> {
   return new Promise((resolvePromise, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 1_000_000) reject(new Error("body too large"));
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on("data", (chunk: Buffer) => {
+      if (total > limit) return;
+      total += chunk.length;
+      if (total > limit) chunks.length = 0;
+      else chunks.push(chunk);
     });
-    req.on("end", () => resolvePromise(body));
+    req.on("end", () => resolvePromise(total > limit ? null : Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+async function readBody(req: IncomingMessage): Promise<string> {
+  const bytes = await readBytes(req, 1_000_000);
+  if (bytes === null) throw new Error("body too large");
+  return bytes.toString("utf8");
+}
+
+/** Pasted pictures no note mentions any more. images/notes/ is the one
+ * place the tool writes files into a revision, so the tool tidies it: a
+ * composer cancelled after a paste, a thumbnail removed before posting,
+ * or a note resolved in the copy that became this revision each leave a
+ * file nothing references. Runs on the served revision only — when it is
+ * served, so the copy the agent just iterated is clean before anyone
+ * reads it, and when it finishes, for what the session itself orphaned.
+ * Older revisions are never touched. */
+function pruneNoteImages(revisionDir: string): void {
+  const dir = noteImagesDir(revisionDir);
+  if (!existsSync(dir)) return;
+  const texts: string[] = [];
+  for (const factPath of walkFacts(revisionDir)) {
+    if (!existsSync(sidecarPath(revisionDir, factPath))) continue;
+    const sidecar = readSidecar(revisionDir, factPath);
+    // a sidecar that does not parse may still mention a picture: a
+    // destructive tidy stays its hand rather than guess
+    if (!sidecar) return;
+    for (const item of sidecar.items ?? []) {
+      if (item.text) texts.push(item.text);
+      for (const turn of item.thread ?? []) texts.push(turn.text);
+    }
+  }
+  const mentioned = texts.join("\n");
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || mentioned.includes(`${NOTE_IMAGES}/${entry.name}`)) continue;
+    unlinkSync(join(dir, entry.name));
+  }
+  // the directories go with the last file; an agent's own images/ stays
+  if (readdirSync(dir).length === 0) {
+    rmdirSync(dir);
+    const images = join(revisionDir, "images");
+    if (readdirSync(images).length === 0) rmdirSync(images);
+  }
 }
 
 export function runSession(cwd: string, opts: SessionOptions): void {
@@ -177,9 +243,19 @@ export function runSession(cwd: string, opts: SessionOptions): void {
     });
   };
 
-  const finishSession = (res: ServerResponse, payload: object, revision: number): void => {
+  // The session's last act: tidy the served revision's pictures, do the
+  // caller's own step (approve's copy) on the tidied files, answer, and
+  // exit once the answer is out.
+  const finishSession = (
+    res: ServerResponse,
+    payload: object,
+    revision: number,
+    act?: () => void,
+  ): void => {
     if (finishing) return;
     finishing = true;
+    if (revision === defaultRevision) pruneNoteImages(revisionDir(revision));
+    act?.();
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(payload), () => {
       const summary = computeSummary(revision);
@@ -197,6 +273,8 @@ export function runSession(cwd: string, opts: SessionOptions): void {
       res.writeHead(status, { "content-type": "application/json" });
       res.end(JSON.stringify(value));
     };
+    const revisionParam = (url: URL): number =>
+      url.searchParams.has("revision") ? Number(url.searchParams.get("revision")) : defaultRevision;
     try {
       const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
       const hostOk =
@@ -343,9 +421,7 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         return res.end(readFileSync(abs));
       }
       if (req.method === "GET" && url.pathname === "/api/review") {
-        const revision = url.searchParams.has("revision")
-          ? Number(url.searchParams.get("revision"))
-          : defaultRevision;
+        const revision = revisionParam(url);
         if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
         const dir = revisionDir(revision);
         const facts = walkFacts(dir).map((factPath) => ({
@@ -397,6 +473,29 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         }
         return sendJson(200, { ok: true });
       }
+      if (req.method === "POST" && url.pathname === "/api/upload") {
+        // a picture for a note: stored under the served revision, named by
+        // its content so a retry or a repeat paste is the same file, and
+        // handed back as the revision-relative path the note will write
+        const revision = revisionParam(url);
+        if (revision !== defaultRevision) {
+          return sendJson(400, { ok: false, error: `revision ${revision} is read-only — this session serves ${defaultRevision}` });
+        }
+        const mime = (req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+        const ext = UPLOAD_TYPES[mime];
+        if (!ext) return sendJson(415, { ok: false, error: "images only: PNG, JPEG, GIF, or WebP" });
+        const bytes = await readBytes(req, UPLOAD_LIMIT);
+        if (bytes === null) {
+          return sendJson(413, { ok: false, error: `image too large (${UPLOAD_LIMIT / 1024 / 1024} MB limit)` });
+        }
+        if (bytes.length === 0) return sendJson(400, { ok: false, error: "empty image" });
+        const name = createHash("sha1").update(bytes).digest("hex").slice(0, 16) + ext;
+        const dir = noteImagesDir(revisionDir(revision));
+        mkdirSync(dir, { recursive: true });
+        const target = join(dir, name);
+        if (!existsSync(target)) writeFileSync(target, bytes);
+        return sendJson(200, { ok: true, path: `${NOTE_IMAGES}/${name}` });
+      }
       if (req.method === "POST" && url.pathname === "/api/finish") {
         const body = JSON.parse((await readBody(req)) || "{}");
         return finishSession(res, { ok: true }, body.revision ?? defaultRevision);
@@ -407,8 +506,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
         if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
         const approvedDir = join(reviewDir, "approved");
         if (existsSync(approvedDir)) return sendJson(409, { ok: false, error: "approved/ already exists" });
-        cpSync(revisionDir(revision), approvedDir, { recursive: true });
-        return finishSession(res, { ok: true }, revision);
+        return finishSession(res, { ok: true }, revision, () =>
+          cpSync(revisionDir(revision), approvedDir, { recursive: true }),
+        );
       }
       return sendJson(404, { ok: false, error: "not found" });
     } catch (error) {
@@ -418,6 +518,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
 
   server.listen(0, "127.0.0.1", () => {
     const port = (server.address() as { port: number }).port;
+    // the revision may be a copy the agent just iterated: pictures of the
+    // notes it resolved are gone before the human reads it
+    pruneNoteImages(revisionDir(defaultRevision));
     // where `gloss reply` finds this run — written after bind so the file
     // never names a port nothing listens on
     writeFileSync(

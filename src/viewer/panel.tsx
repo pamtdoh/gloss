@@ -11,10 +11,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { SidecarItem, ThreadEntry } from "../summary.js";
+import { AttachField, Pictures, useNoteBox, type UploadTarget } from "./attach.js";
+import { splitAttachments } from "./attachments.js";
 import { COARSE, type Composer } from "./common.js";
 import { Md } from "./components.js";
 import type { Drafts } from "./drafts.js";
-import { answeredByAgent, type AnchorState, type Fact } from "./model.js";
+import type { RenderOptions } from "./markdown.js";
+import { answeredByAgent, assetBase, dirOf, type AnchorState, type Fact } from "./model.js";
 import { MOD, keyFor } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
 import { Kbd } from "./ui/kbd.js";
@@ -50,11 +53,36 @@ function KindRow(props: {
   );
 }
 
+/** The one-line summary of a turn: its words, and a word for each picture */
+function previewOf(text: string): string {
+  const { text: words, refs } = splitAttachments(text);
+  const pictures = refs.length === 0 ? "" : refs.length === 1 ? "[image]" : `[${refs.length} images]`;
+  return [words, pictures].filter(Boolean).join(" ");
+}
+
+/** A note's text as the card shows it: the words as Markdown, then its
+ * pictures as thumbnails — the shape the box had before posting. */
+function NoteText(props: {
+  text: string;
+  className: string;
+  render: RenderOptions;
+  /** the pictures open in the lightbox (not on a folded question, which opens its thread) */
+  gallery?: boolean;
+}): React.JSX.Element {
+  const { text, refs } = splitAttachments(props.text);
+  return (
+    <div className={props.className}>
+      {text && <Md block text={text} render={props.render} />}
+      <Pictures refs={refs} assetBase={props.render.assetBase ?? ""} gallery={props.gallery} />
+    </div>
+  );
+}
+
 /** Human and agent turns, both left-aligned: the human's in a tinted
  * card, the agent's as plain markdown under an icon+label header — the
  * tint asymmetry ChatGPT/Claude/Copilot use, mirrored left for a narrow
  * panel, with the label carrying identity so color never stands alone. */
-function Turns(props: { thread: ThreadEntry[] }): React.JSX.Element {
+function Turns(props: { thread: ThreadEntry[]; render: RenderOptions }): React.JSX.Element {
   return (
     <div className="msgs">
       {props.thread.map((turn, i) => {
@@ -73,7 +101,7 @@ function Turns(props: { thread: ThreadEntry[] }): React.JSX.Element {
                 )}
               </span>
             )}
-            <Md block className="msg-body" text={turn.text} />
+            <NoteText className="msg-body" text={turn.text} render={props.render} gallery />
           </div>
         );
       })}
@@ -84,11 +112,20 @@ function Turns(props: { thread: ThreadEntry[] }): React.JSX.Element {
 function ThreadView(props: {
   item: SidecarItem;
   anchorState: AnchorState | undefined;
+  /** how the notes' pictures resolve: the revision they were raised on,
+   * and the fact's directory inside it */
+  render: RenderOptions;
   onBack: () => void;
   /** absent when the notes are read-only (compare, a stale revision):
    * no reply box, and no "your turn" since there is no turn to take.
-   * Present, it brings the store the box remembers its text in. */
-  reply?: { drafts: Drafts; path: string; onSubmit: (id: string, text: string) => void };
+   * Present, it brings the store the box remembers its text in and the
+   * revision its pictures upload to. */
+  reply?: {
+    drafts: Drafts;
+    path: string;
+    upload: UploadTarget;
+    onSubmit: (id: string, text: string) => void;
+  };
 }): React.JSX.Element {
   const item = props.item;
   const reply = props.reply;
@@ -116,10 +153,11 @@ function ThreadView(props: {
         {reply && answeredByAgent(item) && <span className="chip q">your turn</span>}
       </div>
       {item.anchor?.quote && <blockquote>{item.anchor.quote}</blockquote>}
-      <Turns thread={item.thread ?? []} />
+      <Turns thread={item.thread ?? []} render={props.render} />
       {reply && (
         <ReplyBox
           initial={reply.drafts.get(reply.path, { mode: "reply", id: item.id })?.initial}
+          upload={reply.upload}
           onSubmit={(text) => reply.onSubmit(item.id, text)}
           onChange={(text) =>
             reply.drafts.set({ mode: "reply", path: reply.path, id: item.id, initial: text })
@@ -165,15 +203,18 @@ function KeyHint(props: { escape: string }): React.JSX.Element | null {
  * the caller can keep an unsent reply across leaving the thread. */
 function ReplyBox(props: {
   initial?: string;
+  upload: UploadTarget;
   onSubmit: (text: string) => void;
   onChange: (text: string) => void;
 }): React.JSX.Element {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const box = useNoteBox(props.upload, props.initial ?? "", props.onChange);
   const commit = (): void => {
-    const text = ref.current?.value ?? "";
+    if (box.busy) return;
+    const text = box.posted();
     if (!text.trim()) return;
     props.onSubmit(text);
-    if (ref.current) ref.current.value = "";
+    if (box.ref.current) box.ref.current.value = "";
+    box.clear();
   };
   return (
     <form
@@ -184,23 +225,27 @@ function ReplyBox(props: {
         commit();
       }}
     >
-      <Textarea
-        id="thread-reply-input"
-        aria-label="Reply"
-        placeholder="Reply…"
-        ref={ref}
-        defaultValue={props.initial ?? ""}
-        onChange={(e) => props.onChange(e.currentTarget.value)}
-        onKeyDown={boxKeys(commit, (e) => {
-          if (!e.currentTarget.value) return; // nothing to drop: the thread closes
-          e.stopPropagation();
-          e.currentTarget.value = "";
-          e.currentTarget.blur();
-          props.onChange("");
-        })}
-      />
+      <AttachField attachments={box} buttonId="thread-attach" inputId="thread-file">
+        <Textarea
+          id="thread-reply-input"
+          aria-label="Reply"
+          placeholder="Reply…"
+          ref={box.ref}
+          defaultValue={box.text}
+          onChange={() => props.onChange(box.posted())}
+          onKeyDown={boxKeys(commit, (e) => {
+            // nothing to drop: the thread closes
+            if (!e.currentTarget.value && box.items.length === 0) return;
+            e.stopPropagation();
+            e.currentTarget.value = "";
+            e.currentTarget.blur();
+            box.clear();
+            props.onChange("");
+          })}
+        />
+      </AttachField>
       <div className="mt-2 flex items-center gap-2">
-        <Button type="submit" size="sm" id="thread-send">
+        <Button type="submit" size="sm" id="thread-send" disabled={box.busy}>
           Reply
         </Button>
         <KeyHint escape="clears" />
@@ -215,6 +260,7 @@ function ReplyBox(props: {
  * card body (wired by the caller) are conveniences. */
 function FoldedQuestion(props: {
   item: SidecarItem;
+  render: RenderOptions;
   /** writable notes show whose move it is */
   yourTurn: boolean;
   onOpen: () => void;
@@ -224,13 +270,11 @@ function FoldedQuestion(props: {
   const last = thread[thread.length - 1];
   return (
     <>
-      <div className="q-text cardtext">
-        <Md block text={thread[0]?.text ?? ""} />
-      </div>
+      <NoteText className="q-text cardtext" text={thread[0]?.text ?? ""} render={props.render} />
       {last && replies > 0 && (
         <div className="q-preview">
           {last.who === "agent" ? "Agent: " : "You: "}
-          {last.text}
+          {previewOf(last.text)}
         </div>
       )}
       <div className="q-meta">
@@ -258,13 +302,17 @@ export function Panel(props: {
   ghost: boolean;
   /** the review's front page: its notes speak to the review as a whole */
   root: boolean;
+  /** the revision the shown notes belong to: where their pictures live,
+   * and where a new one uploads */
+  revision: number;
+  /** compare / stale-revision mode: the notes belong to a revision that
+   * is not served, so nothing writes — no Comment/Ask buttons, menus,
+   * composer, or replies */
+  readonly: boolean;
   anchorStates: Map<string, AnchorState>;
   composer: Composer | null;
   /** id of the question thread opened as a subpage */
   openThreadId: string | null;
-  /** compare / stale-revision mode: the notes belong to this revision
-   * and nothing writes — no Comment/Ask buttons, menus, composer, or replies */
-  readonlyRevision: number | null;
   onOpenThread: (id: string | null) => void;
   onReplySubmit: (id: string, text: string) => void;
   /** where the boxes keep their unsent text; null exactly while nothing
@@ -284,8 +332,10 @@ export function Panel(props: {
   canCompare: boolean;
 }): React.JSX.Element {
   const fact = props.fact;
-  const readonly = props.readonlyRevision !== null;
+  const readonly = props.readonly;
   const items = fact?.sidecar?.items ?? [];
+  const render: RenderOptions = { assetBase: assetBase(props.revision), factDir: dirOf(fact?.path ?? "") };
+  const uploadFor = (factPath: string): UploadTarget => ({ revision: props.revision, factPath });
   const scrollTop = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const panelEl = (): Element | null => rootRef.current?.closest(".panel-col") ?? null;
@@ -310,10 +360,16 @@ export function Panel(props: {
       <ThreadView
         item={openItem}
         anchorState={openItem.anchor ? props.anchorStates.get(openItem.id) : undefined}
+        render={render}
         onBack={() => props.onOpenThread(null)}
         reply={
           fact && props.drafts
-            ? { drafts: props.drafts, path: fact.path, onSubmit: props.onReplySubmit }
+            ? {
+                drafts: props.drafts,
+                path: fact.path,
+                upload: uploadFor(fact.path),
+                onSubmit: props.onReplySubmit,
+              }
             : undefined
         }
       />
@@ -329,7 +385,7 @@ export function Panel(props: {
     <div ref={rootRef}>
       {readonly ? (
         <h2 className="flex items-center justify-between">
-          Notes on revision {props.readonlyRevision}
+          Notes on revision {props.revision}
           {collapse}
         </h2>
       ) : (
@@ -385,6 +441,7 @@ export function Panel(props: {
               composer={composerHere}
               bare
               drafts={props.drafts}
+              upload={uploadFor(composerHere.path)}
               onCommit={props.onCommit}
               onCancel={props.onCancel}
             />
@@ -477,18 +534,19 @@ export function Panel(props: {
               ) : question ? (
                 <FoldedQuestion
                   item={item}
+                  render={render}
                   yourTurn={!readonly && answeredByAgent(item)}
                   onOpen={openThread}
                 />
               ) : (
-                item.text && <Md block className="cardtext" text={item.text} />
+                item.text && <NoteText className="cardtext" text={item.text} render={render} gallery />
               )}
             </div>
           );
         })}
         {readonly && items.length === 0 && (
           <p className="text-muted-foreground text-[13px]">
-            No notes on this fact in revision {props.readonlyRevision}.
+            No notes on this fact in revision {props.revision}.
           </p>
         )}
         {/* the empty state is the manual: the one moment the reviewer will
@@ -527,6 +585,7 @@ export function Panel(props: {
           composer={props.composer}
           root={props.root}
           drafts={props.drafts}
+          upload={uploadFor(props.composer.path)}
           onCommit={props.onCommit}
           onCancel={props.onCancel}
         />
@@ -554,6 +613,7 @@ export function ComposerBox(props: {
   /** where the box keeps its text as it goes, and reads it back from
    * when it mounts — so the text survives the box, not only the fact */
   drafts: Drafts | null;
+  upload: UploadTarget;
   onCommit: (text: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -578,6 +638,7 @@ export function ComposerBox(props: {
       submitId="item-save"
       cancelId="item-cancel"
       labelId="item-form-label"
+      upload={props.upload}
       onCommit={props.onCommit}
       onCancel={props.onCancel}
       onChange={(text) => props.drafts?.set({ ...composer, initial: text })}
@@ -605,21 +666,26 @@ export function NoteComposer(props: {
   submitId: string;
   cancelId: string;
   labelId?: string;
+  upload: UploadTarget;
   onCommit: (text: string) => void;
   onCancel: () => void;
-  /** the text as it changes, for the caller to keep as a draft */
+  /** the text as it changes, for the caller to keep as a draft — the
+   * pictures included, as the Markdown they will post as */
   onChange: (text: string) => void;
 }): React.JSX.Element {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const box = useNoteBox(props.upload, props.initial ?? "", props.onChange);
   useEffect(() => {
     // a restored draft continues where it stopped: caret at the end, not
     // at the start of text already written
-    const el = ref.current;
+    const el = box.ref.current;
     if (!el) return;
     el.focus();
     el.setSelectionRange(el.value.length, el.value.length);
   }, []);
-  const commit = (): void => props.onCommit(ref.current?.value ?? "");
+  const commit = (): void => {
+    if (box.busy) return; // a picture still uploading would be lost
+    props.onCommit(box.posted());
+  };
   const tone = props.kind === "comment" ? "item-comment" : "item-question";
   return (
     <form
@@ -640,19 +706,21 @@ export function NoteComposer(props: {
         </div>
       )}
       {!props.bare && props.quote && <blockquote>{props.quote}</blockquote>}
-      <Textarea
-        id={props.inputId}
-        aria-label="Note text"
-        ref={ref}
-        defaultValue={props.initial ?? ""}
-        onChange={(e) => props.onChange(e.currentTarget.value)}
-        onKeyDown={boxKeys(commit, (e) => {
-          e.stopPropagation();
-          props.onCancel();
-        })}
-      />
+      <AttachField attachments={box} buttonId="item-attach" inputId="item-file">
+        <Textarea
+          id={props.inputId}
+          aria-label="Note text"
+          ref={box.ref}
+          defaultValue={box.text}
+          onChange={() => props.onChange(box.posted())}
+          onKeyDown={boxKeys(commit, (e) => {
+            e.stopPropagation();
+            props.onCancel();
+          })}
+        />
+      </AttachField>
       <div className="mt-2 flex items-center gap-2">
-        <Button type="submit" size="sm" id={props.submitId}>
+        <Button type="submit" size="sm" id={props.submitId} disabled={box.busy}>
           {props.submitLabel}
         </Button>
         <Button

@@ -102,6 +102,12 @@ All review state for a fact lives in a sidecar next to it —
   edits, deletions win), the agent owns its thread entries (an entry the
   incoming copy lacks is re-inserted), so a stale tab can never erase an
   answer, even if something does edit the file directly mid-session.
+- A picture pasted into a note is a file: the session server stores it
+  at `images/notes/<hash>.<ext>` in the served revision, and the note's
+  `text` references it as a Markdown image relative to the fact, exactly
+  like a figure — no field for it. The server deletes files there that
+  no note in the revision references, when it serves the revision and
+  when the session finishes; older revisions are never touched.
 - Resolving a note deletes it from `items`; delete the sidecar when
   nothing remains.
 

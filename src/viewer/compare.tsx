@@ -222,6 +222,7 @@ function RenderedDiff(props: {
           )}
           <div
             className="fact-body rblock-body"
+            data-gallery=""
             data-row={i}
             dangerouslySetInnerHTML={htmls[i]}
           />

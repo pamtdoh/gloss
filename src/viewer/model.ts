@@ -28,6 +28,11 @@ export function dirOf(path: string): string {
   return i === -1 ? "" : path.slice(0, i);
 }
 
+/** where the server serves a revision's images from, e.g. "/asset/1/" */
+export function assetBase(revision: number): string {
+  return `/asset/${revision}/`;
+}
+
 export function nameOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }

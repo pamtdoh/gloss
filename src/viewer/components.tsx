@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { SidecarItem } from "../summary.js";
 import { rangeForSourceSpan } from "./dom-anchor.js";
-import { renderMarkdown } from "./markdown.js";
+import { renderMarkdown, type RenderOptions } from "./markdown.js";
 import {
   changeStatus,
   childEntries,
@@ -121,8 +121,18 @@ export function SelBubble(props: {
 // Markdown rendered behind a stable {__html} object — see factHtmlProp:
 // React 19 diffs dangerouslySetInnerHTML by object identity, so an inline
 // object re-writes the DOM (and re-parses the markdown) on every render.
-export function Md(props: { text: string; block?: boolean; className?: string }): React.JSX.Element {
-  const html = useMemo(() => ({ __html: renderMarkdown(props.text) }), [props.text]);
+// `render` lets a relative image in the text resolve like a fact's figure;
+// without it, it renders as its alt text.
+export function Md(props: {
+  text: string;
+  block?: boolean;
+  className?: string;
+  render?: RenderOptions;
+}): React.JSX.Element {
+  const html = useMemo(
+    () => ({ __html: renderMarkdown(props.text, props.render) }),
+    [props.text, props.render?.assetBase, props.render?.factDir],
+  );
   return props.block ? (
     <div className={props.className} dangerouslySetInnerHTML={html} />
   ) : (

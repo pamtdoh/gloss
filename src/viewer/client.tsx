@@ -31,20 +31,21 @@ import {
 } from "./dom-anchor.js";
 import { renderMarkdown } from "./markdown.js";
 import {
-  ROOT,
+  type AnchorState,
+  assetBase,
   buildRows,
   changeStatus,
   contentMap,
   dirOf,
+  type Fact,
   factStats,
   indexFactOf,
   isRoot,
   nextId,
   normalizeSidecar,
   previousRevision,
-  type AnchorState,
-  type Fact,
   type ReviewData,
+  ROOT,
   type Row,
 } from "./model.js";
 import { COARSE, readJson, writeJson, type Composer } from "./common.js";
@@ -1170,12 +1171,13 @@ function App(): React.JSX.Element {
     endSession("Approve", `Revision ${data?.revision} approved — promoted to approved/.`);
 
   // ---------- lightbox ----------
-  // The images and diagrams of one fact body open in one gallery. Fact
-  // HTML is innerHTML-injected, so the click is delegated from the
-  // reading column rather than carried by the figures themselves.
+  // The images and diagrams of one gallery root — a fact body, a note's
+  // text, a thread turn, each marked data-gallery where it renders — open
+  // together. Their HTML is innerHTML-injected, so the click is delegated
+  // from the app root rather than carried by the figures themselves.
   function openGallery(target: Element): void {
     const figure = target.closest(FIGURE);
-    const body = figure?.closest(".fact-body");
+    const body = figure?.closest("[data-gallery]");
     if (!figure || !body) return;
     const figures = Array.from(body.querySelectorAll(FIGURE));
     const pswp = new PhotoSwipe({
@@ -1306,7 +1308,6 @@ function App(): React.JSX.Element {
     : targetIsGhost
       ? null
       : targetFact;
-  const readonlyRevision = compareOn ? compareBase : staleReadOnly ? data!.revision : null;
   const panelBadge = notesFact ? factStats(notesFact).items : 0;
 
   useEffect(() => pswpRef.current?.close(), [targetFact?.path]);
@@ -1316,7 +1317,7 @@ function App(): React.JSX.Element {
     // a ghost's images live in the revision it was deleted from
     const revision = targetFact.ghost ? (basisRevision ?? data.revision) : data.revision;
     return renderMarkdown(targetFact.content, {
-      assetBase: `/asset/${revision}/`,
+      assetBase: assetBase(revision),
       factDir: dirOf(targetFact.path),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1401,6 +1402,7 @@ function App(): React.JSX.Element {
     <article
       className="fact-body"
       id="fact-content"
+      data-gallery=""
       data-fact-path={targetFact.path}
       ref={readRef as React.RefObject<HTMLElement>}
       dangerouslySetInnerHTML={factHtmlProp}
@@ -1420,8 +1422,8 @@ function App(): React.JSX.Element {
       before={baseMap?.get(targetFact.path) ?? ""}
       after={targetFact.ghost ? "" : targetFact.content}
       layout={diffLayout}
-      baseAsset={`/asset/${compareBase}/`}
-      headAsset={`/asset/${data.revision}/`}
+      baseAsset={assetBase(compareData.revision)}
+      headAsset={assetBase(data.revision)}
       factDir={dirOf(targetFact.path)}
       notes={notesFact?.sidecar?.items}
       litId={litItemId}
@@ -1429,7 +1431,7 @@ function App(): React.JSX.Element {
   );
 
   return (
-    <div className="app">
+    <div className="app" onClick={(e) => openGallery(e.target as Element)}>
       <header className="hdr">
         <Button
           variant="ghost"
@@ -1766,11 +1768,7 @@ function App(): React.JSX.Element {
         )}
         {!treeCollapsed && <TreeResizer />}
 
-        <main
-          className="read-col"
-          ref={readColRef as React.RefObject<HTMLElement>}
-          onClick={(e) => openGallery(e.target as Element)}
-        >
+        <main className="read-col" ref={readColRef as React.RefObject<HTMLElement>}>
           <div className="read-inner">
             {effectiveCursor?.kind === "dir" ? (
               <DirView
@@ -1852,10 +1850,11 @@ function App(): React.JSX.Element {
               fact={notesFact}
               ghost={targetIsGhost}
               root={effectiveCursor !== null && isRoot(effectiveCursor)}
+              revision={compareOn ? compareData.revision : data.revision}
               anchorStates={anchorStates}
               composer={composer}
               openThreadId={openThreadId}
-              readonlyRevision={readonlyRevision}
+              readonly={readOnly}
               drafts={readOnly ? null : drafts}
               onOpenThread={openThread}
               onReplySubmit={submitReply}

@@ -428,7 +428,9 @@ body {
 .fact-body h3 { font-size: 15px; margin: 16px 0 8px; font-weight: 650; }
 .fact-body h4 { font-size: 14px; margin: 14px 0 6px; font-weight: 650; color: var(--muted); }
 .fact-body p { margin: 0 0 12px; }
-.fact-body img { max-width: 100%; cursor: zoom-in; }
+.fact-body img { max-width: 100%; }
+/* a lightbox root's figures open on click (client.tsx openGallery) */
+[data-gallery] img { cursor: zoom-in; }
 /* preflight strips list markers globally; restore them for fact content */
 .fact-body ul, .fact-body ol { margin: 0 0 12px; padding-inline-start: 22px; }
 .fact-body ul { list-style: disc; }
@@ -597,9 +599,7 @@ body {
 .card .cardtext p:last-child { margin-bottom: 0; }
 .card .cardtext code { background: var(--panel-2); border-radius: 4px; padding: 0 4px; font-family: ui-monospace, monospace; font-size: 0.92em; }
 .card .actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
-.composer textarea, .thread-reply textarea {
-  field-sizing: content; min-height: 74px; background: var(--bg);
-}
+.composer textarea, .thread-reply textarea { field-sizing: content; min-height: 74px; }
 /* the composer is the card its text becomes: the kind's uppercase word,
    then the context (whole fact, the quote) as plain text;
    the thread's reply box is the same field without the card — the
@@ -794,4 +794,58 @@ del.rk-dd {
     transition-delay: 0ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* -------------------------------------------------- pictures in notes */
+/* the field: one frame around the text, its pictures, and the attach
+   control, the way a chat composer holds them — the textarea inside hands
+   its border, ring, and ground to the wrapper */
+.field {
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.field:hover { border-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.field:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+}
+.field.drop { border-color: var(--ring); border-style: dashed; background: var(--panel-2); }
+.field textarea, .field textarea:hover, .field textarea:focus-visible {
+  border: 0; box-shadow: none; background: transparent; border-radius: 0;
+  resize: none; /* the field grows with its content; a grip would sit mid-frame */
+}
+/* the pictures above the text, the attach control below it at the right */
+.field > .pics { padding: 10px 12px 0; }
+.field-foot { display: flex; justify-content: flex-end; padding: 0 6px 6px; }
+/* pictures as square thumbnails — in the box before posting, in the card,
+   in a thread turn — so what is posted is what was seen */
+.pics { display: flex; flex-wrap: wrap; gap: 8px; }
+.pic { position: relative; width: 96px; height: 96px; }
+.pic img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+  border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
+}
+.cardtext .pics, .msg-body .pics { margin-top: 8px; }
+.pic.uploading img, .pic.error img { opacity: .35; }
+.pic.error img { border-color: var(--red); }
+.attach-spin { position: absolute; inset: 0; margin: auto; color: var(--text); }
+/* the remove control sits in the corner; a failed upload shows its retry
+   over the picture */
+.attach-remove, .attach-retry {
+  position: absolute; display: inline-flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer;
+}
+.attach-remove {
+  top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 72%, transparent); color: var(--bg);
+}
+.attach-remove:hover { background: var(--text); }
+.attach-retry {
+  inset: 0; margin: auto; width: 28px; height: 28px; border-radius: 999px;
+  background: var(--bg); color: var(--red); border: 1px solid var(--red);
+}
+/* a picture written into the words themselves stays a bounded figure */
+.cardtext > div:not(.pics) img, .msg-body > div:not(.pics) img {
+  display: block; max-width: 100%; max-height: 180px; width: auto;
+  border-radius: 6px; border: 1px solid var(--line-soft); margin: 6px 0 0;
 }
