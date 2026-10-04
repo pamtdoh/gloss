@@ -1,25 +1,32 @@
 # Gloss
 
-**Fact-first review ergonomics for agent-built software.** Gloss turns
-whatever your agent built into a fact tree you review — comment to
-change it, ask to understand it, approve to build it.
+**Audit what your agent built, one claim at a time.** Gloss turns the
+state of a system, its design, or a plan into a tree of small Markdown
+facts you can check in detail — cut what isn't needed, change what's
+wrong, and take back control of what actually gets built.
+
+Agent-built software collects things nobody asked for: a fallback
+here, an extra mode there, two components where one would do. In a
+long plan or a large diff they slip past. Split into one decidable
+claim per file, each is small enough to judge and easy to strike.
 
 ![The Gloss viewer](docs/viewer.png)
 
 ## How it works
 
-1. Point the skill at anything — a feature, the recent changes, a
-   design doc, a whole repo. Your prompt is the scope.
+1. Point the skill at anything — a running system, a feature, the
+   recent changes, a design doc, a plan, a whole repo. Your prompt is
+   the scope.
 2. The agent condenses what it finds into a **fact tree**: small,
    decidable claims, each carrying the evidence to judge it —
    screenshots, transcripts, probes captured from the running app —
-   so you never read the source.
+   so you audit the design without reading the source.
 3. You review with the moves you know from code review. **Comment**
-   on a fact to change the design: the agent resolves every comment
-   in the next revision of the tree. **Ask** to understand: the agent
-   answers in the thread, live, while you keep reading. Notes on the
-   overview, the tree's front page, speak to the review as a whole —
-   its altitude, its focus, or a request for a cold read.
+   on a fact to cut, simplify, or change it: the agent resolves every
+   comment in the next revision of the tree. **Ask** to understand:
+   the agent answers in the thread, live, while you keep reading.
+   Notes on the overview, the tree's front page, speak to the review
+   as a whole — its altitude, its focus, or a request for a cold read.
 4. When the tree says what you mean, approve it. The approved design
    is what the agent implements.
 

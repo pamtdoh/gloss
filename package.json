@@ -1,7 +1,7 @@
 {
   "name": "gloss-review",
   "version": "0.1.10",
-  "description": "Files-first design review: an agent condenses a repo's design into decidable facts, a human reviews them, the approved revision drives implementation",
+  "description": "Audit what your agent built, one claim at a time: an agent turns a system, its design, or a plan into small decidable Markdown facts; you cut what isn't needed, change what's wrong, and approve what gets built",
   "license": "MIT",
   "type": "module",
   "bin": {
