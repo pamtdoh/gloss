@@ -6,211 +6,152 @@ description: Generate a files-first design review of a repository as small, deci
 # gloss
 
 Gloss condenses a codebase's design into small facts — one Markdown
-file each, reviewable without reading source — as plain files in the
-repo's reviews directory. Read and write them with your normal tools.
-A revision holds two kinds of files: fact `.md` files are your
-output, and sidecars (`*.review.json`) are the human's review state,
-which the review session creates.
+file each, judged without reading source. You write the facts; the
+human reviews them in a viewer, which records their notes in sidecar
+files (`*.review.json`) next to each fact.
 
 ## Where reviews live
 
-```
-gloss dir
-```
+`gloss dir` prints `{"ok":true,"path":"…"}`: this repo's reviews
+directory, in the OS temp directory outside the repo. `<reviews>`
+below means that path. Run it from anywhere in the repo whenever you
+need the path, including after a compaction, rather than guessing.
+Reviews are working material, so never write them into the repo; if
+the human wants to keep one, copy it where they say, since temp
+directories don't survive every reboot.
 
-prints `{"ok":true,"path":"…"}`: this repo's reviews directory, an
-absolute path in the OS temp directory, outside the repo. Run it
-before touching any review — from anywhere in the repo, any time you
-need the path again, such as after a compaction. `<reviews>` below
-means that path. Never guess it, and never write reviews inside the
-repo: a review is working material, not a commit. Temp directories do
-not survive every reboot, so if the human wants to keep a review,
-copy it wherever they say.
+## Scope and altitude come from the prompt
 
-## The prompt sets the scope and the altitude
+What the user asked to have reviewed is the scope. If it is
+ambiguous, ask, or state the scope you inferred when you present the
+review. The prompt also sets the altitude, the level of detail the
+facts descend to: "review the overall design" stays at the decisions
+that shape the system, "review the page components and their fields"
+goes down to fields, and "I want to understand how X works" teaches
+until a cold reader could follow the moving parts.
 
-Whatever the user asked to have reviewed *is* the scope — Gloss has no
-scoping semantics of its own. If the prompt is ambiguous, ask, or
-state the scope you inferred when you present the review.
-
-The prompt also sets the altitude: the level of detail the facts
-descend to. "Review the overall design" asks for the decisions that
-shape the system, so the facts stay at that level. "Review the page
-components and their fields" names the detail itself, so the facts go
-there. "I want to understand how X works" asks for teaching, so
-explain until a cold reader could follow the moving parts.
-
-When the prompt names no altitude, stay high: a review costs the
-human one reading pass, and depth nobody asked for multiplies facts
-without adding decisions. Detail below the altitude is named, not
-elaborated — a fact states that a layer exists and what it leaves
-out, so the reviewer can pull it with a question or a comment. The
-conversation before the invocation is context, not scope: a detail
-you discussed at length earns a fact only when the requested altitude
+When the prompt names no altitude, stay high: depth nobody asked for
+multiplies facts without adding decisions. Name detail below the
+altitude in a sentence instead of elaborating it, so the reviewer can
+pull it with a note. Earlier conversation is context, not scope — a
+detail you discussed at length earns a fact only when the altitude
 needs it.
 
 ## Generate revision 1
 
-1. **Run `gloss dir`** to learn `<reviews>` (idempotent).
-
-2. **Read the code — and run it when facts will need evidence.**
-   Organize by what the system *is*, not by its directory layout.
-   Whenever facts will need evidence only execution can produce
-   (screenshots, transcripts, probes — any visual scope qualifies),
-   get the app runnable now, staged state is fine, and keep it so
-   through writing. Captured figures go in `images/` at the
-   revision root (the writing guide's Figures section governs
-   them). Ask the user first only when getting it running would
-   need setup you'd have to build.
-
-3. **Create `<reviews>/<review>/1/`**, naming the review in short
-   kebab-case from the prompt (e.g. `checkout-flow`).
-
-4. **Write the facts.** How to write each fact is the writing guide
-   in [references/writing-facts.md](references/writing-facts.md),
-   installed next to this file; read it before the first fact. Its
-   core: the reviewer never opens the code — everything needed to
-   judge a claim lives inside the fact. Shape the tree yourself, to
-   mirror the design's shape:
-
-   - Split within the altitude, not below it — every extra file is
-     another decision the reviewer must sit through.
-   - Kebab-case filenames named for the subject
-     (`collision-retry.md`, not `fact-07.md`); numeric prefixes
-     (`10-auth.md`) where the group tells a story, since everything
-     sorts alphabetically.
+1. Run `gloss dir`.
+2. Read the code, organizing by what the system *is* rather than its
+   directory layout. If facts will need evidence only execution
+   produces — screenshots, transcripts, probes; any visual scope
+   does — get the app running now (staged state is fine) and keep it
+   running through writing. Ask first only if running it needs setup
+   you would have to build.
+3. Create `<reviews>/<review>/1/`, naming the review in short
+   kebab-case from the prompt (`checkout-flow`).
+4. Read [references/writing-facts.md](references/writing-facts.md),
+   installed next to this file, then write the facts. Shape the tree
+   to mirror the design:
+   - Split within the altitude, not below it — each file is another
+     decision the reviewer sits through.
+   - Name files for their subject in kebab-case (`collision-retry.md`,
+     not `fact-07.md`). Everything sorts alphabetically, so use
+     numeric prefixes (`10-auth.md`) where a group tells a story.
    - A directory that forms a coherent group may carry an
-     `_index.md` — a fact about the group as a whole that also holds
-     the group's shared context.
-   - The revision root carries an `_index.md` too: the overview, one
-     fact stating the scope, the altitude, and how the tree is laid
-     out. The viewer opens on it, so it is the first thing the
-     reviewer reads, and notes left on it are notes on the review as
-     a whole.
-   - State the design, don't review it: facts describe what the
-     design does, sharp edges included, in neutral terms. The
-     verdict belongs to the human.
+     `_index.md`: a fact about the group that also holds its shared
+     context.
+   - The revision root always carries an `_index.md`, the overview:
+     the scope, the altitude, and how the tree is laid out. The
+     viewer opens on it, and notes on it are notes on the whole
+     review.
+5. Show the tree and serve the session. Mention once that the human
+   can ask for a cold read.
 
-5. **Hand it over.** Show the tree of `<reviews>/<review>/1/` and serve
-   the session.
+## Cold reads, only when asked
 
-## A cold read, only when asked
+A cold read gives a fresh-context subagent the revision, the review's
+prompt, and the writing guide, and asks where a cold reader stumbles:
+claims they cannot decide or check from the fact alone, terms used
+before they are defined, promised detail that is missing, facts that
+contradict each other. Fresh eyes matter because an author fills gaps
+from memory. Apply what's real and drop what isn't; without
+subagents, read it yourself and say so.
 
-A cold read is a fresh-context subagent given the revision directory,
-the review's prompt, and the writing guide, asked where a cold reader
-stumbles: claims they cannot decide or check from the fact alone,
-terms met before they are defined, promised detail that is missing,
-facts that contradict each other. Fresh eyes, not your own re-read —
-the author fills gaps from memory. Apply what's real, drop what's
-invented; if you cannot spawn subagents, read it yourself and say so.
+Run one only when the human asks for it, in a note or in
+conversation, on the revision they name — not because a revision is
+large, seems to need it, or you are running unattended.
 
-It happens only when the human asked for it in so many words, in a
-note or in this session, and it applies to whichever revision they
-named. Never have a revision read cold on your own initiative — not
-because it is large, not because it seems useful, not because you are
-running unattended and cannot ask. When you show a tree, say once
-that they can ask for one.
+## Serve the session
 
-## Serve the session under one supervisor
+`gloss session <review>` serves the latest revision on loopback and
+blocks until the human clicks **Finish review** or approves. Stdout
+is JSONL: `session.started` (with the viewer `url`, to share if no
+browser opened), `question.asked`, `question.replied` (a human turn
+in an existing thread), `session.finished`, then a final JSON
+summary.
 
-```
-gloss session <review>
-```
+Run it as one background process whose stdout streams into your
+context line by line — in Claude Code, the Monitor tool with
+`persistent: true`. Each line wakes you, and the process exiting
+signals completion. A single blocking call would leave questions
+unanswered until the end, and a second watcher would split the
+questions between two of you.
 
-serves the latest revision on loopback and blocks until the human
-clicks **Finish review** or approves. Stdout is JSONL events —
-`session.started` (with the viewer `url` to share if the browser
-didn't open), `question.asked`, `question.replied` (the human
-replied in an existing thread), `session.finished` — then a final
-JSON summary.
+The sidecars, not the events, are the record. If you lose the stream
+or resume after a compaction, read every `*.review.json` in the
+revision: a question whose thread ends with a `"who": "human"` entry
+is waiting on you.
 
-One supervisor owns this process for its whole life: start it as a
-background process whose stdout streams into your context as lines
-arrive. In Claude Code that is the Monitor tool with
-`persistent: true`; each stdout line wakes you, and the process
-exiting is the completion signal. Never cover the review with one
-open-ended blocking call, and never split the stream across two
-watchers — each would answer half the questions.
+## While a session is live
 
-The events are a notification layer; the record is the sidecar
-files. If you lose the stream or resume from a compaction, read
-every `*.review.json` in the revision — any question whose thread
-ends with a `"who": "human"` entry is waiting on you.
+- **The served revision is fixed.** Never edit its fact files: notes
+  anchor to the text the human saw, and an edit would move their
+  feedback onto words they never read. Whatever a note asks for,
+  even mid-session, goes in the next revision.
+- **The code under review holds still.** Reading, running, probing,
+  and scratch scripts are fine; changes to the code the facts
+  describe wait for approval and the gloss-apply skill.
+- **Answer a question like a user message**, from the code rather
+  than from memory — the human is deciding something. Reply with:
 
-## Conduct during a live session
+  ```
+  gloss reply <review> <fact-path> <question-id> --text "…"
+  ```
 
-**The revision on screen is fixed.** Once a session has served a
-revision, never edit its fact files again: every comment and
-question anchors to the text as the human saw it, and an edit
-underneath them re-anchors their feedback to words they never read.
-Whatever a comment or question asks for — even directly, even
-mid-session — lands in the next revision, not in this one.
-
-**Don't change the code under review.** The session exists to reach
-agreement on the design; the code must hold still while it is being
-judged. Reading, running the app, probing, and scratch scripts to
-gather data are all fine. Edits to the code the facts describe wait
-until the design is approved — implementing it is the gloss-apply
-skill's job.
-
-**A question is a prompt, not an interrupt.** It arrives as an
-event, but treat it exactly like a user message: check the code
-before answering, verify what you assert, take the time a correct
-answer needs. The human asked because they are deciding something —
-a fast wrong answer costs more than a slow right one.
-
-**Answer through `gloss reply`.**
-
-```
-gloss reply <review> <fact-path> <question-id> --text "…"
-```
-
-The event's `path` and `id` name the fact and the question. Omit
-`--text` and pipe the answer on stdin when it is long or contains
-quotes; Markdown works. The live session appends your answer to the
-thread and dedupes retries. Never edit a live revision's sidecars by
-hand: the viewer is writing the same files, and a second writer is
-how questions and replies get duplicated. If `gloss reply` says no
-session is running, don't fall back to editing the file — the review
-isn't live, so restart the session or treat the question as
-iteration feedback. Deleting a note from a sidecar means *resolved*, which
-is an iteration act, never a live-session one.
+  using the event's `path` and `id`. For a long answer or one with
+  quotes, omit `--text` and pipe the Markdown on stdin. The session
+  appends the answer and dedupes retries. Never write a live
+  revision's sidecars yourself: the viewer writes the same files, and
+  two writers duplicate notes. If `gloss reply` says no session is
+  running, restart the session or treat the question as iteration
+  feedback; don't edit the file instead.
 
 ## Iterate
 
-When the session finishes with sidecars present:
+When a session finishes with sidecars present:
 
-1. Read every `*.review.json` in the revision wholesale — the root
-   `_index.review.json` first, since notes there set the direction
-   for everything below — together with whatever the human told you
-   in conversation during the session. The notes are the
-   instruction: do not propose, write.
-2. Copy `<reviews>/<review>/<n>` to `<reviews>/<review>/<n+1>`
-   recursively. Revisions are standalone copies — no links, no
-   shared state — and revision `n` stays exactly as reviewed.
-3. In the new revision, resolve what was raised: rewrite, amend,
-   split, deepen, or delete facts per the comments; answer or settle
-   questions. A comment asking for more detail moves that group's
-   altitude down. A note on the overview may speak to the review as
-   a whole — the altitude, a group to expand or drop, a cold read of
-   the next revision — and is resolved like any other note. When you
-   judge a note resolved, delete it from the sidecar; delete the
-   sidecar when nothing remains. Carry unresolved notes forward
-   untouched.
-4. Serve the next session. Silence is agreement: a revision with no
-   sidecars is fully addressed.
+1. Read every `*.review.json` in the revision — the root
+   `_index.review.json` first, since its notes set the direction —
+   along with anything the human said in conversation. The notes are
+   instructions: write the changes, don't propose them.
+2. Copy `<reviews>/<review>/<n>` recursively to `<n+1>`, a standalone
+   copy. Revision `n` stays exactly as reviewed.
+3. In the new revision, resolve each note: rewrite, amend, split,
+   deepen, or delete facts; answer or settle questions. A request for
+   more detail lowers that group's altitude, and an overview note may
+   redirect the whole review. Delete each resolved note from its
+   sidecar, and the sidecar once it is empty; carry unresolved notes
+   forward untouched.
+4. Serve the next session. A revision with no sidecars is fully
+   addressed — silence is agreement.
 
 When a session finishes with no notes and no approval, the human has
-moved the conversation to the terminal. Report the session summary
-and wait for them there. Do not serve the revision again, do not
-write a new one, and never create `approved/` on your own.
+moved to the terminal: report the summary and wait for them. Don't
+serve again, write a new revision, or create `approved/`.
 
 ## Approval
 
-Approval is one act, at the end: the accepted revision copied to
-`<reviews>/<review>/approved/`. The viewer's Approve button does this
-itself; if the human approves in conversation instead, copy the
-revision the same way, remaining sidecars included — approval
-accepts the revision with whatever notes are still open. The
-directory existing *is* the approval; the gloss-apply skill
-requires it.
+Approval is the accepted revision copied to
+`<reviews>/<review>/approved/` — the directory existing is the
+approval, and gloss-apply requires it. The viewer's Approve button
+makes the copy; if the human approves in conversation, copy the
+revision yourself, open notes included.
