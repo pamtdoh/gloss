@@ -14,12 +14,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join, resolve } from "node:path";
 import {
   NOTE_IMAGES,
+  draftDiffers,
   escapesDir,
+  freezeDraft,
   listRevisions,
+  notesToDraft,
   pruneNoteImages,
   readRevision,
   readSidecar,
   resolveFact,
+  reviewExists,
   walkFacts,
   writeAtomic,
   writeSidecar,
@@ -172,7 +176,7 @@ export interface ServeOptions {
 
 export function runServer(cwd: string, opts: ServeOptions): void {
   const reviewDir = join(reviewsDir(cwd), opts.review);
-  if (listRevisions(reviewDir).length === 0) failJson(`review ${opts.review} has no revisions`);
+  if (!reviewExists(reviewDir)) failJson(`no such review: ${opts.review}`);
   if (!acquireLock(reviewDir)) failJson(`a server for ${opts.review} is already running`);
 
   const idleMs = Number(process.env.GLOSS_IDLE_MS) || DEFAULT_IDLE_MS;
@@ -351,16 +355,31 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (req.method !== "POST") return sendJson(405, { ok: false, error: "method not allowed" });
         const body = await readJson(req);
         if (route === "publish") {
-          const revisions = listRevisions(reviewDir);
-          const revision = body.revision === undefined ? revisions.at(-1)! : Number(body.revision);
-          if (!revisions.includes(revision)) return sendJson(404, { ok: false, error: `no such revision: ${revision}` });
+          // which revision this round is on: the one asked for; else the
+          // open round (a re-attach); else the draft, frozen, when it
+          // changed; else the latest again
           const since = seq;
+          let revision: number;
+          let frozen = false;
+          if (body.revision !== undefined) {
+            revision = Number(body.revision);
+            if (!listRevisions(reviewDir).includes(revision)) return sendJson(404, { ok: false, error: `no such revision: ${revision}` });
+          } else if (roundOpen && served !== null) {
+            revision = served;
+          } else if (draftDiffers(reviewDir)) {
+            revision = freezeDraft(reviewDir);
+            frozen = true;
+          } else if (listRevisions(reviewDir).length > 0) {
+            revision = listRevisions(reviewDir).at(-1)!;
+          } else {
+            return sendJson(409, { ok: false, error: `nothing to review yet — write the facts in ${opts.review}/draft/ first` });
+          }
           publish(revision);
           const dir = revisionDir(revision);
           const pending = walkFacts(dir).flatMap((path) =>
             pendingQuestions(readSidecar(dir, path) ?? undefined).map((q) => ({ path, ...q })),
           );
-          return sendJson(200, { ok: true, revision, since, url: viewerUrl(), viewers: viewers.size, pending });
+          return sendJson(200, { ok: true, revision, frozen, since, url: viewerUrl(), viewers: viewers.size, pending });
         }
         if (route === "reply") {
           if (served === null || !roundOpen) {
@@ -570,6 +589,8 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (closed) return sendJson(409, { ok: false, error: closed });
         pruneNoteImages(revisionDir(revision));
         roundOpen = false;
+        // the notes go back to the draft, where the agent resolves them
+        notesToDraft(reviewDir, revision);
         emit("round.finished", { revision, summary: summaryOf(revision) });
         return sendJson(200, { ok: true });
       }

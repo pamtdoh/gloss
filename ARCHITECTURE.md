@@ -52,13 +52,23 @@ review, so one worth keeping is copied out on purpose.
 ```
 <reviews>/                    # what `gloss dir` prints
   checkout-flow/              # one review
-    1/                        # first revision: the fact tree
-    2/                        # a copy of 1/, then iterated
+    draft/                    # the next revision, in progress: the agent's only workspace
+    1/                        # the draft as frozen for round 1, read-only
+    2/                        # ...and for round 2
     approved/                 # a copy of the accepted revision = the approval
 ```
 
-Revisions are standalone copies — no shared data, no lineage metadata.
-Inside a revision the agent shapes the tree: one condensed, decidable fact
+The agent writes facts only in `draft/`, at the same paths round after
+round, and never copies a revision: `gloss session` freezes the draft
+into the next numbered revision when it changed. A frozen revision is
+built aside and renamed into place, and its facts and figures are made
+read-only, so "a published revision is never edited" holds by
+construction. Revisions are standalone copies — no shared data, no
+lineage metadata — so every revision stays plain files, readable by any
+tool, and comparing two is comparing two directories. A review is tens
+of kilobytes; the copies cost nothing that matters.
+
+Inside the draft the agent shapes the tree: one condensed, decidable fact
 per `.md` file; a directory that forms a coherent group may carry an
 `_index.md` (a fact about the group as a whole), and the revision root
 carries one as the overview — the fact the viewer opens on, whose
@@ -116,8 +126,8 @@ All review state for a fact lives in a sidecar next to it —
   `text` may contain Markdown. While a round is open the agent answers
   with `gloss reply <review> <fact-path> <question-id>`: the server
   appends the turn and dedupes retries, so the agent never writes a file
-  the human is writing. Outside a round the agent edits sidecars
-  directly (resolution during iteration is deletion).
+  the human is writing. Between rounds the agent edits the sidecars in
+  the draft directly (resolution is deletion).
 - The viewer never sends a whole sidecar. Every change is one operation
   — create, edit, delete, reply, re-anchor, restore — that the server
   applies to the file as it is on disk, assigning new ids itself. A tab
@@ -143,8 +153,9 @@ only, and it keeps its port: a restart reuses the port in `.server.json`,
 so the address the human opened first stays the address of the review.
 
 A **round** is one revision under review. `gloss session <review>`
-starts the server if none runs, publishes the latest revision (or
-`--rev`), prints `session.started` with the viewer URL, and streams what
+starts the server if none runs, freezes the draft as the next revision
+when it differs from the latest (otherwise the latest is served again;
+`--rev` names one), prints `session.started` with the viewer URL, and streams what
 the agent must act on — `question.asked`, `question.replied` — until the
 human clicks Finish review or approves; then `session.finished` and a
 final JSON summary line, and the process exits. Exiting is the
@@ -154,6 +165,11 @@ Monitor, or an equivalent) can drive a review. Running `gloss session`
 again for the open round re-attaches, and questions still waiting on the
 agent are delivered again — the way back after a lost stream or a
 compaction.
+
+When the human finishes, the round's notes — its sidecars and the
+pictures they show — are copied back into the draft, where the agent
+resolves them in place; the frozen revision keeps them as reviewed.
+Notes the agent leaves in the draft are carried into the next revision.
 
 Publishing a revision moves every open tab on the previous one to it,
 straight into a comparison with what it replaced. The agent can put a

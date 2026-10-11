@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { listRevisions } from "./files.js";
+import { listRevisions, reviewExists } from "./files.js";
 import { emitLine, emitLines, failJson } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
 import { type ServerInfo, pidAlive, readServerInfo } from "./server.js";
@@ -15,7 +15,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function reviewDirOf(cwd: string, review: string): string {
   const dir = join(reviewsDir(cwd), review);
-  if (listRevisions(dir).length === 0) failJson(`no such review: ${review}`);
+  if (!reviewExists(dir)) failJson(`no such review: ${review}`);
   return dir;
 }
 
@@ -105,7 +105,7 @@ export async function runSession(cwd: string, opts: SessionOptions): Promise<voi
   let info = await ensureServer(cwd, opts.review, opts.serveHost);
   const published = await call(info, "publish", { revision: opts.revision }).catch((e) => failJson(String(e.message)));
   const revision: number = published.revision;
-  emitLine({ event: "session.started", review: opts.review, revision, url: published.url });
+  emitLine({ event: "session.started", review: opts.review, revision, frozen: published.frozen, url: published.url });
   // questions already waiting (a re-attach after a lost stream) are
   // delivered again, so the agent never has to go looking
   for (const q of published.pending) emitLine({ event: "question.asked", path: q.path, id: q.id, text: q.text });
@@ -211,8 +211,8 @@ export async function approve(cwd: string, review: string, revision?: number): P
     const result = await call(live, "approve", { revision }).catch((e) => failJson(e.message));
     return emitLine({ ok: true, revision: result.revision });
   }
-  const rev = revision ?? listRevisions(reviewDir).at(-1)!;
-  if (!listRevisions(reviewDir).includes(rev)) failJson(`no such revision: ${rev}`);
+  const rev = revision ?? listRevisions(reviewDir).at(-1);
+  if (rev === undefined || !listRevisions(reviewDir).includes(rev)) failJson(`no such revision: ${rev ?? "none published yet"}`);
   const approvedDir = join(reviewDir, "approved");
   if (existsSync(approvedDir)) failJson("approved/ already exists");
   mkdirSync(approvedDir, { recursive: true });

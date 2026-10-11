@@ -10,10 +10,12 @@ const USAGE = `gloss — files-first design review
 Usage:
   gloss dir           Print (and create) this repo's reviews directory
   gloss session <review> [--rev <n>] [--no-browser] [--serve-host <host>]
-                          Publish the latest revision (or --rev) to the
-                          review's server, starting the server if needed,
-                          then stream JSONL events until the human
-                          finishes or approves, and print a JSON summary.
+                          Freeze <review>/draft/ as the next revision when
+                          it changed (else serve the latest; --rev names
+                          one), publish it to the review's server,
+                          starting the server if needed, then stream
+                          JSONL events until the human finishes or
+                          approves, and print a JSON summary.
                           Run it under a supervisor that streams stdout;
                           the process exiting is the completion signal.
                           Open tabs follow the new revision; a browser is
