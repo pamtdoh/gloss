@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Search } from "lucide-react";
 import { COARSE, keepFocusOutOfFields } from "./common.js";
+import type { ReviewMeta } from "../meta.js";
 import { titleOf, type Fact, type ReviewData } from "./model.js";
 import { SHORTCUTS } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
@@ -217,3 +218,103 @@ export function FinishSheet(props: {
   );
 }
 
+
+const when = (iso: string | undefined): string =>
+  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
+
+/** A commit as people quote it: short, with a mark when the worktree had
+ * uncommitted changes on top of it. */
+export function commitLabel(entry: { commit?: string; dirty?: boolean } | undefined): string | null {
+  if (!entry?.commit) return null;
+  return entry.commit.slice(0, 7) + (entry.dirty ? " + uncommitted" : "");
+}
+
+// Where the review came from and how each round went: review.json, as
+// gloss recorded it — the context a reader needs long after the session.
+export function About(props: { open: boolean; about: ReviewMeta | null; review: string; onClose: () => void }): React.JSX.Element {
+  const meta = props.about;
+  const revisions = Object.entries(meta?.revisions ?? {}).sort(([a], [b]) => Number(a) - Number(b));
+  return (
+    <Dialog open={props.open} onOpenChange={(open) => !open && props.onClose()}>
+      <DialogContent id="about-sheet" className="sm:max-w-[620px]" onCloseAutoFocus={keepFocusOutOfFields}>
+        <DialogHeader>
+          <DialogTitle>About {props.review}</DialogTitle>
+        </DialogHeader>
+        {!meta ? (
+          <p className="text-muted-foreground text-[13px]">Nothing was recorded about where this review came from.</p>
+        ) : (
+          <div className="grid gap-3 text-[13px]">
+            {meta.prompt && (
+              <blockquote id="about-prompt" className="border-line-soft m-0 border-l-2 pl-3 italic">
+                {meta.prompt}
+              </blockquote>
+            )}
+            <dl className="about-facts m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              {meta.repo && (
+                <>
+                  <dt className="text-muted-foreground">Repository</dt>
+                  <dd className="m-0" id="about-repo">
+                    {meta.repo.name}
+                    {meta.repo.remote && <span className="text-muted-foreground"> · {meta.repo.remote}</span>}
+                  </dd>
+                </>
+              )}
+              {meta.started && (
+                <>
+                  <dt className="text-muted-foreground">Started</dt>
+                  <dd className="m-0" id="about-started">
+                    {meta.started.branch ? <code>{meta.started.branch}</code> : "no branch"} in {meta.started.worktree},{" "}
+                    {when(meta.created)}
+                  </dd>
+                </>
+              )}
+              {meta.agent && (
+                <>
+                  <dt className="text-muted-foreground">Agent</dt>
+                  <dd className="m-0">{meta.agent}</dd>
+                </>
+              )}
+              {meta.approved && (
+                <>
+                  <dt className="text-muted-foreground">Approved</dt>
+                  <dd className="m-0" id="about-approved">
+                    revision {meta.approved.revision}, {when(meta.approved.at)}
+                  </dd>
+                </>
+              )}
+            </dl>
+            {revisions.length > 0 && (
+              <table className="about-revisions w-full text-[12.5px]" id="about-revisions">
+                <thead>
+                  <tr className="text-muted-foreground text-left">
+                    <th className="font-normal">Revision</th>
+                    <th className="font-normal">Code</th>
+                    <th className="font-normal">Published</th>
+                    <th className="font-normal">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revisions.map(([n, r]) => (
+                    <tr key={n} data-revision={n}>
+                      <td>{n}</td>
+                      <td>
+                        {commitLabel(r) ? <code>{commitLabel(r)}</code> : "—"}
+                        {r.branch && <span className="text-muted-foreground"> on {r.branch}</span>}
+                      </td>
+                      <td>{when(r.published)}</td>
+                      <td>
+                        {r.finished
+                          ? `${r.comments ?? 0} comment${r.comments === 1 ? "" : "s"}, ${r.questions ?? 0} question${r.questions === 1 ? "" : "s"}`
+                          : "in review"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

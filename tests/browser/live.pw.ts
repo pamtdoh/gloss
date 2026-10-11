@@ -11,6 +11,11 @@ import { fileURLToPath } from "node:url";
 // its server stops.
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+// gloss's home for this suite — never the real ~/.gloss; every CLI and
+// server process the suite starts inherits it
+const glossHome = mkdtempSync(join(tmpdir(), "gloss-home-"));
+process.env.GLOSS_HOME = glossHome;
 const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
@@ -30,8 +35,8 @@ interface Session {
   proc: ChildProcessWithoutNullStreams;
 }
 
-async function startSession(): Promise<Session> {
-  const proc = spawn("node", [cli, "session", "design-review", "--no-browser"], { cwd: tmp });
+async function startSession(...extra: string[]): Promise<Session> {
+  const proc = spawn("node", [cli, "session", "design-review", "--no-browser", ...extra], { cwd: tmp });
   const lines: Record<string, any>[] = [];
   const exited = new Promise<number>((resolve) => proc.on("exit", (code) => resolve(code ?? -1)));
   let buffer = "";
@@ -73,9 +78,16 @@ test.beforeAll(async () => {
   execFileSync("bun", ["run", "build"], { cwd: root });
   tmp = mkdtempSync(join(tmpdir(), "gloss-live-"));
   cpSync(join(root, "tests/fixture"), tmp, { recursive: true });
+  // a real repository, so each revision records the commit it described
+  for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "fixture"]]) {
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+  }
   review = join(gloss("dir").path, "design-review");
   cpSync(join(root, "tests/generated-review/design-review"), review, { recursive: true });
-  first = await startSession();
+  first = await startSession("--prompt", "review the linkbox design");
   url = first.lines.find((l) => l.event === "session.started")!.url;
 });
 
@@ -83,6 +95,7 @@ test.afterAll(async () => {
   for (const context of contexts) await context.close();
   if (tmp) execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
   if (tmp) rmSync(tmp, { recursive: true, force: true });
+  rmSync(glossHome, { recursive: true, force: true });
   if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
 
@@ -186,6 +199,21 @@ test("a new revision opens in the same tab, showing what changed", async () => {
   }
   // the changed scope leads, so the one changed fact is what's listed
   await expect(tabA.locator(".tree .row[data-path='cli/add-and-list.md']")).toBeVisible();
+});
+
+test("the review says where it came from: the request, the repo, each revision's commit", async () => {
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: tmp, encoding: "utf8" }).trim();
+  // the compare bar names the code on each side
+  await expect(tabA.locator("#compare-base-commit")).toHaveText(commit.slice(0, 7));
+  await tabA.locator("#btn-about").click();
+  const about = tabA.locator("#about-sheet");
+  await expect(about.locator("#about-prompt")).toHaveText("review the linkbox design");
+  await expect(about.locator("#about-started")).toContainText("main");
+  await expect(about.locator("#about-revisions tbody tr")).toHaveCount(2);
+  await expect(about.locator('tr[data-revision="1"]')).toContainText("2 comments, 1 question");
+  await expect(about.locator('tr[data-revision="2"]')).toContainText("in review");
+  await tabA.keyboard.press("Escape");
+  await expect(about).toHaveCount(0);
 });
 
 test("changes made while the server is down are kept and sent when it's back", async () => {

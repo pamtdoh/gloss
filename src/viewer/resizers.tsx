@@ -1,28 +1,33 @@
 import * as React from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { type Prefs, getPrefs, setPref, subscribePrefs } from "./prefs.js";
 
 // Desktop drag handles beside the tree and the panel. Each owns one width
-// variable on the root; double-click resets to the stylesheet default.
-const PANEL_W_KEY = "rk-panel-w";
-const TREE_W_KEY = "rk-tree-w";
-for (const [key, prop] of [
-  [PANEL_W_KEY, "--panel-w"],
-  [TREE_W_KEY, "--tree-w"],
-] as const) {
-  const saved = Number(localStorage.getItem(key));
-  if (saved) document.documentElement.style.setProperty(prop, `${saved}px`);
+// variable on the root, saved as a preference when the drag ends;
+// double-click resets to the stylesheet default.
+type WidthKey = "panelWidth" | "treeWidth";
+const PROP: Record<WidthKey, "--panel-w" | "--tree-w"> = { panelWidth: "--panel-w", treeWidth: "--tree-w" };
+
+function applyWidths(prefs: Prefs): void {
+  for (const key of Object.keys(PROP) as WidthKey[]) {
+    const width = prefs[key];
+    if (width) document.documentElement.style.setProperty(PROP[key], `${width}px`);
+    else document.documentElement.style.removeProperty(PROP[key]);
+  }
 }
+applyWidths(getPrefs());
+subscribePrefs(() => applyWidths(getPrefs()));
 
 function ColResizer(props: {
   id: string;
   label: string;
-  prop: "--panel-w" | "--tree-w";
-  storageKey: string;
+  pref: WidthKey;
   widthAt: (clientX: number) => number;
   min: number;
   max: () => number;
 }): React.JSX.Element {
   const [active, setActive] = useState(false);
+  const width = useRef<number | null>(null);
   return (
     <button
       className="col-resizer"
@@ -38,18 +43,17 @@ function ColResizer(props: {
       }}
       onPointerMove={(e) => {
         if (!active) return;
-        const width = Math.round(Math.min(Math.max(props.widthAt(e.clientX), props.min), props.max()));
-        document.documentElement.style.setProperty(props.prop, `${width}px`);
-        localStorage.setItem(props.storageKey, String(width));
+        width.current = Math.round(Math.min(Math.max(props.widthAt(e.clientX), props.min), props.max()));
+        document.documentElement.style.setProperty(PROP[props.pref], `${width.current}px`);
       }}
       onPointerUp={(e) => {
         e.currentTarget.releasePointerCapture(e.pointerId);
         setActive(false);
+        // saved once, when the drag ends, not on every frame of it
+        if (width.current !== null) setPref(props.pref, width.current);
+        width.current = null;
       }}
-      onDoubleClick={() => {
-        document.documentElement.style.removeProperty(props.prop);
-        localStorage.removeItem(props.storageKey);
-      }}
+      onDoubleClick={() => setPref(props.pref, undefined)}
     />
   );
 }
@@ -58,8 +62,7 @@ export const PanelResizer = (): React.JSX.Element => (
   <ColResizer
     id="panel-resizer"
     label="Resize review panel"
-    prop="--panel-w"
-    storageKey={PANEL_W_KEY}
+    pref="panelWidth"
     widthAt={(x) => window.innerWidth - x}
     min={240}
     max={() => Math.min(640, window.innerWidth * 0.5)}
@@ -70,8 +73,7 @@ export const TreeResizer = (): React.JSX.Element => (
   <ColResizer
     id="tree-resizer"
     label="Resize fact tree"
-    prop="--tree-w"
-    storageKey={TREE_W_KEY}
+    pref="treeWidth"
     widthAt={(x) => x}
     min={240}
     max={() => Math.min(520, window.innerWidth * 0.5)}

@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
-import { existsSync, openSync } from "node:fs";
-import { join } from "node:path";
-import { reviewExists } from "./files.js";
+import { chmodSync, existsSync, openSync, readdirSync, rmSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
+import { listRevisions, reviewExists, walkFiles } from "./files.js";
 import { emitLine, emitLines, failJson } from "./protocol.js";
+import { type PublishContext, readMeta } from "./meta.js";
+import { findCheckout, gitState, mainRoot, originUrl } from "./repo.js";
 import { reviewsDir } from "./reviews.js";
 import { type ServerInfo, pidAlive, readServerInfo } from "./server.js";
 import { VERSION } from "./version.js";
@@ -92,8 +94,23 @@ function openBrowser(url: string): void {
   }
 }
 
+/** Where this publish comes from — gathered here, in the checkout the
+ * agent works in, which may not be the one the server started from. */
+function publishContext(cwd: string, prompt: string | undefined): PublishContext {
+  const checkout = findCheckout(cwd);
+  const remote = originUrl(checkout);
+  return {
+    prompt,
+    repo: { name: basename(mainRoot(checkout)), root: mainRoot(checkout), ...(remote ? { remote } : {}) },
+    state: gitState(checkout),
+    agent: process.env.AI_AGENT || (process.env.CLAUDECODE ? "claude-code" : undefined),
+  };
+}
+
 export interface SessionOptions {
   review: string;
+  /** the human's request, recorded with the review the first time */
+  prompt?: string;
   noBrowser: boolean;
   serveHost?: string;
 }
@@ -106,7 +123,9 @@ export async function runSession(cwd: string, opts: SessionOptions): Promise<voi
     failJson(`${opts.review} is approved — start a new review to change it`);
   }
   let info = await ensureServer(cwd, opts.review, opts.serveHost);
-  const published = await call(info, "publish", {}).catch((e) => failJson(String(e.message)));
+  const published = await call(info, "publish", { context: publishContext(cwd, opts.prompt) }).catch((e) =>
+    failJson(String(e.message)),
+  );
   const revision: number = published.revision;
   emitLine({ event: "session.started", review: opts.review, revision, frozen: published.frozen, url: published.url });
   // questions already waiting (a re-attach after a lost stream) are
@@ -219,4 +238,76 @@ export async function approve(cwd: string, review: string, revision?: number): P
   const info = await ensureServer(cwd, review, readServerInfo(reviewDirOf(cwd, review))?.serveHost);
   const result = await call(info, "approve", { revision }).catch((e) => failJson(e.message));
   emitLine({ ok: true, revision: result.revision });
+}
+
+export interface ReviewEntry {
+  name: string;
+  prompt?: string;
+  branch?: string;
+  revisions: number;
+  approved: number | null;
+  /** when the review last changed: its latest record */
+  updated: string;
+  running: boolean;
+}
+
+/** This repository's reviews, newest first. In a terminal, a table;
+ * otherwise the JSON line every command speaks. */
+export async function listReviews(cwd: string): Promise<void> {
+  const root = reviewsDir(cwd);
+  const entries: ReviewEntry[] = [];
+  for (const name of existsSync(root) ? readdirSync(root) : []) {
+    const dir = join(root, name);
+    if (!statSync(dir).isDirectory() || !reviewExists(dir)) continue;
+    const meta = readMeta(dir);
+    const revisions = listRevisions(dir);
+    const times = [
+      meta?.approved?.at,
+      ...Object.values(meta?.revisions ?? {}).flatMap((r) => [r.published, r.finished]),
+    ].filter((t): t is string => !!t);
+    entries.push({
+      name,
+      ...(meta?.prompt ? { prompt: meta.prompt } : {}),
+      ...(meta?.started?.branch ? { branch: meta.started.branch } : {}),
+      revisions: revisions.length,
+      approved: meta?.approved?.revision ?? (existsSync(join(dir, "approved")) ? -1 : null),
+      updated: times.sort().at(-1) ?? statSync(dir).mtime.toISOString(),
+      running: (await liveServer(dir, name)) !== null,
+    });
+  }
+  entries.sort((a, b) => b.updated.localeCompare(a.updated));
+  if (!process.stdout.isTTY) return emitLine({ ok: true, path: root, reviews: entries });
+  if (entries.length === 0) {
+    process.stdout.write(`No reviews yet for this repository (${root}).\n`);
+    return;
+  }
+  for (const e of entries) {
+    const state = e.approved !== null ? "approved" : e.running ? "in review" : `${e.revisions} revision${e.revisions === 1 ? "" : "s"}`;
+    const meta = [state, e.branch, e.updated.slice(0, 10)].filter(Boolean).join(" · ");
+    process.stdout.write(`${e.name}  ${meta}\n${e.prompt ? `  “${e.prompt}”\n` : ""}`);
+  }
+}
+
+/** Open a review in the browser: its server, started if needed, with no
+ * round published — a finished or approved review is read-only. */
+export async function openReview(cwd: string, review: string, noBrowser: boolean): Promise<void> {
+  const reviewDir = reviewDirOf(cwd, review);
+  const info = await ensureServer(cwd, review, readServerInfo(reviewDir)?.serveHost);
+  const url = `http://127.0.0.1:${info.port}/`;
+  if (!noBrowser) openBrowser(url);
+  emitLine({ ok: true, review, url });
+}
+
+/** Delete a review for good: its server stopped first, then its folder. */
+export async function removeReview(cwd: string, review: string): Promise<void> {
+  const reviewDir = reviewDirOf(cwd, review);
+  const live = await liveServer(reviewDir, review);
+  if (live) {
+    await call(live, "stop", {}).catch(() => {});
+    for (let i = 0; i < 50 && pidAlive(live.pid); i++) await sleep(100);
+  }
+  // frozen revisions are read-only; make them deletable everywhere
+  for (const file of walkFiles(reviewDir)) chmodSync(join(reviewDir, file), 0o644);
+  rmSync(reviewDir, { recursive: true, force: true });
+  emitLine({ ok: true, removed: reviewDir });
 }

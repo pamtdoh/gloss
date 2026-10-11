@@ -1,5 +1,5 @@
 import * as React from "react";
-import { CircleHelp, GitCompareArrows, Menu, MessageCircleQuestion, Moon, Sun } from "lucide-react";
+import { CircleHelp, GitCompareArrows, Info, Menu, MessageCircleQuestion, Moon, Sun } from "lucide-react";
 import { BRAND_SVG } from "./brand.js";
 import { COARSE } from "./common.js";
 import { keyFor } from "./shortcuts.js";
@@ -24,6 +24,7 @@ export function Header(props: {
   onTree: () => void;
   onQuestions: () => void;
   onHelp: () => void;
+  onAbout: () => void;
   onTheme: () => void;
   onCompare: () => void;
   onRevision: (revision: number) => void;
@@ -71,6 +72,9 @@ export function Header(props: {
         </span>
       )}
       <span className="spacer" />
+      <Button variant="ghost" size="icon-sm" id="btn-about" aria-label="About this review" title="About this review" onClick={props.onAbout}>
+        <Info />
+      </Button>
       <Button variant="ghost" size="icon-sm" id="btn-help" aria-label="Help" title="Shortcuts & concepts (?)" onClick={props.onHelp}>
         <CircleHelp />
       </Button>

@@ -29,8 +29,9 @@ import {
   indexFactOf,
   isRoot,
 } from "./model.js";
-import { FinishSheet, Help } from "./overlays.js";
+import { About, FinishSheet, Help, commitLabel } from "./overlays.js";
 import { Panel } from "./panel.js";
+import { getPrefs, setPref, subscribePrefs } from "./prefs.js";
 import { PanelResizer, TreeResizer } from "./resizers.js";
 import { useSelection } from "./selection.js";
 import { SHORTCUTS, keyFor } from "./shortcuts.js";
@@ -111,7 +112,7 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
   const [cursor, setCursor] = useState<Row | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [composer, setComposer] = useState<Composer | null>(null);
-  const [overlay, setOverlay] = useState<"help" | "finish" | null>(null);
+  const [overlay, setOverlay] = useState<"help" | "finish" | "about" | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [panelOpen, setPanelOpen] = useState(() => window.matchMedia("(min-width: 1101px)").matches);
   const [treeOpen, setTreeOpen] = useState(false);
@@ -121,10 +122,8 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
   const [scope, setScope] = useState<Scope>("all");
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [seenVersion, setSeenVersion] = useState(0);
-  const [diffLayout, setDiffLayout] = useState<"rendered" | "unified" | "split">(() => {
-    const stored = localStorage.getItem("rk-diff-layout");
-    return stored === "unified" || stored === "split" ? stored : "rendered";
-  });
+  const prefs = useSyncExternalStore(subscribePrefs, getPrefs);
+  const diffLayout = prefs.diffLayout ?? "rendered";
   const readRef = useRef<HTMLElement | null>(null);
   const readColRef = useRef<HTMLElement | null>(null);
   const userMoved = useRef(false);
@@ -711,6 +710,7 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
         }}
         onQuestions={() => moveCursorWhere((f) => factStats(f).questions > 0, 1)}
         onHelp={() => setOverlay((o) => (o === "help" ? null : "help"))}
+        onAbout={() => setOverlay("about")}
         onTheme={theme.toggle}
         onCompare={toggleCompare}
         onRevision={(r) => showRevision(r)}
@@ -746,7 +746,18 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
                   ))}
               </SelectContent>
             </Select>
-            to {viewRev} — read-only
+            {commitLabel(meta.about?.revisions[String(compareRev)]) && (
+              <code className="compare-commit" id="compare-base-commit">
+                {commitLabel(meta.about?.revisions[String(compareRev)])}
+              </code>
+            )}
+            to {viewRev}
+            {commitLabel(meta.about?.revisions[String(viewRev)]) && (
+              <code className="compare-commit" id="compare-head-commit">
+                {commitLabel(meta.about?.revisions[String(viewRev)])}
+              </code>
+            )}{" "}
+            — read-only
           </span>
           <span className="layout-toggle" role="group" aria-label="Diff layout">
             {(["rendered", "unified", "split"] as const).map((layout) => (
@@ -755,10 +766,7 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
                 id={`diff-${layout}`}
                 aria-pressed={diffLayout === layout}
                 className={diffLayout === layout ? "on" : ""}
-                onClick={() => {
-                  setDiffLayout(layout);
-                  localStorage.setItem("rk-diff-layout", layout);
-                }}
+                onClick={() => setPref("diffLayout", layout === "rendered" ? undefined : layout)}
               >
                 {layout === "rendered" ? "Rendered" : layout === "unified" ? "Unified" : "Split"}
               </button>
@@ -940,6 +948,7 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
           )}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
+      <About open={overlay === "about"} about={meta.about} review={meta.review} onClose={() => setOverlay(null)} />
       <FinishSheet
         open={overlay === "finish"}
         data={data}

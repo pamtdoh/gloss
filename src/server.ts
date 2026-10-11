@@ -29,6 +29,8 @@ import {
   writeSidecar,
 } from "./files.js";
 import { applyAgentReply, applyOp, parseOp, pendingQuestions } from "./notes.js";
+import { saveViewerPrefs, viewerPrefs } from "./home.js";
+import { type PublishContext, readMeta, recordApproval, recordFinish, recordPublish } from "./meta.js";
 import { acquireLock, pidAlive } from "./lock.js";
 import { failJson } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
@@ -230,6 +232,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
     approved: approvedRevision(),
     status,
     revisions: listRevisions(reviewDir),
+    about: readMeta(reviewDir),
   });
 
   // ---------- lifecycle ----------
@@ -264,7 +267,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
     served = revision;
     roundOpen = true;
     status = null;
-    emit("revision.published", { revision, revisions: listRevisions(reviewDir) });
+    emit("revision.published", { revision, revisions: listRevisions(reviewDir), about: readMeta(reviewDir) });
   };
 
   const approve = (revision: number): { ok: boolean; status: number; error?: string } => {
@@ -276,9 +279,12 @@ export function runServer(cwd: string, opts: ServeOptions): void {
       pruneNoteImages(draftDir);
       snapshotNotes(reviewDir, served);
       roundOpen = false;
+      const ended = summaryOf(served);
+      recordFinish(reviewDir, opts.review, VERSION, served, { comments: ended.comments, questions: ended.openQuestions });
     }
     cpSync(revisionDir(revision), approvedDir, { recursive: true });
-    emit("review.approved", { revision, summary: summaryOf(revision) });
+    recordApproval(reviewDir, opts.review, VERSION, revision);
+    emit("review.approved", { revision, summary: summaryOf(revision), about: readMeta(reviewDir) });
     setTimeout(() => shutdown("approved"), APPROVAL_GRACE_MS).unref();
     return { ok: true, status: 200 };
   };
@@ -353,6 +359,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
           } else {
             return sendJson(409, { ok: false, error: `nothing to review yet — write the facts in ${opts.review}/draft/ first` });
           }
+          recordPublish(reviewDir, opts.review, VERSION, revision, frozen, (body.context ?? {}) as PublishContext);
           publish(revision);
           const pending = walkFacts(revisionDir(revision)).flatMap((path) =>
             pendingQuestions(readSidecar(draftDir, path) ?? undefined).map((q) => ({ path, ...q })),
@@ -481,6 +488,8 @@ export function runServer(cwd: string, opts: ServeOptions): void {
           return res.end(readFileSync(abs));
         }
         if (url.pathname === "/api/review") return sendJson(200, snapshot());
+        // the user's viewer preferences, shared by every review
+        if (url.pathname === "/api/config") return sendJson(200, viewerPrefs());
         const revisionMatch = /^\/api\/revision\/(\d+)$/.exec(url.pathname);
         if (revisionMatch) {
           const revision = Number(revisionMatch[1]);
@@ -548,6 +557,10 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (opId) appliedOps.set(opId, response);
         return sendJson(200, response);
       }
+      if (req.method === "POST" && url.pathname === "/api/config") {
+        const saved = saveViewerPrefs(await readJson(req));
+        return typeof saved === "string" ? sendJson(400, { ok: false, error: saved }) : sendJson(200, saved);
+      }
       if (req.method === "POST" && url.pathname === "/api/upload") {
         // stored with the notes, in the draft, named by content so a retry
         // or a repeat paste is the same file
@@ -576,7 +589,9 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         pruneNoteImages(draftDir);
         snapshotNotes(reviewDir, revision);
         roundOpen = false;
-        emit("round.finished", { revision, summary: summaryOf(revision) });
+        const summary = summaryOf(revision);
+        recordFinish(reviewDir, opts.review, VERSION, revision, { comments: summary.comments, questions: summary.openQuestions });
+        emit("round.finished", { revision, summary, about: readMeta(reviewDir) });
         return sendJson(200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/api/approve") {
