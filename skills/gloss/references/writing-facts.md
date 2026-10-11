@@ -30,6 +30,13 @@ never leans on:
 - **The code.** The reviewer has none open. Showing a shape (a
   struct, a schema, a signature) is fine, as long as the fact carries
   its claim in its own words.
+- **Other facts.** A fact may name another ("the merge rule, stated
+  in the merge fact"), but must make sense without opening it.
+
+**Each thing is stated once.** When several facts depend on the same
+rule or mechanism, one fact states it and the others name it in a
+clause. A group's `_index.md` holds what its facts share; it doesn't
+restate or list them, since the tree already shows them.
 
 ## What to write
 
@@ -52,14 +59,29 @@ leaves out — and don't elaborate or ground it.
 putting the evidence in the fact:
 
 - A claim they would have to **simulate** (encodings, offsets,
-  ordering, concurrency): walk one real value through it, end to end.
+  ordering, concurrency): walk one real value through it, end to end,
+  along a path the code can actually take. An interleaving or failure
+  you imagined, never traced in the code or produced by running it,
+  is a guess dressed as evidence.
 - An artifact they would have to **imagine** (a UI state, an error,
   CLI or wire output): show the real output, a short transcript, or
-  a figure.
+  a figure. A transcript's commands run exactly as shown, and lines
+  cut from the output are marked with `…`.
 - A quantity or rule they would have to **trust** (a threshold, a
   boundary, an "only when"): show the constant from the code, or a
-  probe where reading can't settle it. An unverified "only" is the
-  easiest false claim to write.
+  probe where reading can't settle it.
+
+**Universal claims are the easiest false claims to write.** "Only",
+"all", "every", "never", "any", "anything else", "guaranteed": each
+holds only if every case does. Check each case — every row of an
+inventory, every route, every caller — and probe at least one hostile
+or malformed input. If a case breaks the claim, the claim is the
+break.
+
+**A "why" comes from a source.** Answer "Why…?" from a code comment,
+a doc, the commit history, or the human; otherwise say the reason
+isn't recorded. A reason you infer is a judgment, and the verdict is
+the reviewer's.
 
 ## Genres
 
@@ -73,7 +95,7 @@ subject demands it.
 | Mechanism | how one piece works | prose + one `Concretely:` walkthrough with a real value |
 | Delta | what changed, at design level | old behavior → new behavior; the observable difference, not the edited lines |
 | Interface | the exact shape of a boundary | fenced code block that *is* the claim; minimal prose around it |
-| Invariant | a guarantee the design maintains | "when ⟨event⟩, ⟨what holds⟩" with an actor and an observable outcome, plus the one violation that would break it |
+| Invariant | a guarantee the design maintains | "when ⟨event⟩, ⟨what holds⟩" with an actor and an observable outcome, plus every way it can break, each traced through all the components it crosses |
 
 One complete fact in the mechanism genre — an opening claim, a
 grounded walkthrough, and question-headed elaboration:
@@ -87,16 +109,17 @@ burns the token and sets a session cookie. Every later request
 from that browser uses the cookie.
 
 Concretely: the `session.started` event prints
-`http://127.0.0.1:37665/auth?token=ba47…`. The first visit burns the
-token and redirects to the viewer with a cookie set. Pasting that
-same URL into a second browser gets a 403, because the token is
-already burned.
+`http://127.0.0.1:37665/auth?token=ba47…`. The first visit loads a
+page that posts the token back; the server burns it and redirects to
+the viewer with a cookie set. Opening that same URL in a second
+browser gets a 403: "This one-time review link has expired."
 
 ## Why a one-time token?
 
-The session URL lands in terminal scrollback and shell history. A
-token that burns on first use means a leaked line cannot open the
-review for anyone else.
+The code comment on the check gives the reason: "with --serve-host
+the viewer is reachable beyond this machine, so a one-time token
+gates a session cookie." Without `--serve-host` the server skips both
+the token and the cookie.
 ```
 
 ## Wording

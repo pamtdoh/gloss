@@ -46,8 +46,9 @@ needs it.
    directory layout. If facts will need evidence only execution
    produces — screenshots, transcripts, probes; any visual scope
    does — get the app running now (staged state is fine) and keep it
-   running through writing. Ask first only if running it needs setup
-   you would have to build.
+   running through writing. Keep probes, scratch scripts, and the
+   app's data outside both the repo and the revision. Ask first only
+   if running it needs setup you would have to build.
 3. Create `<reviews>/<review>/1/`, naming the review in short
    kebab-case from the prompt (`checkout-flow`).
 4. Read [references/writing-facts.md](references/writing-facts.md),
@@ -62,11 +63,16 @@ needs it.
      `_index.md`: a fact about the group that also holds its shared
      context.
    - The revision root always carries an `_index.md`, the overview:
-     the scope, the altitude, and how the tree is laid out. The
-     viewer opens on it, and notes on it are notes on the whole
-     review.
-5. Show the tree and serve the session. Mention once that the human
-   can ask for a cold read.
+     a fact whose title is a claim about the whole, stating the
+     scope, the altitude, and how the tree is laid out. The viewer
+     opens on it, and notes on it are notes on the whole review.
+   - Context the reviewer needs to follow the scope gets a sentence
+     in the fact that needs it, not a fact of its own.
+   - Counts and cross-references ("the group's three facts", "see
+     the redirect fact") go stale as the tree changes; check them
+     against the finished tree.
+5. Show the human the tree, and say once in that message that they
+   can ask for a cold read. Then serve the session.
 
 ## Cold reads, only when asked
 
