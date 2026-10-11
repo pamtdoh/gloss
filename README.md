@@ -53,6 +53,11 @@ Invoke the skill with whatever you want reviewed:
 Plain words work too: "review the design of the checkout flow"
 triggers the skill the same way.
 
+Reviews are working material, so nothing lands in your repo: they
+live in the OS temp directory, one folder per repo, and `gloss dir`
+prints where. Copy a review out if you want to keep it — a reboot
+may clear it.
+
 [ARCHITECTURE.md](ARCHITECTURE.md) documents the conventions the
 skills and the viewer share.
 

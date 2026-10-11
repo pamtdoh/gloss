@@ -7,16 +7,19 @@ description: Implement the approved design facts of a Gloss review. Use when the
 
 Turn an approved Gloss design into code. The contract is the
 `approved/` revision: plain Markdown facts under
-`.gloss/<review>/approved/`, readable with no server running.
+`<reviews>/<review>/approved/`, readable with no server running.
+`<reviews>` is the path `gloss dir` prints — run it first; reviews
+live in the OS temp directory, outside the repo, never in it.
 
 ## Preconditions
 
 1. Identify the review — from the user's prompt, or by listing
-   `.gloss/` if there is only one candidate.
-2. **Require `.gloss/<review>/approved/` to exist.** The directory is
+   `<reviews>` if there is only one candidate.
+2. **Require `<reviews>/<review>/approved/` to exist.** The directory is
    the approval; there is no other marker. If it does not exist, stop and
-   tell the user the review has not been approved yet — offer to run or
-   resume the review instead. Do not implement from a numbered revision.
+   tell the user the review has not been approved yet — or, if the review
+   itself is gone, that the temp directory was cleared — and offer to run
+   or resume the review instead. Do not implement from a numbered revision.
 
 ## Implementing
 
@@ -27,7 +30,7 @@ Turn an approved Gloss design into code. The contract is the
    project's conventions. Where a fact is silent, use your judgment; where
    code you're writing would contradict a fact, stop and raise it with the
    human rather than quietly diverging.
-3. **Do not modify `.gloss/`.** The approved revision is the record of
+3. **Do not modify `<reviews>`.** The approved revision is the record of
    what was agreed, not a working document. If implementation reveals the
    design needs changing, say so — a new review iteration is the place for
    that, not an edit to `approved/`.
