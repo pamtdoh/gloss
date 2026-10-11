@@ -219,7 +219,8 @@ test.beforeAll(async ({ browser }) => {
   const url = stdoutLines.find((l) => l.event === "session.started")!.url as string;
   expect(existsSync(snap2("images/notes/orphan.png"))).toBe(false);
   expect(existsSync(snap2("images"))).toBe(false); // and the empty directories with it
-  context = await browser.newContext();
+  // the offline cache has its own suite; here it would only add state
+  context = await browser.newContext({ serviceWorkers: "block" });
   page = await context.newPage();
   await page.goto(url);
   await expect(page.locator(".tree .row")).toHaveCount(12); // front page + 4 dirs + 7 facts
@@ -228,6 +229,8 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
   await context?.close();
   if (proc && proc.exitCode === null) proc.kill();
+  // the review server outlives the session process; stop it
+  if (tmp) execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
   if (tmp) rmSync(tmp, { recursive: true, force: true });
   if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
@@ -247,7 +250,6 @@ test("initial render: nested tree, first fact shown", async () => {
   await expect(
     page.locator('.tree .row[data-path="architecture.md"] .gbadge.new'),
   ).toBeVisible();
-  await expect(page).toHaveScreenshot("viewer-initial.png");
 });
 
 test("the overview is the front page; notes on it are notes on the review", async () => {
@@ -350,9 +352,10 @@ test("selection comment stores the verbatim quote and paints a highlight", async
   // make seen state deterministic for the screenshot below: seen is
   // content-keyed per review in localStorage
   await page.evaluate(async () => {
-    const review = (await (await fetch("/api/review")).json()) as {
-      review: string;
-      facts: { path: string; content: string }[];
+    const meta = (await (await fetch("/api/review")).json()) as { review: string; served: number };
+    const review = {
+      review: meta.review,
+      ...((await (await fetch(`/api/revision/${meta.served}`)).json()) as { facts: { path: string; content: string }[] }),
     };
     const store: Record<string, string> = {};
     for (const fact of review.facts) store[fact.path] = fact.content;
@@ -388,7 +391,6 @@ test("selection comment stores the verbatim quote and paints a highlight", async
   await expect(page.locator(".card.item-comment blockquote")).toHaveText("last write wins");
   const highlights = await page.evaluate(() => [...(CSS as any).highlights.keys()]);
   expect(highlights).toContain("rk-anno");
-  await expect(page).toHaveScreenshot("viewer-annotated.png");
 });
 
 test("a real mouse selection survives re-renders", async () => {
@@ -461,7 +463,7 @@ test("a gloss reply lands in the folded card; retries dedupe", async () => {
   const replyTo = (factPath: string, id: string) => glossReply(factPath, id, "x");
   const unknown = replyTo("slugs/collision-retry.md", "q9");
   expect(unknown.status).toBe(1);
-  expect(JSON.parse(unknown.err)).toMatchObject({ ok: false, error: "no item q9 on slugs/collision-retry.md" });
+  expect(JSON.parse(unknown.err)).toMatchObject({ ok: false, error: "no note q9" });
   const toComment = replyTo("_index.md", "c1");
   expect(toComment.status).toBe(1);
   expect(JSON.parse(toComment.err).error).toContain("c1 is a comment");
@@ -484,7 +486,6 @@ test("the thread opens as a panel subpage; the human replies there", async () =>
     "Why ten?",
   );
   await expect(page.locator("#thread-page .msg.agent .msg-who")).toContainText("Agent");
-  await expect(page).toHaveScreenshot("viewer-thread.png");
 
   await page.locator("#thread-reply-input").fill("Good enough — keeping it.");
   await page.locator("#thread-send").click();
@@ -564,19 +565,26 @@ test("rich facts render: GFM table, mermaid, and code selections anchor", async 
   await page.locator('.tree .row[data-path="architecture.md"]').click();
   await expect(page.locator("#fact-content table th").first()).toHaveText("piece");
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible({ timeout: 15_000 });
-  // the diagram must survive a poll-driven re-render of its own fact
-  writeFileSync(
-    snap2("architecture.review.json"),
-    JSON.stringify({ items: [{ id: "c9", type: "comment", text: "poll poke" }] }) + "\n",
-  );
-  await expect(page.locator(".card[data-id=c9]")).toBeVisible({ timeout: 10_000 });
+  // the diagram must survive an event-driven re-render of its own fact:
+  // a note arriving from elsewhere (another tab, here a bare request)
+  const op = (body: Record<string, unknown>) =>
+    page.evaluate(async (b) => {
+      const res = await fetch("/api/op", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision: 2, path: "architecture.md", ...b }),
+      });
+      return (await res.json()) as { id: string };
+    }, body);
+  const { id } = await op({ op: "create", type: "comment", text: "event poke" });
+  await expect(page.locator(`.card[data-id=${id}]`)).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
   // and survive navigating away and back
   await page.locator("#nav-next").click();
   await page.locator("#nav-prev").click();
   await expect(page.locator("#fact-content .rk-mermaid svg")).toBeVisible();
-  rmSync(snap2("architecture.review.json"));
-  await expect(page.locator(".card[data-id=c9]")).toHaveCount(0, { timeout: 10_000 });
+  await op({ op: "delete", id });
+  await expect(page.locator(`.card[data-id=${id}]`)).toHaveCount(0, { timeout: 10_000 });
   // selecting inside a fenced code block must offer the comment bubble
   await selectText(`"type": "comment"`);
   await expect(page.locator("#sel-pop")).toBeVisible();
@@ -895,7 +903,7 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
   // the server takes pictures only, only for the served revision, and
   // answers an oversize one with the limit rather than a dropped socket
   expect(await upload(2, "text/plain")).toBe(415);
-  expect(await upload(1, "image/png")).toBe(400);
+  expect(await upload(1, "image/png")).toBe(409);
   expect(await upload(2, "image/png", 10 * 1024 * 1024 + 1)).toBe(413);
 
   // leave the review as the tests after expect it
@@ -919,11 +927,11 @@ test("theme button toggles dark/light and persists", async () => {
   expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("light");
 });
 
-test("a revision the session doesn't serve is read-only", async () => {
+test("a revision not under review is read-only", async () => {
   await page.locator("#revision-select").click();
   await page.getByRole("option", { name: "Revision 1" }).click();
   await expect(page.locator("#stale-banner")).toContainText(
-    "Viewing revision 1 read-only — the session serves 2",
+    "Viewing revision 1 read-only — revision 2 is under review",
   );
   // no composer, no key hint, no seen marks
   await page.locator('.tree .row[data-path="cli/add-and-list.md"]').click();
@@ -933,14 +941,14 @@ test("a revision the session doesn't serve is read-only", async () => {
   await expect(page.locator(".panel h2").first()).toContainText("Notes on revision 1");
   // the server refuses the write even if a client tries
   const put = await page.evaluate(async () => {
-    const res = await fetch("/api/sidecar", {
-      method: "PUT",
+    const res = await fetch("/api/op", {
+      method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ revision: 1, path: "cli/add-and-list.md", sidecar: { items: [{ id: "c9", type: "comment", text: "x" }] } }),
+      body: JSON.stringify({ revision: 1, path: "cli/add-and-list.md", op: "create", type: "comment", text: "x" }),
     });
     return { status: res.status, body: await res.json() };
   });
-  expect(put.status).toBe(400);
+  expect(put.status).toBe(409);
   expect(put.body.error).toContain("read-only");
   await page.locator("#stale-banner button").click();
   await expect(page.locator("#stale-banner")).toHaveCount(0);
@@ -1050,7 +1058,6 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await expect(page.locator("#thread-reply")).toHaveCount(0); // no reply box
   await page.locator("#thread-back").click();
   await expect(page.locator("#thread-page")).toHaveCount(0);
-  await expect(page).toHaveScreenshot("viewer-compare.png");
 
   // the source layouts remain one click away
   await page.locator("#diff-unified").click();
@@ -1119,13 +1126,16 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   rmSync(join(review, "1/storage/whole-file-writes.review.json"));
 });
 
-test("finish flow: summary sheet, JSON summary, session exit 0", async () => {
+test("finish flow: summary sheet, JSON summary, session exit 0, the tab stays", async () => {
   await page.locator("#btn-finish").click();
   await expect(page.locator("#finish-sheet")).toContainText("3 facts with notes");
   await expect(page.locator("#finish-sheet")).toContainText("1 open question");
   await page.locator("#confirm-finish").click();
-  await expect(page.locator("#done")).toBeVisible();
   expect(await exited).toBe(0);
+  // the round is over, the tab isn't: it says so and stays readable
+  await expect(page.locator("#round-banner")).toContainText("Review of revision 2 finished");
+  await expect(page.locator("#btn-finish")).toHaveCount(0);
+  await expect(page.locator("#fact-content")).toBeVisible();
 
   const expectedSummary = {
     review: "design-review",

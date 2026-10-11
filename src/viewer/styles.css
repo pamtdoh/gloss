@@ -316,6 +316,31 @@ body {
   background: var(--red-bg);
   color: var(--red); border-bottom: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
 }
+/* reconnecting is a blip, not a loss: amber until it lasts */
+.conn-banner[data-state="connecting"] {
+  font-weight: 500;
+  background: var(--amber-bg);
+  color: var(--amber); border-bottom-color: color-mix(in srgb, var(--amber) 30%, var(--line));
+}
+/* the round's state: finished (waiting on the agent) or approved */
+.round-banner {
+  flex: none; padding: 6px 14px; font-size: 13px; z-index: 3;
+  background: var(--blue-bg);
+  color: var(--blue); border-bottom: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
+}
+/* what the agent says it is doing, beside the review's name */
+.agent-status {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  font-size: 12.5px; color: var(--muted);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 32ch;
+}
+.agent-status-dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--blue);
+  animation: agent-pulse 1.6s ease-in-out infinite;
+}
+@keyframes agent-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .agent-status-dot { animation: none; } }
 .stale-banner button {
   border: none; background: none; color: var(--amber); font-weight: 650;
   text-decoration: underline; text-underline-offset: 3px; padding: 0 2px;

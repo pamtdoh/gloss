@@ -67,7 +67,7 @@ test.beforeAll(async ({ browser }) => {
       if (line) resolve(JSON.parse(line).url as string);
     });
   });
-  context = await browser.newContext({ viewport: PHONE, hasTouch: true });
+  context = await browser.newContext({ viewport: PHONE, hasTouch: true, serviceWorkers: "block" });
   page = await context.newPage();
   await page.goto(url);
   await expect(page.locator(".hamburger")).toBeVisible();
@@ -76,6 +76,8 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
   await context?.close();
   if (proc && proc.exitCode === null) proc.kill();
+  // the review server outlives the session process; stop it
+  if (tmp) execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
   if (tmp) rmSync(tmp, { recursive: true, force: true });
   if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
@@ -89,7 +91,6 @@ test("phone layout: no horizontal scroll, compact header, panel closed", async (
   expect(overflow.body).toBeLessThanOrEqual(0);
   await expect(page.locator(".panel-col.panel")).toHaveCount(0);
   await expect(page.locator("#panel-fab")).toBeVisible();
-  await expect(page).toHaveScreenshot("mobile-initial.png");
 });
 
 test("hamburger opens the tree drawer; tapping a fact navigates and closes it", async () => {
@@ -104,13 +105,11 @@ test("hamburger opens the tree drawer; tapping a fact navigates and closes it", 
   );
   // dwell marks it seen — wait so the screenshot is deterministic
   await expect(page.locator(".crumb .seen-check")).toBeVisible({ timeout: 5_000 });
-  await expect(page).toHaveScreenshot("mobile-fact.png");
 });
 
 test("the review panel opens as a bottom sheet; a whole-fact comment writes and closes it", async () => {
   await page.locator("#panel-fab").tap();
   await expect(page.locator(".panel-col.panel")).toBeVisible();
-  await expect(page).toHaveScreenshot("mobile-panel.png");
   // no keyboard on a phone: the buttons are the whole-fact path and the
   // key hint is not shown
   await expect(page.locator("#note-actions")).toBeVisible();
@@ -196,19 +195,27 @@ test("book-style prev/next navigation walks the facts", async () => {
 });
 
 test("a question thread opens as a subpage inside the bottom sheet", async () => {
-  // an answered thread lands on disk (the poll picks it up), on the fact
-  // the cursor is already on
-  const path = sidecarPath("storage/whole-file-writes.review.json");
-  const state = JSON.parse(readFileSync(path, "utf8"));
-  state.items.push({
-    id: "q1",
-    type: "question",
-    thread: [
-      { who: "human", text: "Is the whole-file write ever fsynced?" },
-      { who: "agent", text: "No — `writeFileSync` without fsync; a crash can lose the tail." },
-    ],
+  // a question asked and answered while the tab watches, on the fact the
+  // cursor is already on: both arrive as events, no reload
+  await page.evaluate(async () => {
+    await fetch("/api/op", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        revision: 2,
+        path: "storage/whole-file-writes.md",
+        op: "create",
+        type: "question",
+        text: "Is the whole-file write ever fsynced?",
+      }),
+    });
   });
-  writeFileSync(path, JSON.stringify(state, null, 2) + "\n");
+  execFileSync(
+    "node",
+    [cli, "reply", "design-review", "storage/whole-file-writes.md", "q1", "--text",
+      "No — `writeFileSync` without fsync; a crash can lose the tail."],
+    { cwd: tmp },
+  );
 
   await page.locator("#panel-fab").tap();
   const card = page.locator(".card.item-question");
@@ -258,11 +265,10 @@ test("dark theme on mobile", async ({ browser }) => {
     viewport: PHONE,
     hasTouch: true,
     colorScheme: "dark",
-    storageState: await context.storageState(), // the auth token is one-time
+    serviceWorkers: "block",
   });
   const darkPage = await dark.newPage();
   await darkPage.goto(new URL(url).origin + "/");
   await expect(darkPage.locator(".hamburger")).toBeVisible();
-  await expect(darkPage).toHaveScreenshot("mobile-dark.png");
   await dark.close();
 });

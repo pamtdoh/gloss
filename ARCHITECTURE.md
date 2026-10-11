@@ -13,15 +13,17 @@ it — agents follow it by instruction.
   The revisions themselves are the audit trail.
 - **Agents read and write the files directly.** No hashing, no validation,
   no CLI mediation for state. The agent's judgment is the interface.
-  The one exception is `gloss reply` (below): while a session is live,
-  the viewer and the agent would otherwise write the same sidecar file,
-  so that single append goes through the session server.
-- **A served revision is immutable.** Once a session has shown a revision
+  The one exception is the revision under review while its round is
+  open: the human is writing its sidecars through the review server, so
+  the agent's answers go through the server too (`gloss reply`), and
+  one writer owns every live write.
+- **A published revision is immutable.** Once a revision has been shown
   to the human, its fact files are never edited again — feedback anchors
   to the text as shown, and lands in the next revision. The mirror rule
-  holds for review state: only the served revision accepts new comments,
-  questions, or replies; every other revision is read-only in the viewer,
-  and the server rejects writes to it.
+  holds for review state: only the revision under review, while its
+  round is open, accepts new comments, questions, or replies; every
+  other revision is read-only in the viewer, and the server rejects
+  writes to it.
 - **Meaning lives in structure.** Approval is a directory existing,
   resolution is a file being deleted, agreement is the absence of a
   sidecar. No metadata files where structure can carry the semantics.
@@ -67,9 +69,15 @@ Markdown: GFM tables, fenced code, Mermaid diagrams, and images. Every
 figure lives in `images/` at the revision root and is referenced
 relatively (`images/panel.png`, `../images/panel.png` from a
 subdirectory), so figures survive revision copies and are never
-scattered. Names starting with `.` are reserved for the tool — the one
-in use is the per-review `.session` file, present only while a session
-runs.
+scattered. Names starting with `.` are reserved for the tool: the review
+server's files, next to the revisions —
+
+| File | Holds |
+|---|---|
+| `.server.json` | the server's port, pid (while it runs), the agent's key, and the `--serve-host` cookie secret — readable only by the user |
+| `.server.lock` | the running server's pid: one server per review |
+| `.events.jsonl` | the numbered event log; a restarted server rebuilds its state from it |
+| `.server.log` | the server's own output |
 
 ## Review state: sidecars
 
@@ -105,50 +113,82 @@ All review state for a fact lives in a sidecar next to it —
   The viewer fuzzy-re-anchors drifted quotes and shows broken ones as
   detached, never dropped.
 - `thread` entries append in order, labeled `who: human | agent`; all
-  `text` may contain Markdown. During a live session the agent answers
-  with `gloss reply <review> <fact-path> <question-id>` — the session
-  server appends the turn to the file and dedupes retries, so the agent
-  never writes a sidecar the viewer is concurrently writing. The command
-  finds the server through the review's `.session` file and fails when
-  no session is running. With no session live, the agent edits sidecars
-  directly as ever (resolution during iteration is file deletion).
-- The viewer PUTs its whole in-memory copy; the server merges on write
-  instead of overwriting — the viewer owns the set of notes (creations,
-  edits, deletions win), the agent owns its thread entries (an entry the
-  incoming copy lacks is re-inserted), so a stale tab can never erase an
-  answer, even if something does edit the file directly mid-session.
-- A picture pasted into a note is a file: the session server stores it
+  `text` may contain Markdown. While a round is open the agent answers
+  with `gloss reply <review> <fact-path> <question-id>`: the server
+  appends the turn and dedupes retries, so the agent never writes a file
+  the human is writing. Outside a round the agent edits sidecars
+  directly (resolution during iteration is deletion).
+- The viewer never sends a whole sidecar. Every change is one operation
+  — create, edit, delete, reply, re-anchor, restore — that the server
+  applies to the file as it is on disk, assigning new ids itself. A tab
+  that missed someone else's change can only touch the notes it names,
+  so a stale tab erases nothing it never saw. Each operation carries an
+  id, so a retry is answered, not applied twice.
+- A picture pasted into a note is a file: the review server stores it
   at `images/notes/<hash>.<ext>` in the served revision, and the note's
   `text` references it as a Markdown image relative to the fact, exactly
   like a figure — no field for it. The server deletes files there that
-  no note in the revision references, when it serves the revision and
-  when the session finishes; older revisions are never touched.
+  no note in the revision references, when it is published and when its
+  round ends; older revisions are never touched.
 - Resolving a note deletes it from `items`; delete the sidecar when
   nothing remains.
 
-## The session
+## The review server and its rounds
 
-`gloss session <review>` binds an ephemeral loopback port, prints the
-viewer URL, serves the viewer over the revision's files, and blocks
-until the reviewer clicks Finish review (or approves). Stdout is
-JSONL events — `session.started` (with the URL), `question.asked`,
-`question.replied` (a human turn appended to an existing thread),
-`session.finished` — followed by a final JSON summary line; the process
-exiting is the completion signal, so one stdout monitor covers live Q&A
-and completion. The agent runs the session under a supervisor that
-streams stdout (Claude Code's Monitor, or an equivalent); harnesses
-that cannot stream a background process are not supported. While the
-session runs, `<reviews>/<review>/.session` holds the server's pid and
-address — how `gloss reply` finds it — and is removed on exit; a stale
-copy from a killed process is detected by its dead pid. Plain loopback
-sessions have no auth — anything local running as the user can already
-edit the review files directly — just host and origin checks. With `--serve-host` (a private
-proxy hostname, e.g. tailscale serve) the network boundary is real, so
-the URL carries a one-time token that gates a port-scoped session
-cookie. The agent-reply route works without the cookie and accepts only
-requests with the loopback `Host` and no `Origin` header — a proxied
-request carries the proxy's host and a browser always sends `Origin`,
-so neither remote peers nor web pages can reach it.
+Each review has one long-running server process. It owns every write to
+the review's files while it runs, numbers each change as an event in
+`.events.jsonl`, and pushes every event to the open browser tabs (over
+SSE) and to the agent's `gloss session` (as JSONL). It binds loopback
+only, and it keeps its port: a restart reuses the port in `.server.json`,
+so the address the human opened first stays the address of the review.
+
+A **round** is one revision under review. `gloss session <review>`
+starts the server if none runs, publishes the latest revision (or
+`--rev`), prints `session.started` with the viewer URL, and streams what
+the agent must act on — `question.asked`, `question.replied` — until the
+human clicks Finish review or approves; then `session.finished` and a
+final JSON summary line, and the process exits. Exiting is the
+completion signal, so one stdout monitor covers live Q&A and completion,
+and any harness that can stream a background process (Claude Code's
+Monitor, or an equivalent) can drive a review. Running `gloss session`
+again for the open round re-attaches, and questions still waiting on the
+agent are delivered again — the way back after a lost stream or a
+compaction.
+
+Publishing a revision moves every open tab on the previous one to it,
+straight into a comparison with what it replaced. The agent can put a
+status line in the tabs while it works (`gloss status`). A finished
+round leaves the tabs open and readable, saying the agent is at work.
+`gloss approve` approves from the conversation, through the server when
+it runs, so the tabs see it.
+
+The server stops on approval, on `gloss stop`, or after half an hour
+with no tab and no agent connected. If it dies mid-round, the next
+command that needs it starts it again, and it rebuilds the round's state
+from the event log. A `gloss session` in progress does this by itself and
+keeps streaming; a deliberate stop instead ends the session with an
+error. A server of another version, or started with other options, is
+replaced.
+
+The agent's routes require a key from `.server.json`, which only the
+user can read, plus the loopback `Host` and no `Origin` — so neither web
+pages nor other accounts on the machine can drive the review. Plain
+loopback viewing has no auth beyond host and origin checks. With
+`--serve-host` (a private proxy hostname, e.g. tailscale serve) each
+published URL carries a one-time token that sets a cookie; the cookie's
+secret persists across restarts, so a login lasts the review.
+
+### The viewer
+
+The viewer is event-driven: it loads a snapshot, follows the event
+stream, and sends its own changes as operations from an outbox. The
+outbox shows each change at once and keeps it — across a dropped
+connection or a reload — until the server confirms or refuses it.
+A service worker keeps a copy of everything the tab has read (every
+revision is prefetched), so a review stays readable after its server
+stops, reload included; the page says it is reading a saved copy, and
+nothing can be posted or finished from it. Because the port is stable,
+that copy, the seen marks, and the drafts belong to the review.
 
 Text being typed — a note in the composer, a reply in a thread — is
 not review state until it is posted, so it never touches the files. It
@@ -157,9 +197,7 @@ text in the browser (localStorage, per review and revision), and the
 box comes back with it wherever it was left — after a stray back
 button, a tree click, a reload, or a thread opened over it. Only
 posting, Cancel, or Escape forgets a draft. The finish sheet counts
-what is still unsent, since only posted notes reach the agent, and a
-draft lives as long as the browser origin does — a session, while the
-port is ephemeral — never longer than the revision it was typed on.
+what is still unsent, since only posted notes reach the agent.
 
 The viewer can also compare any two revisions of the review — each
 fact's changed Markdown blocks rendered as the reader sees them (a
@@ -173,12 +211,12 @@ nothing.
 
 ## Skills
 
-- **gloss** generates revision `1` from the user's prompt, serves the
-  session, answers questions live through `gloss reply`, iterates by
-  copying the revision and resolving its notes, and promotes the
-  accepted revision to `approved/`. During a live session it treats the
-  served revision and the reviewed code as fixed — feedback lands in
-  the next revision whether it arrives in the viewer or in
+- **gloss** generates revision `1` from the user's prompt, runs a round,
+  answers questions live through `gloss reply`, iterates by copying the
+  revision and resolving its notes, and approves with `gloss approve`
+  when the human approves in conversation. During a round it treats the
+  revision under review and the reviewed code as fixed — feedback lands
+  in the next revision whether it arrives in the viewer or in
   conversation, and code changes wait for approval.
 - **gloss-apply** implements from `approved/` and refuses to start
   without it. It never modifies the reviews directory.
@@ -187,7 +225,7 @@ Both are plain instruction files installed by `gloss skill install` —
 into `.claude/skills/` by default, or `.agents/skills/` with `--agents`
 for any other harness that can supervise a streaming background
 process, identical content either way; the CLI stays small because
-everything except the session is agents reading and writing files.
+everything except the live round is agents reading and writing files.
 The gloss skill ships with one reference file,
 `references/writing-facts.md` — the writing contract for fact files,
 which SKILL.md tells the agent to read before writing facts.
@@ -195,6 +233,7 @@ which SKILL.md tells the agent to read before writing facts.
 ## Deliberately not built
 
 No integrity verification or schema validation; no CLI mediation for
-state beyond the single `gloss reply` append; no approval ceremonies
-beyond the `approved/` copy; no scoping semantics; no embedded agent
-SDKs, MCP servers, or progress streams.
+state beyond the live round; no approval ceremonies beyond the
+`approved/` copy; no scoping semantics; no embedded agent SDKs or MCP
+servers. The viewer shows only what the agent publishes and its one
+status line — it never drives navigation.

@@ -11,7 +11,7 @@ export interface Fact {
 export interface ReviewData {
   review: string;
   revision: number;
-  /** the revision this session serves — the only writable one */
+  /** the revision under review — the only one that takes notes */
   served: number;
   revisions: number[];
   facts: Fact[];
@@ -172,18 +172,4 @@ export function changeStatus(prev: Map<string, string> | null, fact: Fact): Chan
   const before = prev.get(fact.path);
   if (before === undefined) return "new";
   return before === fact.content ? undefined : "changed";
-}
-
-export function nextId(items: SidecarItem[], prefix: string): string {
-  let max = 0;
-  for (const item of items) {
-    const m = new RegExp(`^${prefix}(\\d+)$`).exec(item.id);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return prefix + (max + 1);
-}
-
-export function normalizeSidecar(sidecar: Sidecar): Sidecar | null {
-  if (sidecar.items && sidecar.items.length === 0) delete sidecar.items;
-  return sidecar.items ? sidecar : null;
 }

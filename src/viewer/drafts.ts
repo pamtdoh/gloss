@@ -3,10 +3,10 @@
 // Only the served revision accepts notes, so only it can hold a draft;
 // the store for any other revision is pruned on load. Drafts never touch
 // the files — they are the human's own work in progress, not review
-// state — and, like the seen marks, they live in localStorage: per
-// origin, which is per session while the port is ephemeral. That is the
-// lifetime that matters: a stray back button, a tree click, or a reload
-// mid-sentence no longer loses the sentence.
+// state — and, like the seen marks, they live in localStorage, per
+// origin: the review server keeps its port, so a draft lasts as long as
+// the review. A stray back button, a tree click, or a reload mid-sentence
+// no longer loses the sentence.
 import type { SidecarItem } from "../summary.js";
 import { readJson, writeJson, type Composer } from "./common.js";
 import type { Fact } from "./model.js";

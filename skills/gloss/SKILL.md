@@ -72,7 +72,7 @@ needs it.
      the redirect fact") go stale as the tree changes; check them
      against the finished tree.
 5. Show the human the tree, and say once in that message that they
-   can ask for a cold read. Then serve the session.
+   can ask for a cold read. Then run the round.
 
 ## Cold reads, only when asked
 
@@ -88,14 +88,16 @@ Run one only when the human asks for it, in a note or in
 conversation, on the revision they name — not because a revision is
 large, seems to need it, or you are running unattended.
 
-## Serve the session
+## Run a round
 
-`gloss session <review>` serves the latest revision on loopback and
-blocks until the human clicks **Finish review** or approves. Stdout
-is JSONL: `session.started` (with the viewer `url`, to share if no
-browser opened), `question.asked`, `question.replied` (a human turn
-in an existing thread), `session.finished`, then a final JSON
-summary.
+`gloss session <review>` publishes the latest revision to the review's
+server, starting the server if needed, and blocks until the human
+clicks **Finish review** or approves. Stdout is JSONL:
+`session.started` (with the viewer `url`, to share if no browser
+opened), `question.asked`, `question.replied` (a human turn in an
+existing thread), `session.finished`, then a final JSON summary. The
+server keeps one address for the whole review, so a tab the human
+already has open follows each new revision by itself.
 
 Run it as one background process whose stdout streams into your
 context line by line — in Claude Code, the Monitor tool with
@@ -104,17 +106,16 @@ signals completion. A single blocking call would leave questions
 unanswered until the end, and a second watcher would split the
 questions between two of you.
 
-The sidecars, not the events, are the record. If you lose the stream
-or resume after a compaction, read every `*.review.json` in the
-revision: a question whose thread ends with a `"who": "human"` entry
-is waiting on you.
+If you lose the stream or resume after a compaction, run
+`gloss session <review>` again: it re-attaches to the open round and
+delivers every question still waiting on you.
 
-## While a session is live
+## During a round
 
-- **The served revision is fixed.** Never edit its fact files: notes
-  anchor to the text the human saw, and an edit would move their
-  feedback onto words they never read. Whatever a note asks for,
-  even mid-session, goes in the next revision.
+- **The revision under review is fixed.** Never edit its fact files:
+  notes anchor to the text the human saw, and an edit would move their
+  feedback onto words they never read. Whatever a note asks for, even
+  mid-round, goes in the next revision.
 - **The code under review holds still.** Reading, running, probing,
   and scratch scripts are fine; changes to the code the facts
   describe wait for approval and the gloss-apply skill.
@@ -126,21 +127,22 @@ is waiting on you.
   ```
 
   using the event's `path` and `id`. For a long answer or one with
-  quotes, omit `--text` and pipe the Markdown on stdin. The session
-  appends the answer and dedupes retries. Never write a live
-  revision's sidecars yourself: the viewer writes the same files, and
-  two writers duplicate notes. If `gloss reply` says no session is
-  running, restart the session or treat the question as iteration
-  feedback; don't edit the file instead.
+  quotes, omit `--text` and pipe the Markdown on stdin. The server
+  appends the answer and dedupes retries. Never write the sidecars of
+  the revision under review yourself: the human is writing them through
+  the server. If `gloss reply` says no round is open, treat the
+  question as iteration feedback.
 
 ## Iterate
 
-When a session finishes with sidecars present:
+When a round finishes with sidecars present:
 
 1. Read every `*.review.json` in the revision — the root
    `_index.review.json` first, since its notes set the direction —
    along with anything the human said in conversation. The notes are
-   instructions: write the changes, don't propose them.
+   instructions: write the changes, don't propose them. The human's tab
+   stays open on the review; `gloss status <review> "<what you're
+   doing>"` shows them a line such as "writing revision 3".
 2. Copy `<reviews>/<review>/<n>` recursively to `<n+1>`, a standalone
    copy. Revision `n` stays exactly as reviewed.
 3. In the new revision, resolve each note: rewrite, amend, split,
@@ -149,17 +151,18 @@ When a session finishes with sidecars present:
    redirect the whole review. Delete each resolved note from its
    sidecar, and the sidecar once it is empty; carry unresolved notes
    forward untouched.
-4. Serve the next session. A revision with no sidecars is fully
-   addressed — silence is agreement.
+4. Run the next round. A revision with no sidecars is fully addressed —
+   silence is agreement.
 
-When a session finishes with no notes and no approval, the human has
+When a round finishes with no notes and no approval, the human has
 moved to the terminal: report the summary and wait for them. Don't
-serve again, write a new revision, or create `approved/`.
+run another round, write a new revision, or approve.
 
 ## Approval
 
 Approval is the accepted revision copied to
 `<reviews>/<review>/approved/` — the directory existing is the
 approval, and gloss-apply requires it. The viewer's Approve button
-makes the copy; if the human approves in conversation, copy the
-revision yourself, open notes included.
+makes the copy and stops the review's server. If the human approves in
+conversation, run `gloss approve <review>` (the revision on screen, or
+`--rev <n>`); open notes are approved as written.

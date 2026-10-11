@@ -1,28 +1,35 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { emitLine, failJson as fail } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
-import { runSession, sendReply, type SessionOptions } from "./session.js";
+import { type SessionOptions, approve, runSession, sendReply, sendStatus, stopServer } from "./agent.js";
+import { runServer } from "./server.js";
 import { installSkills, type SkillDest } from "./skills.js";
 
 const USAGE = `gloss — files-first design review
 
 Usage:
   gloss dir           Print (and create) this repo's reviews directory
-  gloss session <review> [--rev <n>] [--no-browser]
-                    [--serve-host <host>]
-                          Serve the viewer, emit JSONL events on stdout,
-                          block until the review is finished, then print
-                          a JSON summary. Run it under a supervisor that
-                          streams stdout; the process exiting is the
-                          completion signal.
-                          --serve-host additionally accepts requests
-                          proxied from a private hostname (e.g.
-                          tailscale serve); binding stays loopback-only
+  gloss session <review> [--rev <n>] [--no-browser] [--serve-host <host>]
+                          Publish the latest revision (or --rev) to the
+                          review's server, starting the server if needed,
+                          then stream JSONL events until the human
+                          finishes or approves, and print a JSON summary.
+                          Run it under a supervisor that streams stdout;
+                          the process exiting is the completion signal.
+                          Open tabs follow the new revision; a browser is
+                          opened only when none is connected.
+                          --serve-host also accepts requests proxied from
+                          a private hostname (e.g. tailscale serve)
   gloss reply <review> <fact-path> <question-id> [--text <text>]
-                          Append an agent answer to a question's thread
-                          through the live session (reads the text from
-                          stdin when --text is absent). Fails when no
-                          session is running
+                          Append the agent's answer to a question's thread
+                          (reads stdin when --text is absent)
+  gloss status <review> <text>
+                          Show a status line in the open tabs, e.g.
+                          "writing revision 3"
+  gloss approve <review> [--rev <n>]
+                          Copy a revision to approved/ (default: the one
+                          on screen, else the latest)
+  gloss stop <review>     Stop the review's server
   gloss skill install [--agents] [--global]
                           Install the Gloss skills into this repo — to
                           .claude/skills/ by default, or with --agents
@@ -71,8 +78,34 @@ switch (command) {
     dir(process.cwd());
     break;
   case "session":
-    runSession(process.cwd(), parseSessionArgs(rest));
+    void runSession(process.cwd(), parseSessionArgs(rest));
     break;
+  case "__serve": {
+    // internal: the detached server process `gloss session` starts
+    const serveHost = rest[1] === "--serve-host" ? rest[2] : undefined;
+    if (!rest[0]) fail("usage: gloss __serve <review> [--serve-host <host>]");
+    runServer(process.cwd(), { review: rest[0], serveHost });
+    break;
+  }
+  case "status":
+    if (rest.length !== 2) fail("usage: gloss status <review> <text>");
+    void sendStatus(process.cwd(), rest[0]!, rest[1]!);
+    break;
+  case "stop":
+    if (rest.length !== 1) fail("usage: gloss stop <review>");
+    void stopServer(process.cwd(), rest[0]!);
+    break;
+  case "approve": {
+    const usage = "usage: gloss approve <review> [--rev <n>]";
+    if (!rest[0] || rest[0].startsWith("-")) fail(usage);
+    let revision: number | undefined;
+    if (rest[1] === "--rev") {
+      revision = Number(rest[2]);
+      if (!Number.isInteger(revision)) fail("--rev expects a number");
+    } else if (rest.length > 1) fail(usage);
+    void approve(process.cwd(), rest[0], revision);
+    break;
+  }
   case "reply": {
     const usage = "usage: gloss reply <review> <fact-path> <question-id> [--text <text>]";
     const positional: string[] = [];
