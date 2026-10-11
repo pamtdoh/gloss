@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { toProtocolPath } from "./protocol.js";
 import type { Sidecar } from "./summary.js";
 
@@ -144,7 +144,8 @@ export function writeAtomic(path: string, data: string | Buffer): void {
 // resolve() but are trimmed by the filesystem.
 export function escapesDir(baseDir: string, abs: string): boolean {
   const rel = relative(baseDir, abs);
-  return rel === "" || rel.startsWith("..") || isAbsolute(rel);
+  // ".." as a whole segment, not a name that starts with two dots
+  return rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 }
 
 /** A requested fact path as the protocol path — null unless it names an

@@ -2,6 +2,7 @@ import * as React from "react";
 import { Search } from "lucide-react";
 import { COARSE, keepFocusOutOfFields } from "./common.js";
 import type { ReviewMeta } from "../meta.js";
+import { agentLabel, commitLabel, tildePath } from "./about.js";
 import { titleOf, type Fact, type ReviewData } from "./model.js";
 import { SHORTCUTS } from "./shortcuts.js";
 import { Button } from "./ui/button.js";
@@ -222,16 +223,16 @@ export function FinishSheet(props: {
 const when = (iso: string | undefined): string =>
   iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
 
-/** A commit as people quote it: short, with a mark when the worktree had
- * uncommitted changes on top of it. */
-export function commitLabel(entry: { commit?: string; dirty?: boolean } | undefined): string | null {
-  if (!entry?.commit) return null;
-  return entry.commit.slice(0, 7) + (entry.dirty ? " + uncommitted" : "");
-}
-
 // Where the review came from and how each round went: review.json, as
 // gloss recorded it — the context a reader needs long after the session.
-export function About(props: { open: boolean; about: ReviewMeta | null; review: string; onClose: () => void }): React.JSX.Element {
+export function About(props: {
+  open: boolean;
+  about: ReviewMeta | null;
+  review: string;
+  /** the user's home, so paths under it read as ~/… */
+  home?: string;
+  onClose: () => void;
+}): React.JSX.Element {
   const meta = props.about;
   const revisions = Object.entries(meta?.revisions ?? {}).sort(([a], [b]) => Number(a) - Number(b));
   return (
@@ -263,7 +264,8 @@ export function About(props: { open: boolean; about: ReviewMeta | null; review: 
                 <>
                   <dt className="text-muted-foreground">Started</dt>
                   <dd className="m-0" id="about-started">
-                    {meta.started.branch ? <code>{meta.started.branch}</code> : "no branch"} in {meta.started.worktree},{" "}
+                    {meta.started.branch ? <code>{meta.started.branch}</code> : "no branch"} in{" "}
+                    {tildePath(meta.started.worktree, props.home)}, 
                     {when(meta.created)}
                   </dd>
                 </>
@@ -271,7 +273,7 @@ export function About(props: { open: boolean; about: ReviewMeta | null; review: 
               {meta.agent && (
                 <>
                   <dt className="text-muted-foreground">Agent</dt>
-                  <dd className="m-0">{meta.agent}</dd>
+                  <dd className="m-0" id="about-agent">{agentLabel(meta.agent)}</dd>
                 </>
               )}
               {meta.approved && (

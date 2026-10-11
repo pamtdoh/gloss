@@ -29,7 +29,8 @@ import {
   indexFactOf,
   isRoot,
 } from "./model.js";
-import { About, FinishSheet, Help, commitLabel } from "./overlays.js";
+import { commitLabel } from "./about.js";
+import { About, FinishSheet, Help } from "./overlays.js";
 import { Panel } from "./panel.js";
 import { getPrefs, setPref, subscribePrefs } from "./prefs.js";
 import { PanelResizer, TreeResizer } from "./resizers.js";
@@ -948,7 +949,13 @@ export function App({ store }: { store: ReviewStore }): React.JSX.Element {
           )}
 
       <Help open={overlay === "help"} onClose={() => setOverlay(null)} />
-      <About open={overlay === "about"} about={meta.about} review={meta.review} onClose={() => setOverlay(null)} />
+      <About
+        open={overlay === "about"}
+        about={meta.about}
+        review={meta.review}
+        home={meta.home}
+        onClose={() => setOverlay(null)}
+      />
       <FinishSheet
         open={overlay === "finish"}
         data={data}

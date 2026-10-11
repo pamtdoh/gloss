@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { draftDiffers, ensureDraft, freezeDraft, listRevisions, snapshotNotes, walkFiles } from "./files.js";
+import { draftDiffers, ensureDraft, escapesDir, freezeDraft, listRevisions, resolveFact, snapshotNotes, walkFiles } from "./files.js";
 
 let review: string;
 const put = (path: string, text: string) => {
@@ -76,4 +76,16 @@ describe("the draft and its frozen revisions", () => {
     expect(statSync(join(review, "draft/a.md")).mode & 0o200).not.toBe(0);
     expect(draftDiffers(review)).toBe(false);
   });
+});
+
+test("a path escapes a revision by '..' segments, not by a name starting with two dots", () => {
+  expect(escapesDir("/r/1", "/r/1/..notes.md")).toBe(false);
+  expect(escapesDir("/r/1", "/r/1/dir/..x.md")).toBe(false);
+  expect(escapesDir("/r/1", "/r/2/a.md")).toBe(true);
+  expect(escapesDir("/r/1", "/r")).toBe(true);
+  expect(escapesDir("/r/1", "/r/1")).toBe(true);
+  put("1/..notes.md", "# Dots\n");
+  expect(resolveFact(join(review, "1"), "..notes.md")).toBe("..notes.md");
+  expect(resolveFact(join(review, "1"), "../1/..notes.md")).toBe("..notes.md");
+  expect(resolveFact(join(review, "1"), "../draft/a.md")).toBeNull();
 });

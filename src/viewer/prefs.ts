@@ -13,7 +13,9 @@ export interface Prefs {
 }
 
 const CACHE = "gloss-prefs";
-let prefs: Prefs = readJson<Prefs>(CACHE, {});
+// the page carries the saved preferences (html.ts); the browser's copy is
+// the fallback for a page that doesn't (an old cached one)
+let prefs: Prefs = (window as { __GLOSS_PREFS?: Prefs }).__GLOSS_PREFS ?? readJson<Prefs>(CACHE, {});
 const listeners = new Set<() => void>();
 
 export const getPrefs = (): Prefs => prefs;

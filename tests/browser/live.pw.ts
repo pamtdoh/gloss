@@ -16,6 +16,8 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 // server process the suite starts inherits it
 const glossHome = mkdtempSync(join(tmpdir(), "gloss-home-"));
 process.env.GLOSS_HOME = glossHome;
+// the harness identifier Claude Code sets, so the recorded agent is known
+process.env.AI_AGENT = "claude-code_2-1-296_agent";
 const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
@@ -209,6 +211,7 @@ test("the review says where it came from: the request, the repo, each revision's
   const about = tabA.locator("#about-sheet");
   await expect(about.locator("#about-prompt")).toHaveText("review the linkbox design");
   await expect(about.locator("#about-started")).toContainText("main");
+  await expect(about.locator("#about-agent")).toHaveText("Claude Code 2.1.296");
   await expect(about.locator("#about-revisions tbody tr")).toHaveCount(2);
   await expect(about.locator('tr[data-revision="1"]')).toContainText("2 comments, 1 question");
   await expect(about.locator('tr[data-revision="2"]')).toContainText("in review");
