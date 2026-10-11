@@ -19,8 +19,9 @@ verdict is the reviewer's. A fact needs no argument for itself, only
 enough content to follow.
 
 **Written for a cold reader.** The reviewer knows roughly what the
-project is and nothing else. Explain any term the project doesn't
-define (a harness, a compaction, a tool name) at first use. A fact
+project is and nothing else, and reads facts in any order. Explain
+any term the project doesn't define (a harness, a compaction, a tool
+name) in each fact that uses it, or once in the overview. A fact
 never leans on:
 
 - **This conversation.** "The bug in the original screenshot" means
@@ -36,7 +37,9 @@ never leans on:
 **Each thing is stated once.** When several facts depend on the same
 rule or mechanism, one fact states it and the others name it in a
 clause. A group's `_index.md` holds what its facts share; it doesn't
-restate or list them, since the tree already shows them.
+restate or list them, since the tree already shows them. The same
+goes for the overview: it says how the tree is organized and in what
+order to read it, not what each fact says.
 
 ## What to write
 
@@ -65,18 +68,31 @@ putting the evidence in the fact:
   is a guess dressed as evidence.
 - An artifact they would have to **imagine** (a UI state, an error,
   CLI or wire output): show the real output, a short transcript, or
-  a figure. A transcript's commands run exactly as shown, and lines
-  cut from the output are marked with `…`.
+  a figure. A transcript's commands run exactly as shown, its setup
+  included (a non-default port, an environment variable), and lines
+  cut from the output are marked with `…`. Code shown as the source
+  is verbatim — no added comments. A probe you cite appears as its
+  output, never as "I ran it".
 - A quantity or rule they would have to **trust** (a threshold, a
   boundary, an "only when"): show the constant from the code, or a
   probe where reading can't settle it.
 
 **Universal claims are the easiest false claims to write.** "Only",
-"all", "every", "never", "any", "anything else", "guaranteed": each
-holds only if every case does. Check each case — every row of an
-inventory, every route, every caller — and probe at least one hostile
-or malformed input. If a case breaks the claim, the claim is the
-break.
+"all", "every", "never", "any", "anything else", "guaranteed" are the
+obvious ones; so is every rule stated without exceptions ("if the
+slug is unknown, 404"), every row of a behavior table, every timing
+promise ("right after", "on the next poll"), and every title. Each
+holds only if every case does. Check each case — every row, every
+route, every caller — and probe inputs that are malformed and inputs
+that are valid but unusual (empty, non-ASCII, very large). If a case
+breaks the claim, the claim is the break.
+
+**A probe shows what happened, not what can.** A race that didn't
+fire in five runs can still fire. Work out the outcomes from the
+mechanism itself (a write that truncates first can leave a half-file;
+two such writes can interleave), then use probes to show them. Where
+a failure at the fact's altitude could be probed, probe it: "not
+probed" is not a substitute.
 
 **A "why" comes from a source.** Answer "Why…?" from a code comment,
 a doc, the commit history, or the human; otherwise say the reason
@@ -101,25 +117,24 @@ One complete fact in the mechanism genre — an opening claim, a
 grounded walkthrough, and question-headed elaboration:
 
 ```markdown
-# Proxied viewer auth is a one-time token, then a session cookie
+# Proxied viewer login is a one-time link, then a cookie
 
-When a session is served through a private proxy (`--serve-host`),
-its URL carries a token that works exactly once. The first visit
-burns the token and sets a session cookie. Every later request
-from that browser uses the cookie.
+When a review is served through a private proxy (`--serve-host`),
+each link the agent prints carries a token that works exactly once.
+The first visit burns the token and sets a cookie. Every later
+request from that browser uses the cookie.
 
-Concretely: the `session.started` event prints
-`http://127.0.0.1:37665/auth?token=ba47…`. The first visit loads a
-page that posts the token back; the server burns it and redirects to
-the viewer with a cookie set. Opening that same URL in a second
-browser gets a 403: "This one-time review link has expired."
+Concretely: `gloss session` prints
+`https://box.example.ts.net/auth?token=ba47…`. The first visit loads
+a page that posts the token back; the server burns it and redirects
+to the viewer with the cookie set. Opening that same link in a second
+browser gets a 403: "This one-time review link has expired. Ask the
+agent for a new one."
 
-## Why a one-time token?
+## Why does the page post the token back instead of using the link?
 
-The code comment on the check gives the reason: "with --serve-host
-the viewer is reachable beyond this machine, so a one-time token
-gates a session cookie." Without `--serve-host` the server skips both
-the token and the cookie.
+The code comment on the route gives the reason: "GET never consumes
+the token: messaging apps prefetch links for previews."
 ```
 
 ## Wording
@@ -129,9 +144,9 @@ ask you, so write plain connected prose: short sentences, one idea
 each, joined with visible links ("then", "because of this"). Name the
 actor — "the server mints a token", not "a token is minted". Use one
 name per concept everywhere. Give an aside its own sentence. Write a
-sharp edge condition first, like a warning: "If you delete a note
-from a sidecar during a live session, the viewer treats it as
-resolved."
+sharp edge condition first, like a warning: "If the agent edits a
+fact during a round, the human's notes anchor to words they never
+read."
 
 ## Display
 
