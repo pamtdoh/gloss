@@ -5,32 +5,22 @@ description: Implement the approved design facts of a Gloss review. Use when the
 
 # gloss-apply
 
-Turn an approved Gloss design into code. The contract is the
-`approved/` revision: plain Markdown facts under
-`<reviews>/<review>/approved/`, readable with no server running.
-`<reviews>` is the path `gloss dir` prints — run it first; reviews
-live in the OS temp directory, outside the repo, never in it.
+Turn an approved Gloss design into code. The contract is
+`<reviews>/<review>/approved/`, where `<reviews>` is the path
+`gloss dir` prints: plain Markdown facts, readable with no server
+running.
 
-## Preconditions
-
-1. Identify the review — from the user's prompt, or by listing
-   `<reviews>` if there is only one candidate.
-2. **Require `<reviews>/<review>/approved/` to exist.** The directory is
-   the approval; there is no other marker. If it does not exist, stop and
-   tell the user the review has not been approved yet — or, if the review
-   itself is gone, that the temp directory was cleared — and offer to run
-   or resume the review instead. Do not implement from a numbered revision.
-
-## Implementing
-
-1. Read every fact in `approved/` — including `_index.md` group facts —
-   before writing code. Each file is one condensed, decided claim about
-   the design; together they are what the human agreed to.
-2. Implement the facts in the codebase with your normal tools and the
-   project's conventions. Where a fact is silent, use your judgment; where
-   code you're writing would contradict a fact, stop and raise it with the
-   human rather than quietly diverging.
-3. **Do not modify `<reviews>`.** The approved revision is the record of
-   what was agreed, not a working document. If implementation reveals the
-   design needs changing, say so — a new review iteration is the place for
-   that, not an edit to `approved/`.
+1. Run `gloss dir`, then identify the review from the user's prompt,
+   or by listing `<reviews>` when there is only one.
+2. Require `approved/` to exist — the directory is the approval, and
+   there is no other marker. Without it, stop and tell the user the
+   review isn't approved yet (or, if the review itself is gone, that
+   the temp directory was cleared), and offer to run or resume the
+   review. Never implement from a numbered revision.
+3. Implement every fact in `approved/`, `_index.md` group facts
+   included, following the project's conventions. If the code you're
+   writing would contradict a fact, stop and raise it with the human
+   rather than diverging quietly.
+4. Leave `<reviews>` untouched: `approved/` is the record of what was
+   agreed. If implementation shows the design must change, say so — a
+   new review iteration is the place for it.

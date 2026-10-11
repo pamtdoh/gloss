@@ -1,86 +1,63 @@
 # Writing fact files
 
-A Gloss review succeeds when the human decides every fact without
-opening anything else. Every fact serves the reviewer in two ways:
-they can *decide* it, and they can *follow* it as a cold reader. A
-fact they cannot decide costs a reading pass without settling
-anything; a fact they cannot follow sends them to you or to the code
-for the missing context, which is the reading Gloss exists to
-remove.
+A review succeeds when the human decides every fact without opening
+anything else. So each fact must be *decidable* — they can agree or
+object to it — and *followable* by a cold reader. A fact they can't
+follow sends them back to you or to the code, which is the reading
+Gloss exists to remove.
 
-In this file: what counts as a fact · what to write · genres ·
-wording · display · figures.
+## What a fact is
 
-## What counts as a fact
+**One standalone, decidable claim.** The title is one sentence with a
+verb that the reviewer can agree or object to on its own. The body
+describes the design in neutral terms, sharp edges included; the
+verdict is the reviewer's. A fact needs no argument for itself, only
+enough content to follow.
 
-**A standalone, decidable observation.** The title is one decidable
-sentence with a verb: the reviewer can agree or object to it alone.
-The body observes the design in neutral terms, sharp edges included,
-and the reviewer supplies the judgment. A fact is not a thesis to
-defend — it needs no supporting argument, only enough content for a
-cold reader to follow what is being stated.
+**Written for a cold reader.** The reviewer knows roughly what the
+project is and nothing else. Explain any term the project doesn't
+define (a harness, a compaction, a tool name) at first use. A fact
+never leans on:
 
-**Written for a cold reader.** The reviewer arrives knowing roughly
-what the project is and nothing else — not your terminal, your
-screenshots, or the code you just read. Any term the project itself
-does not define (a harness, a compaction, an agent tool name) gets a
-plain gloss at first use. A fact may never lean on:
-
-- **The generating conversation.** "The bug in the original
-  screenshot" means nothing to a reviewer who was not there —
-  describe the bug in the fact.
-- **Git archaeology.** A bare commit hash sends the reviewer on an
-  errand. State what happened; a hash may follow as a locator,
-  never substitute.
-- **The code itself.** The reviewer has no code open, so the fact
-  carries its claim entirely in its own words. If the fact only
-  makes sense to someone with the codebase in front of them, it is
-  an index into the codebase, not a fact. Showing a relevant shape
-  (a struct, a schema, a signature) is fine — then the fact carries
-  the content itself.
+- **This conversation.** "The bug in the original screenshot" means
+  nothing to someone who wasn't there; describe the bug.
+- **Git history.** State what happened; a commit hash may follow as a
+  locator, never as a substitute.
+- **The code.** The reviewer has none open. Showing a shape (a
+  struct, a schema, a signature) is fine, as long as the fact carries
+  its claim in its own words.
 
 ## What to write
 
-**Open with the what.** The first thing in the body states what
-exists, what it does, or what changed, the way you would describe
-the code to a colleague one level above it — the reviewer can only
-start judging once the claim is in front of them. Anything that *is*
-the claim counts as opening with it: a schema block or an inventory
-table can open the body when the block is the fact's substance.
+**Open with the claim:** what exists, what it does, or what changed,
+described one level above the code. A schema or table can open the
+body when it is the substance.
 
-**Elaborate to answer anticipated questions.** Body text beyond the
-opening answers questions the reviewer would plausibly ask, or
-supplies context they need to follow the statement. A substantial
-answer goes under its own `##` heading phrased as the literal
-question ("Why is this needed?", "What is the flow, step by step?"),
-so a reviewer who already knows can skip it. A short fact is
-complete when nothing needs answering; length that answers no
-question costs reading time without adding anything to judge.
+**Answer anticipated questions, nothing more.** Elaborate only to
+answer what the reviewer would plausibly ask, or to give context they
+need. A substantial answer goes under a `##` heading phrased as the
+question ("Why is this needed?"), so a reviewer who already knows can
+skip it. A fact is complete when nothing is left to answer; length
+that answers no question only costs reading time.
 
-**Stop at the review's altitude** (SKILL.md governs it). Detail
-below the altitude is named, not elaborated: one sentence that the
-layer exists and what the fact leaves out, so the reviewer knows
-there is more and can pull it. A named, unelaborated detail is not a
-hole and needs no grounding.
+**Stop at the review's altitude** (SKILL.md sets it). Name detail
+below it in one sentence — that the layer exists and what the fact
+leaves out — and don't elaborate or ground it.
 
-**Ground any claim the reviewer can't check from the fact alone.**
-Grounding is evidence inside the fact: the claim states the design,
-the grounding shows it, so the reviewer checks instead of trusts.
-Three cues that a claim needs it:
+**Ground what the reviewer can't check from the fact alone**, by
+putting the evidence in the fact:
 
-- If the reviewer would have to **simulate** it in their head
-  (encodings, offsets, ordering, concurrency), walk one real value
-  through it, end to end.
-- If they would have to **imagine** an artifact (a UI state, an
-  error, CLI or wire output), show the real thing: the actual
-  output line, a short transcript, or a figure.
-- If they would have to **trust** a quantity or rule (a boundary, a
-  threshold, an "only when" claim), show what settles it: a
-  constant read from the code, or a probe where reading can't
-  settle it. An unverified "only" is the easiest false claim to
-  write.
+- A claim they would have to **simulate** (encodings, offsets,
+  ordering, concurrency): walk one real value through it, end to end.
+- An artifact they would have to **imagine** (a UI state, an error,
+  CLI or wire output): show the real output, a short transcript, or
+  a figure.
+- A quantity or rule they would have to **trust** (a threshold, a
+  boundary, an "only when"): show the constant from the code, or a
+  probe where reading can't settle it. An unverified "only" is the
+  easiest false claim to write.
 
-## Start from a genre
+## Genres
 
 Most facts fit one of six reference shapes; blend two when the
 subject demands it.
@@ -94,9 +71,8 @@ subject demands it.
 | Interface | the exact shape of a boundary | fenced code block that *is* the claim; minimal prose around it |
 | Invariant | a guarantee the design maintains | "when ⟨event⟩, ⟨what holds⟩" with an actor and an observable outcome, plus the one violation that would break it |
 
-One complete fact, mechanism genre, showing the shape most facts
-take — an opening claim, a grounded walkthrough, and
-question-headed elaboration:
+One complete fact in the mechanism genre — an opening claim, a
+grounded walkthrough, and question-headed elaboration:
 
 ```markdown
 # Proxied viewer auth is a one-time token, then a session cookie
@@ -119,25 +95,20 @@ token that burns on first use means a leaked line cannot open the
 review for anyone else.
 ```
 
-## How to word it
+## Wording
 
-The reader is cold, often not a native English speaker, and has no
-author to ask, so plain connected prose serves them best. Short
-sentences, each adding one idea, connected with visible links
-("then", "because of this") so the reader never infers the joint.
-Name the actor — "the server mints a token", not "a token is
-minted" — because an actorless sentence hides who does the work.
-Call each concept by one name everywhere; introduce a long term in
-full once, then use one consistent short form. Keep asides out of
-the middle of sentences — an aside usually deserves a sentence of
-its own. State a sharp edge the way a warning is written, condition
-first: "If you delete a note from a sidecar during a live session, the
-viewer treats it as resolved." These are directions, not rules to
-audit — when a sentence reads clearly aloud, it is done.
+The reader is cold, often not a native English speaker, and can't
+ask you, so write plain connected prose: short sentences, one idea
+each, joined with visible links ("then", "because of this"). Name the
+actor — "the server mints a token", not "a token is minted". Use one
+name per concept everywhere. Give an aside its own sentence. Write a
+sharp edge condition first, like a warning: "If you delete a note
+from a sidecar during a live session, the viewer treats it as
+resolved."
 
-## How to display it
+## Display
 
-Write prose by default. Switch form when the content has a shape
+Write prose by default, and switch form when the content has a shape
 the reader would otherwise build in their head:
 
 | Content | Form |
@@ -150,31 +121,26 @@ the reader would otherwise build in their head:
 | a value crossing boundaries, a lifecycle | Mermaid diagram |
 | a visual subject (a page, a component, styling) | screenshot or figure |
 
-When a fact quotes its source, prefer one excerpt over many
-fragments: show the operative words inside enough surrounding text
-that the reader sees where they live, mark them in bold, and cut
-unrelated stretches with an ellipsis. Your own sentences carry the
-point; the verbatim words stay in the block.
+When quoting a source, use one excerpt rather than many fragments:
+enough surrounding text to show where the words live, the operative
+words in bold, unrelated stretches cut with an ellipsis. Your own
+sentences make the point.
 
 ## Figures
 
-A visual fact with no figure asks the reviewer to imagine the thing
-they are judging, so when the subject is visual, the fact carries a
-figure. (When to capture is workflow: SKILL.md step 2.)
+When the subject is visual, the fact carries a figure; without one,
+the reviewer judges something they have to imagine.
 
-- **A screenshot of the running app, not a mockup.** Staged state
-  is fine (seeded data, planted notes), but the fact must
-  say so, so the reviewer doesn't mistake sample data for their
-  own.
-- **Stored in `images/` at the revision root**, referenced
+- **Screenshot the running app, not a mockup.** Staged state (seeded
+  data, planted notes) is fine if the fact says so, so the reviewer
+  doesn't mistake sample data for their own.
+- **Store every figure in `images/` at the revision root**, referenced
   relatively (`images/panel.png`, or `../images/panel.png` from a
-  fact inside a subdirectory). One place for every figure, so
-  nothing is scattered or orphaned, and the references survive
-  revision copies.
-- **Proportionate.** One figure per fact by default; prose suffices
-  where one sentence fully specifies the state.
-- **Self-backgrounded.** The viewer renders in light and dark
-  themes, so a figure that assumes the page's background is
-  unreadable in the other theme. Draw figures only where values are
-  better seen than read, and prefer Mermaid where it can show the
-  same thing.
+  subdirectory), so references survive revision copies.
+- **One figure per fact by default**; skip it when one sentence fully
+  specifies the state.
+- **Give each figure its own background.** The viewer has light and
+  dark themes, and a figure that relies on the page's background is
+  unreadable in one of them. Draw diagrams only where values are
+  better seen than read, and prefer Mermaid where it shows the same
+  thing.
