@@ -37,7 +37,9 @@ let page: Page;
 const stdoutLines: Record<string, unknown>[] = [];
 
 const snap2 = (...parts: string[]) => join(review, "2", ...parts);
-const readSidecar = (relative: string) => JSON.parse(readFileSync(snap2(relative), "utf8"));
+// notes live in the draft while a round is open (ARCHITECTURE.md)
+const live = (...parts: string[]) => join(review, "draft", ...parts);
+const readSidecar = (relative: string) => JSON.parse(readFileSync(live(relative), "utf8"));
 
 // the agent's one live-session write, as the CLI call the skill makes;
 // the error paths speak JSON on stderr and exit 1
@@ -217,8 +219,8 @@ test.beforeAll(async ({ browser }) => {
     .poll(() => stdoutLines.find((l) => l.event === "session.started"))
     .toBeTruthy();
   const url = stdoutLines.find((l) => l.event === "session.started")!.url as string;
-  expect(existsSync(snap2("images/notes/orphan.png"))).toBe(false);
-  expect(existsSync(snap2("images"))).toBe(false); // and the empty directories with it
+  expect(existsSync(live("images/notes/orphan.png"))).toBe(false);
+  expect(existsSync(live("images"))).toBe(false); // and the empty directories with it
   // the offline cache has its own suite; here it would only add state
   context = await browser.newContext({ serviceWorkers: "block" });
   page = await context.newPage();
@@ -275,7 +277,7 @@ test("the overview is the front page; notes on it are notes on the review", asyn
   await page.locator("#item-input").fill("Too deep for a first read — stay at the design decisions.");
   await page.locator("#item-save").click();
   await expect
-    .poll(() => existsSync(snap2("_index.review.json")) && readSidecar("_index.review.json"))
+    .poll(() => existsSync(live("_index.review.json")) && readSidecar("_index.review.json"))
     .toEqual({
       items: [
         { id: "c1", type: "comment", text: "Too deep for a first read — stay at the design decisions." },
@@ -377,7 +379,7 @@ test("selection comment stores the verbatim quote and paints a highlight", async
   await page.locator("#item-save").click();
 
   await expect
-    .poll(() => existsSync(snap2("storage/whole-file-writes.review.json")))
+    .poll(() => existsSync(live("storage/whole-file-writes.review.json")))
     .toBe(true);
   const sidecar = readSidecar("storage/whole-file-writes.review.json");
   expect(sidecar.items).toEqual([
@@ -431,7 +433,7 @@ test("anchored question emits question.asked and shows the header pill", async (
   await page.locator("#item-input").fill("Why ten? Is that enough at scale?");
   await page.locator("#item-save").click();
 
-  await expect.poll(() => existsSync(snap2("slugs/collision-retry.review.json"))).toBe(true);
+  await expect.poll(() => existsSync(live("slugs/collision-retry.review.json"))).toBe(true);
   const sidecar = readSidecar("slugs/collision-retry.review.json");
   expect(sidecar.items[0]).toEqual({
     id: "q1",
@@ -543,7 +545,7 @@ test("notes can be edited and deleted from the card menu", async () => {
   await page.locator("#item-input").fill("Nice.");
   await page.locator("#item-save").click();
   await expect
-    .poll(() => existsSync(snap2("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
+    .poll(() => existsSync(live("cli/add-and-list.review.json")) && readSidecar("cli/add-and-list.review.json"))
     .toMatchObject({ items: [{ id: "c1", type: "comment", text: "Nice." }] });
 
   await page.locator('.card[data-id="c1"] .menu-btn').click();
@@ -556,7 +558,7 @@ test("notes can be edited and deleted from the card menu", async () => {
 
   await page.locator('.card[data-id="c1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect.poll(() => existsSync(snap2("cli/add-and-list.review.json"))).toBe(false);
+  await expect.poll(() => existsSync(live("cli/add-and-list.review.json"))).toBe(false);
   await expect(page.locator("#toast")).toContainText("Deleted c1");
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
@@ -748,7 +750,7 @@ test("unsent text survives leaving the fact: back, a tree click, a reload", asyn
   await page.reload();
   await expect(page.locator("#item-form")).toBeVisible();
   await expect(page.locator("#item-input")).toHaveValue("half a thought");
-  expect(existsSync(snap2("http/create-link.review.json"))).toBe(false);
+  expect(existsSync(live("http/create-link.review.json"))).toBe(false);
 
   // a reply left in a thread comes back when the thread reopens
   await page.locator('.tree .row[data-path="slugs/collision-retry.md"]').click();
@@ -772,7 +774,7 @@ test("unsent text survives leaving the fact: back, a tree click, a reload", asyn
   await expect(page.locator("#item-input")).toHaveValue("half a thought");
   await page.locator("#item-save").click();
   await expect
-    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
+    .poll(() => existsSync(live("http/create-link.review.json")) && readSidecar("http/create-link.review.json"))
     .toMatchObject({
       items: [{ id: "c1", type: "comment", anchor: { quote: "Malformed JSON throws inside the request handler" }, text: "half a thought" }],
     });
@@ -794,7 +796,7 @@ test("unsent text survives leaving the fact: back, a tree click, a reload", asyn
   await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.locator('.card[data-id="c1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
+  await expect.poll(() => existsSync(live("http/create-link.review.json"))).toBe(false);
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
@@ -817,7 +819,7 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
   await expect(page.locator("#item-form")).toBeVisible();
   await page.locator("#item-file").setInputFiles({ name: "retry-state.png", mimeType: "image/png", buffer: SHOT });
   await expect(thumbs("#item-form")).toHaveCount(1);
-  expect(existsSync(snap2("images/notes", SHOT_NAME))).toBe(true);
+  expect(existsSync(live("images/notes", SHOT_NAME))).toBe(true);
   await expect(page.locator("#item-form .pic img")).toHaveAttribute(
     "src",
     `/asset/2/images/notes/${SHOT_NAME}`,
@@ -841,7 +843,7 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
   await page.locator("#item-input").fill("This is what I see after the second retry.");
   await page.locator("#item-save").click();
   await expect
-    .poll(() => existsSync(snap2("http/create-link.review.json")) && readSidecar("http/create-link.review.json").items[0].text)
+    .poll(() => existsSync(live("http/create-link.review.json")) && readSidecar("http/create-link.review.json").items[0].text)
     .toBe(
       `This is what I see after the second retry.\n\n![retry-state](../images/notes/${SHOT_NAME})\n\n![image](../images/notes/${PASTED_NAME})`,
     );
@@ -865,7 +867,7 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
     .poll(() => readSidecar("http/create-link.review.json").items[0].text)
     .toBe(`This is what I see after the second retry.\n\n![retry-state](../images/notes/${SHOT_NAME})`);
   // the file it pointed at stays until the session ends (the finish test sees it go)
-  expect(existsSync(snap2("images/notes", PASTED_NAME))).toBe(true);
+  expect(existsSync(live("images/notes", PASTED_NAME))).toBe(true);
 
   // an unsent picture survives a reload like unsent text; the same bytes
   // are the same file
@@ -910,7 +912,7 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
   await page.locator('.tree .row[data-path="http/create-link.md"]').click();
   await page.locator('.card[data-id="c1"] .menu-btn').click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  await expect.poll(() => existsSync(snap2("http/create-link.review.json"))).toBe(false);
+  await expect.poll(() => existsSync(live("http/create-link.review.json"))).toBe(false);
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
@@ -1151,6 +1153,8 @@ test("finish flow: summary sheet, JSON summary, session exit 0, the tab stays", 
 
   // finishing tidies the pictures: the one a reply still shows stays,
   // the one removed from its note before posting goes
+  // ...and the round's notes, pictures included, are the revision's record now
   expect(existsSync(snap2("images/notes", SHOT_NAME))).toBe(true);
   expect(existsSync(snap2("images/notes", PASTED_NAME))).toBe(false);
+  expect(existsSync(snap2("_index.review.json"))).toBe(true);
 });

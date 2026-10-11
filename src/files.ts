@@ -47,62 +47,71 @@ export function reviewExists(reviewDir: string): boolean {
   return existsSync(join(reviewDir, DRAFT)) || listRevisions(reviewDir).length > 0;
 }
 
-/** Whether the draft holds anything the latest revision doesn't: a
- * changed fact, figure, or note. The first revision always differs. */
+/** A note file: a sidecar, or a picture pasted into a note. Notes are
+ * state about a revision, not its content: they live in the draft while
+ * a round runs, and a revision gets its copy when its round ends. */
+export const isNoteFile = (path: string): boolean => isSidecar(path) || path.startsWith(`${NOTE_IMAGES}/`);
+
+const contentFiles = (dir: string): string[] => walkFiles(dir).filter((f) => !isNoteFile(f));
+
+/** Whether the draft's facts or figures differ from the latest
+ * revision's. Notes don't count: resolving notes alone serves the same
+ * revision again. The first revision always differs. */
 export function draftDiffers(reviewDir: string): boolean {
   const draft = join(reviewDir, DRAFT);
-  if (walkFiles(draft).filter((f) => f.endsWith(".md")).length === 0) return false;
+  if (!contentFiles(draft).some((f) => f.endsWith(".md"))) return false;
   const latest = listRevisions(reviewDir).at(-1);
   if (latest === undefined) return true;
   const frozen = join(reviewDir, String(latest));
-  const a = walkFiles(draft);
-  const b = walkFiles(frozen);
+  const a = contentFiles(draft);
+  const b = contentFiles(frozen);
   if (a.length !== b.length || a.some((f, i) => f !== b[i])) return true;
   return a.some((f) => !readFileSync(join(draft, f)).equals(readFileSync(join(frozen, f))));
 }
 
-/** Freeze the draft as the next revision, and return its number. The
- * copy is built aside and renamed into place, so a revision is never
- * half there; its facts and figures are made read-only, since a
- * published revision is never edited again. The draft's sidecars (notes
- * carried forward) go with it and leave the draft: during the round,
- * notes accrue in the revision. */
+/** A review planted as numbered revisions, with no draft yet, gets one:
+ * a writable copy of the latest revision, notes included. */
+export function ensureDraft(reviewDir: string): void {
+  const draft = join(reviewDir, DRAFT);
+  const latest = listRevisions(reviewDir).at(-1);
+  if (existsSync(draft) || latest === undefined) return;
+  cpSync(join(reviewDir, String(latest)), draft, { recursive: true });
+  for (const file of walkFiles(draft)) chmodSync(join(draft, file), 0o644);
+}
+
+/** Freeze the draft's facts and figures as the next revision, and return
+ * its number. The copy is built aside and renamed into place, so a
+ * revision is never half there, and made read-only, since a published
+ * revision is never edited again. Its notes come later (snapshotNotes). */
 export function freezeDraft(reviewDir: string): number {
   const draft = join(reviewDir, DRAFT);
   const next = (listRevisions(reviewDir).at(-1) ?? 0) + 1;
   const target = join(reviewDir, String(next));
   const building = `${target}.${process.pid}.tmp`;
   rmSync(building, { recursive: true, force: true });
-  cpSync(draft, building, { recursive: true });
-  for (const file of walkFiles(building)) {
-    if (!isSidecar(file) && !file.startsWith(`${NOTE_IMAGES}/`)) chmodSync(join(building, file), 0o444);
+  for (const file of contentFiles(draft)) {
+    const to = join(building, file);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(join(draft, file), to);
+    chmodSync(to, 0o444);
   }
   renameSync(building, target);
-  for (const file of walkFiles(draft)) if (isSidecar(file)) unlinkSync(join(draft, file));
-  rmSync(join(draft, NOTE_IMAGES), { recursive: true, force: true });
   return next;
 }
 
-/** After a round, its notes come back to the draft, where the agent
- * resolves them in place: the revision's sidecars and the pictures they
- * show replace the draft's. A review without a draft (planted as numbered
- * revisions) gets one, copied from the revision. */
-export function notesToDraft(reviewDir: string, revision: number): void {
+/** A revision's notes as they stand at the end of its round — the record
+ * of what was raised on it. The draft's note files replace whatever the
+ * revision held; the draft keeps its own, for the agent to resolve. */
+export function snapshotNotes(reviewDir: string, revision: number): void {
   const draft = join(reviewDir, DRAFT);
   const frozen = join(reviewDir, String(revision));
-  if (!existsSync(draft)) {
-    cpSync(frozen, draft, { recursive: true });
-    for (const file of walkFiles(draft)) chmodSync(join(draft, file), 0o644);
-    return;
-  }
-  for (const file of walkFiles(draft)) if (isSidecar(file)) unlinkSync(join(draft, file));
-  rmSync(join(draft, NOTE_IMAGES), { recursive: true, force: true });
-  for (const file of walkFiles(frozen)) {
-    if (!isSidecar(file) && !file.startsWith(`${NOTE_IMAGES}/`)) continue;
-    const to = join(draft, file);
+  for (const file of walkFiles(frozen)) if (isNoteFile(file)) unlinkSync(join(frozen, file));
+  rmSync(join(frozen, NOTE_IMAGES), { recursive: true, force: true });
+  for (const file of walkFiles(draft)) {
+    if (!isNoteFile(file)) continue;
+    const to = join(frozen, file);
     mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(join(frozen, file), to);
-    chmodSync(to, 0o644);
+    copyFileSync(join(draft, file), to);
   }
 }
 
@@ -119,7 +128,7 @@ export function listRevisions(reviewDir: string): number[] {
 // the offsets the viewer stamps into anchors index the same string the
 // browser's HTML parser yields.
 export function readText(path: string): string {
-  return readFileSync(path, "utf8").replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  return readFileSync(path, "utf8").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
 }
 
 /** Write through a temp file and rename, so a crash mid-write leaves the
@@ -177,6 +186,7 @@ export function writeSidecar(revisionDir: string, factPath: string, sidecar: Sid
   if ((sidecar.items ?? []).length === 0) {
     if (existsSync(target)) unlinkSync(target);
   } else {
+    mkdirSync(dirname(target), { recursive: true });
     writeAtomic(target, JSON.stringify(sidecar, null, 2) + "\n");
   }
 }
@@ -189,19 +199,21 @@ export interface FactFile {
   broken?: true;
 }
 
-export function readRevision(revisionDir: string): FactFile[] {
+/** A revision's facts, with the notes from `notesDir`: the draft while
+ * the revision's round is open, the revision's own copy otherwise. */
+export function readRevision(revisionDir: string, notesDir = revisionDir): FactFile[] {
   return walkFacts(revisionDir).map((path) => {
-    const sidecar = readSidecar(revisionDir, path);
+    const sidecar = readSidecar(notesDir, path);
     const fact: FactFile = { path, content: readText(join(revisionDir, path)), sidecar: sidecar ?? null };
     if (sidecar === null) fact.broken = true;
     return fact;
   });
 }
 
-/** Pasted pictures no note mentions any more. images/notes/ is the one
- * place the tool writes files into a revision, so the tool tidies it —
- * on the served revision only, when it is published and when its round
- * ends. A sidecar that does not parse may still mention a picture, so a
+/** Pasted pictures no note mentions any more. images/notes/ is where
+ * the tool writes them, in the draft, so the tool tidies it — when a
+ * round starts and when it ends, before the revision takes its copy. A
+ * sidecar that does not parse may still mention a picture, so a
  * destructive tidy stays its hand rather than guess. */
 export function pruneNoteImages(revisionDir: string): void {
   const dir = join(revisionDir, NOTE_IMAGES);

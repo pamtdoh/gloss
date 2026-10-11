@@ -94,7 +94,6 @@ function openBrowser(url: string): void {
 
 export interface SessionOptions {
   review: string;
-  revision?: number;
   noBrowser: boolean;
   serveHost?: string;
 }
@@ -103,7 +102,7 @@ export interface SessionOptions {
  * on until the human finishes or approves. Exiting is the signal. */
 export async function runSession(cwd: string, opts: SessionOptions): Promise<void> {
   let info = await ensureServer(cwd, opts.review, opts.serveHost);
-  const published = await call(info, "publish", { revision: opts.revision }).catch((e) => failJson(String(e.message)));
+  const published = await call(info, "publish", {}).catch((e) => failJson(String(e.message)));
   const revision: number = published.revision;
   emitLine({ event: "session.started", review: opts.review, revision, frozen: published.frozen, url: published.url });
   // questions already waiting (a re-attach after a lost stream) are

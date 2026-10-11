@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { draftDiffers, freezeDraft, listRevisions, notesToDraft, walkFiles } from "./files.js";
+import { draftDiffers, ensureDraft, freezeDraft, listRevisions, snapshotNotes, walkFiles } from "./files.js";
 
 let review: string;
 const put = (path: string, text: string) => {
@@ -35,40 +35,45 @@ describe("the draft and its frozen revisions", () => {
     expect(draftDiffers(review)).toBe(false);
   });
 
-  test("a round's notes come back to the draft; resolving them makes a new revision", () => {
+  test("notes live in the draft; a revision gets their copy when its round ends", () => {
     put("draft/a.md", "# A\n");
     freezeDraft(review);
-    // the round: the server writes notes into the frozen revision
-    put("1/a.review.json", '{"items":[{"id":"c1","type":"comment","text":"x"}]}\n');
-    put("1/images/notes/p.png", "png");
-    notesToDraft(review, 1);
-    expect(read("draft/a.review.json")).toContain("c1");
-    expect(read("draft/images/notes/p.png")).toBe("png");
-    // nothing changed yet: the same revision is served again
-    expect(draftDiffers(review)).toBe(false);
-    // the agent edits a fact and resolves the note, in place
-    put("draft/a.md", "# A, revised\n");
+    // the round: the server writes notes into the draft
+    put("draft/a.review.json", '{"items":[{"id":"c1","type":"comment","text":"x"}]}\n');
+    put("draft/images/notes/p.png", "png");
+    expect(existsSync(join(review, "1/a.review.json"))).toBe(false);
+    snapshotNotes(review, 1);
+    expect(read("1/a.review.json")).toContain("c1");
+    expect(read("1/images/notes/p.png")).toBe("png");
+    expect(read("draft/a.review.json")).toContain("c1"); // the draft keeps them
+    // resolving notes alone is no new revision
     rmSync(join(review, "draft/a.review.json"));
+    expect(draftDiffers(review)).toBe(false);
+    // a changed fact is; the new revision takes facts only
+    put("draft/a.md", "# A, revised\n");
     expect(draftDiffers(review)).toBe(true);
     expect(freezeDraft(review)).toBe(2);
-    expect(read("2/a.md")).toBe("# A, revised\n");
-    expect(existsSync(join(review, "2/a.review.json"))).toBe(false);
+    expect(walkFiles(join(review, "2"))).toEqual(["a.md"]);
     expect(read("1/a.md")).toBe("# A\n"); // revision 1 stays as reviewed
+    expect(read("1/a.review.json")).toContain("c1"); // with its notes
   });
 
-  test("notes carried forward go into the new revision and leave the draft", () => {
+  test("a revision's snapshot is replaced, not merged, when its round ends again", () => {
     put("draft/a.md", "# A\n");
-    put("draft/a.review.json", '{"items":[{"id":"q1","type":"question"}]}\n');
     freezeDraft(review);
-    expect(read("1/a.review.json")).toContain("q1");
-    expect(existsSync(join(review, "draft/a.review.json"))).toBe(false);
+    put("draft/a.review.json", '{"items":[{"id":"c1","type":"comment","text":"x"}]}\n');
+    snapshotNotes(review, 1);
+    rmSync(join(review, "draft/a.review.json"));
+    snapshotNotes(review, 1);
+    expect(existsSync(join(review, "1/a.review.json"))).toBe(false);
   });
 
-  test("a review planted as numbered revisions gets a draft when a round ends", () => {
+  test("a review planted as numbered revisions gets a writable draft, notes included", () => {
     put("1/a.md", "# A\n");
     put("1/a.review.json", '{"items":[]}\n');
-    notesToDraft(review, 1);
+    ensureDraft(review);
     expect(walkFiles(join(review, "draft"))).toEqual(["a.md", "a.review.json"]);
     expect(statSync(join(review, "draft/a.md")).mode & 0o200).not.toBe(0);
+    expect(draftDiffers(review)).toBe(false);
   });
 });

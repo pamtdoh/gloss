@@ -22,6 +22,7 @@ const gloss = (...args: string[]) =>
   JSON.parse(execFileSync("node", [cli, ...args], { cwd: tmp, encoding: "utf8" }));
 const sidecar = (revision: number, relative: string) =>
   JSON.parse(readFileSync(join(review, String(revision), relative), "utf8"));
+const draftNotes = (relative: string) => JSON.parse(readFileSync(join(review, "draft", relative), "utf8"));
 
 interface Session {
   lines: Record<string, any>[];
@@ -95,7 +96,9 @@ test("a note posted in one tab appears in another at once", async ({ browser }) 
   await comment(tabA, "cli/add-and-list.md", "Drop list; nobody reads it.");
   // no reload, no poll: the server pushes the change to every tab
   await expect(tabB.locator(".card.item-comment")).toContainText("Drop list", { timeout: 3000 });
-  await expect.poll(() => existsSync(join(review, "1/cli/add-and-list.review.json"))).toBe(true);
+  // notes are written to the draft while the round is open
+  await expect.poll(() => existsSync(join(review, "draft/cli/add-and-list.review.json"))).toBe(true);
+  expect(existsSync(join(review, "1/cli/add-and-list.review.json"))).toBe(false);
 });
 
 test("an agent answer reaches every tab; a stale tab's edit erases nothing", async () => {
@@ -122,8 +125,8 @@ test("an agent answer reaches every tab; a stale tab's edit erases nothing", asy
   // question and its answer — which tab B's composer sat through — stay
   await tabB.locator("#item-input").fill("Name the retry count's source.");
   await tabB.locator("#item-save").click();
-  await expect.poll(() => sidecar(1, "slugs/collision-retry.review.json").items.length).toBe(2);
-  const items = sidecar(1, "slugs/collision-retry.review.json").items;
+  await expect.poll(() => draftNotes("slugs/collision-retry.review.json").items.length).toBe(2);
+  const items = draftNotes("slugs/collision-retry.review.json").items;
   expect(items.map((i: { id: string }) => i.id)).toEqual(["q1", "c1"]);
   expect(items[0].thread.map((t: { who: string }) => t.who)).toEqual(["human", "agent"]);
   await expect(tabB.locator(".card.item-question")).toBeVisible();
@@ -159,11 +162,10 @@ test("finishing ends the round, not the tab", async () => {
 let second: Session;
 
 test("a new revision opens in the same tab, showing what changed", async () => {
-  // the round's notes came back to the draft, where the agent works in
-  // place: resolve the notes, change a fact, publish — no copying
-  expect(sidecar(1, "cli/add-and-list.review.json")).toEqual(
-    JSON.parse(readFileSync(join(review, "draft/cli/add-and-list.review.json"), "utf8")),
-  );
+  // the finished round's notes are revision 1's record now, and still in
+  // the draft, where the agent works in place: resolve the notes, change
+  // a fact, publish — no copying
+  expect(sidecar(1, "cli/add-and-list.review.json")).toEqual(draftNotes("cli/add-and-list.review.json"));
   rmSync(join(review, "draft/cli/add-and-list.review.json"));
   rmSync(join(review, "draft/slugs/collision-retry.review.json"));
   writeFileSync(
@@ -205,7 +207,7 @@ test("changes made while the server is down are kept and sent when it's back", a
   await expect(tabA.locator("#conn-banner")).toHaveCount(0, { timeout: 10_000 });
   await expect(tabA.locator("#unsaved-pill")).toHaveCount(0);
   await expect
-    .poll(() => existsSync(join(review, "2/http/redirect.review.json")) && sidecar(2, "http/redirect.review.json").items[0].text)
+    .poll(() => existsSync(join(review, "draft/http/redirect.review.json")) && draftNotes("http/redirect.review.json").items[0].text)
     .toBe("Say what happens to a deleted slug.");
 });
 
@@ -241,6 +243,10 @@ test("approval: the review is agreed, the server stops, the tab stays", async ()
   expect(await second.exited).toBe(0);
   expect(second.lines.at(-1)).toMatchObject({ revision: 2, approved: true });
   expect(existsSync(join(review, "approved/cli/add-and-list.md"))).toBe(true);
+  // approving mid-round snapshots the open notes first: revision 2 and the
+  // approval both carry them
+  expect(sidecar(2, "http/redirect.review.json").items[0].text).toBe("Say what happens to a deleted slug.");
+  expect(existsSync(join(review, "approved/http/redirect.review.json"))).toBe(true);
   await expect(tabA.locator("#conn-banner")).toContainText("approved", { timeout: 10_000 });
   await expect(tabA.locator("#fact-content")).toBeVisible();
 });
