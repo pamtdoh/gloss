@@ -53,6 +53,11 @@ Invoke the skill with whatever you want reviewed:
 Plain words work too: "review the design of the checkout flow"
 triggers the skill the same way.
 
+Keep one tab open for the whole review: each new revision opens in it,
+showing what changed, and the agent's status shows while it works.
+Tabs stay in sync with each other, and a review stays readable in the
+browser after its server stops.
+
 Reviews are working material, so nothing lands in your repo: they
 live in the OS temp directory, one folder per repo, and `gloss dir`
 prints where. Copy a review out if you want to keep it — a reboot
@@ -69,7 +74,7 @@ Building from source requires [Bun](https://bun.sh):
 bun install && bun run build     # → dist/gloss.js (self-contained)
 bun link                         # use your working copy as `gloss`
 bun test                         # unit tests
-bunx playwright test             # drives a real session in chromium, incl. visual baselines
+bunx playwright test             # drives real review rounds in chromium (PW_CHROMIUM=<path> for a local build)
 bun run e2e                      # scripted end-to-end on a disposable fixture repo
 ```
 

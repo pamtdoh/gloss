@@ -24,7 +24,7 @@ const CONCEPTS: [string, string][] = [
   ["Ask", "a live question — the agent answers in a thread on the fact while you keep reviewing."],
   ["Seen", "your own reading progress mark. It decides nothing."],
   ["Raised", "the scope that keeps only facts with notes; s cycles All, Changed, Raised."],
-  ["Finish", "ends the session; the agent writes the next revision from everything you raised and serves it."],
+  ["Finish", "ends this round; the agent writes the next revision from everything you raised, and it opens here when ready."],
   ["Approve", "accepts this revision as the agreed design — implementation starts from it, the review is over."],
 ];
 
@@ -76,7 +76,7 @@ export function Help(props: { open: boolean; onClose: () => void }): React.JSX.E
 }
 
 
-// The one end-of-session surface. Two outcomes, each explained where it is
+// The one end-of-round surface. Two outcomes, each explained where it is
 // chosen, and the approve confirmation swaps this sheet's content in place —
 // a dialog stacked on a dialog reads as a malfunction, not a flow.
 export function FinishSheet(props: {
@@ -85,7 +85,7 @@ export function FinishSheet(props: {
   progress: { seen: number; total: number };
   openQuestions: number;
   raisedFacts: Fact[];
-  /** boxes with unsent text — a draft survives navigation, not the session */
+  /** boxes with unsent text — a draft survives navigation, not the round */
   drafts: number;
   onFinish: () => void;
   onApprove: () => void;
@@ -109,7 +109,7 @@ export function FinishSheet(props: {
             <p className="text-[13px]">
               Revision {props.data.revision} becomes the agreed design: it is copied to{" "}
               <code>approved/</code>, implementation starts from that copy, and the review
-              session ends.
+              ends. This tab stays readable afterwards.
             </p>
             {!clean && (
               <p className="text-muted-foreground text-[13px]">
@@ -138,8 +138,8 @@ export function FinishSheet(props: {
               {raised === 1 ? "" : "s"} with notes · {props.openQuestions} open question
               {props.openQuestions === 1 ? "" : "s"}
             </p>
-            {/* a draft outlives the box it was typed in, not the session:
-                the one moment to say so is before the session ends */}
+            {/* a draft outlives the box it was typed in, not the round:
+                the one moment to say so is before the round ends */}
             {props.drafts > 0 && (
               <p className="text-[13px]" id="finish-drafts">
                 <strong className="font-[650]">
@@ -187,8 +187,8 @@ export function FinishSheet(props: {
                 </div>
                 <p className="text-muted-foreground m-0 text-[12.5px]">
                   {clean
-                    ? "Ends the session without notes — continue with the agent in the terminal."
-                    : "The session ends and the agent writes the next revision from your notes and serves it."}
+                    ? "Ends this round without notes — continue with the agent in the terminal."
+                    : "The agent writes the next revision from your notes. It opens in this tab when it's ready."}
                 </p>
               </div>
               <div className="border-line-soft rounded-lg border p-3">
