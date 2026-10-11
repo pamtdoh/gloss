@@ -1,10 +1,14 @@
 # Writing fact files
 
-A review succeeds when the human decides every fact without opening
-anything else. So each fact must be *decidable* — they can agree or
-object to it — and *followable* by a cold reader. A fact they can't
-follow sends them back to you or to the code, which is the reading
-Gloss exists to remove.
+A review succeeds when the reviewer — the human reading it — decides
+every fact without opening anything else. So each fact must be
+*decidable*: they can agree or object to it. It must also be
+*followable* by a cold reader, because a fact they can't follow sends
+them back to you or to the code, which is the reading Gloss exists to
+remove.
+
+Contents: what a fact is · what to write · genres · wording ·
+display · figures.
 
 ## What a fact is
 

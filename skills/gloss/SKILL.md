@@ -1,14 +1,16 @@
 ---
 name: gloss
-description: Generate a files-first design review of a repository as small, decidable facts, for a human to review. Use when the user asks for a design review or architecture review of their codebase or any part of it.
+description: Turns a system, a feature, recent changes, a design doc, or a plan into a tree of small, decidable Markdown facts that a human reviews, comments on, and approves in a local viewer before anything is built. Use when the user asks for a design review, architecture review, or audit of a codebase or any part of it — including what an agent just built, the changes in this session, or a plan before implementation — or mentions Gloss.
+compatibility: Requires the gloss CLI (npm install -g gloss-review), and a harness that can run a background process and stream its stdout into the conversation.
 ---
 
 # gloss
 
 Gloss condenses a codebase's design into small facts — one Markdown
 file each, judged without reading source. You write the facts; the
-human reviews them in a viewer, which records their notes in sidecar
-files (`*.review.json`) next to each fact.
+human (who asked for the review and reviews it) reads them in a
+viewer, which records their notes — comments and questions — in
+sidecar files (`*.review.json`) next to each fact.
 
 ## Where reviews live
 
@@ -22,7 +24,7 @@ directories don't survive every reboot.
 
 ## Scope and altitude come from the prompt
 
-What the user asked to have reviewed is the scope. If it is
+What the human asked to have reviewed is the scope. If it is
 ambiguous, ask, or state the scope you inferred when you present the
 review. The prompt also sets the altitude, the level of detail the
 facts descend to: "review the overall design" stays at the decisions
@@ -32,7 +34,7 @@ until a cold reader could follow the moving parts.
 
 When the prompt names no altitude, stay high: depth nobody asked for
 multiplies facts without adding decisions. Name detail below the
-altitude in a sentence instead of elaborating it, so the reviewer can
+altitude in a sentence instead of elaborating it, so the human can
 pull it with a note. Earlier conversation is context, not scope — a
 detail you discussed at length earns a fact only when the altitude
 needs it.
@@ -52,7 +54,7 @@ needs it.
    installed next to this file, then write the facts. Shape the tree
    to mirror the design:
    - Split within the altitude, not below it — each file is another
-     decision the reviewer sits through.
+     decision the human sits through.
    - Name files for their subject in kebab-case (`collision-retry.md`,
      not `fact-07.md`). Everything sorts alphabetically, so use
      numeric prefixes (`10-auth.md`) where a group tells a story.
