@@ -1,4 +1,5 @@
 import { type NoteOp, applyOp } from "../notes.js";
+import type { ReviewMeta } from "../meta.js";
 import type { Sidecar } from "../summary.js";
 import { readJson, writeJson } from "./common.js";
 import type { Fact } from "./model.js";
@@ -21,6 +22,8 @@ export interface Meta {
   /** the agent's status line, e.g. "writing revision 3" */
   status: string | null;
   revisions: number[];
+  /** the review's review.json: where it came from, how each round went */
+  about: ReviewMeta | null;
 }
 
 /** live: the event stream is open. connecting: it dropped and the
@@ -231,6 +234,8 @@ export class ReviewStore {
     }
     if (event.seq <= meta.seq && event.type !== "server.stopping") return;
     const nextMeta: Meta = { ...meta, seq: Math.max(meta.seq, event.seq) };
+    // the events that change review.json carry it
+    if (event.about !== undefined) nextMeta.about = event.about;
     switch (event.type) {
       case "note.changed": {
         this.setSidecar(event.revision, event.path, event.sidecar, event.seq);

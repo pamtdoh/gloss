@@ -874,3 +874,8 @@ del.rk-dd {
   display: block; max-width: 100%; max-height: 180px; width: auto;
   border-radius: 6px; border: 1px solid var(--line-soft); margin: 6px 0 0;
 }
+
+/* ------------------------------------------------------------- about */
+.compare-commit { font-size: 11.5px; color: var(--muted); margin: 0 2px; }
+.about-revisions th, .about-revisions td { padding: 3px 10px 3px 0; vertical-align: top; }
+.about-revisions tbody tr { border-top: 1px solid var(--line-soft); }

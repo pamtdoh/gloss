@@ -66,6 +66,7 @@ const meta = (patch: Partial<Meta> = {}): Meta => ({
   approved: null,
   status: null,
   revisions: [1],
+  about: null,
   ...patch,
 });
 const fact = (sidecar: Fact["sidecar"]): Fact[] => [{ path: "a.md", content: "# A\n", sidecar }];

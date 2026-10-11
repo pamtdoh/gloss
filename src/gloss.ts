@@ -1,21 +1,34 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { emitLine, failJson as fail } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
-import { type SessionOptions, approve, runSession, sendReply, sendStatus, stopServer } from "./agent.js";
+import {
+  type SessionOptions,
+  approve,
+  listReviews,
+  openReview,
+  removeReview,
+  runSession,
+  sendReply,
+  sendStatus,
+  stopServer,
+} from "./agent.js";
 import { runServer } from "./server.js";
 import { installSkills, type SkillDest } from "./skills.js";
 
 const USAGE = `gloss — files-first design review
 
 Usage:
-  gloss dir           Print (and create) this repo's reviews directory
-  gloss session <review> [--no-browser] [--serve-host <host>]
+  gloss dir           Print (and create) this repository's reviews
+                          directory, under ~/.gloss (or $GLOSS_HOME)
+  gloss session <review> [--prompt <request>] [--no-browser] [--serve-host <host>]
                           Freeze <review>/draft/ as the next revision when
                           its facts changed (else serve the latest
                           again), publish it to the review's server,
                           starting the server if needed, then stream
                           JSONL events until the human finishes or
                           approves, and print a JSON summary.
+                          --prompt records the human's request with a
+                          new review (review.json)
                           Run it under a supervisor that streams stdout;
                           the process exiting is the completion signal.
                           Open tabs follow the new revision; a browser is
@@ -32,6 +45,11 @@ Usage:
                           Copy a revision to approved/ (default: the one
                           on screen, else the latest)
   gloss stop <review>     Stop the review's server
+  gloss list          This repository's reviews, newest first
+  gloss open <review> [--no-browser]
+                          Open a review in the browser — past ones
+                          read-only, every revision and note
+  gloss rm <review>       Delete a review for good
   gloss skill install [--agents] [--global]
                           Install the Gloss skills into this repo — to
                           .claude/skills/ by default, or with --agents
@@ -57,7 +75,11 @@ function parseSessionArgs(args: string[]): SessionOptions {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--no-browser") opts.noBrowser = true;
-    else if (arg === "--serve-host") {
+    else if (arg === "--prompt") {
+      const value = args[++i];
+      if (!value) fail("--prompt expects the human's request");
+      opts.prompt = value;
+    } else if (arg === "--serve-host") {
       const value = args[++i];
       if (!value) fail("--serve-host expects a hostname");
       opts.serveHost = value;
@@ -88,6 +110,21 @@ switch (command) {
   case "status":
     if (rest.length !== 2) fail("usage: gloss status <review> <text>");
     void sendStatus(process.cwd(), rest[0]!, rest[1]!);
+    break;
+  case "list":
+    if (rest.length > 0) fail("usage: gloss list");
+    void listReviews(process.cwd());
+    break;
+  case "open": {
+    const noBrowser = rest.includes("--no-browser");
+    const names = rest.filter((a) => a !== "--no-browser");
+    if (names.length !== 1 || names[0]!.startsWith("-")) fail("usage: gloss open <review> [--no-browser]");
+    void openReview(process.cwd(), names[0]!, noBrowser);
+    break;
+  }
+  case "rm":
+    if (rest.length !== 1 || rest[0]!.startsWith("-")) fail("usage: gloss rm <review>");
+    void removeReview(process.cwd(), rest[0]!);
     break;
   case "stop":
     if (rest.length !== 1) fail("usage: gloss stop <review>");

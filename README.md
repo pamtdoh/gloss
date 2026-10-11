@@ -58,10 +58,22 @@ showing what changed, and the agent's status shows while it works.
 Tabs stay in sync with each other, and a review stays readable in the
 browser after its server stops.
 
-Reviews are working material, so nothing lands in your repo: they
-live in the OS temp directory, one folder per repo, and `gloss dir`
-prints where. Copy a review out if you want to keep it — a reboot
-may clear it.
+Nothing lands in your repo: reviews live in `~/.gloss/reviews`, one
+folder per repository (all its worktrees together), each with a
+`review.json` saying what it was asked, on which branch, and which
+commit each revision described. They stay until you remove them:
+
+```sh
+gloss list                    # this repository's reviews
+gloss open checkout-flow      # browse a past review, every revision and note
+gloss rm checkout-flow        # delete one
+```
+
+Preferences such as the theme live in `~/.gloss/config.json`, shared by
+every review. `"groupReviewsBy"` there chooses what one reviews folder
+holds: `"repo"` (all worktrees of a repository, the default),
+`"remote"` (every clone of the same `origin`), or `"checkout"` (each
+worktree on its own). `GLOSS_HOME` moves the whole home elsewhere.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) documents the conventions the
 skills and the viewer share.

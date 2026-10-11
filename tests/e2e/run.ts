@@ -143,11 +143,23 @@ async function lifecycle(repo: string, reviews: string): Promise<void> {
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "gloss-e2e-")));
+// gloss's home for this run — never the real ~/.gloss
+const home = realpathSync(mkdtempSync(join(tmpdir(), "gloss-e2e-home-")));
+process.env.GLOSS_HOME = home;
+const worktree = `${tmp}-wt`;
 let reviews = "";
 try {
   // 1. Disposable fixture repo.
   cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
-  execFileSync("git", ["init", "-q"], { cwd: tmp });
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args], {
+      cwd: tmp,
+      stdio: "ignore",
+    });
+  git("init", "-q", "-b", "main");
+  git("add", "-A");
+  git("commit", "-qm", "fixture");
+  git("worktree", "add", "-q", "-b", "feature/x", worktree);
 
   // 2. gloss dir — outside the repo, stable from any subdirectory, and
   // nothing scaffolded in the working tree.
@@ -160,6 +172,8 @@ try {
   reviews = first.path;
   check(first.ok === true && existsSync(reviews), "dir creates the reviews directory");
   check(relative(tmp, reviews).startsWith(".."), "reviews live outside the repo");
+  check(reviews.startsWith(join(home, "reviews") + "/"), "...in gloss's home, under reviews/");
+  check(dir(worktree).path === reviews, "a worktree of the repository shares its reviews");
   check(dir(join(tmp, "src")).path === reviews, "every subdirectory resolves to the same reviews");
   check(dir(tmp).path === reviews, "dir is idempotent");
   check(status() === before, "nothing is scaffolded in the repo");
@@ -171,7 +185,11 @@ try {
     join(reviews, "design-review/draft"),
     { recursive: true },
   );
-  const session = spawn("node", [cli, "session", "design-review", "--no-browser"], { cwd: tmp });
+  const session = spawn(
+    "node",
+    [cli, "session", "design-review", "--no-browser", "--prompt", "review the overall design"],
+    { cwd: worktree },
+  );
   const started = await new Promise<Record<string, unknown>>((resolve) =>
     session.stdout.once("data", (chunk: Buffer) => resolve(JSON.parse(chunk.toString().split("\n")[0]!))),
   );
@@ -182,6 +200,10 @@ try {
     "a frozen revision's facts are read-only",
   );
   check(existsSync(join(reviews, "design-review/draft/_index.md")), "the draft stays, for the next round");
+  const about = JSON.parse(readFileSync(join(reviews, "design-review/review.json"), "utf8"));
+  check(about.prompt === "review the overall design", "review.json records the request");
+  check(about.started?.branch === "feature/x" && about.started?.worktree === worktree, "...the worktree and branch it started in");
+  check(/^[0-9a-f]{40}$/.test(about.revisions?.["1"]?.commit ?? ""), "...and the commit revision 1 described");
 
   // 4. Structural conventions from ARCHITECTURE.md.
   const revision = join(reviews, "design-review/1");
@@ -222,13 +244,30 @@ try {
   // 6. Rounds, ids, and approval at their edges, against real servers.
   await lifecycle(tmp, reviews);
 
-  // 7. The terminal reading path: the whole review, printed.
+  // 7. Past reviews: listed, opened read-only, removed.
+  const listed = JSON.parse(execFileSync("node", [cli, "list"], { cwd: tmp, encoding: "utf8" }));
+  const names = listed.reviews.map((r: { name: string }) => r.name).sort();
+  check(names.join(",") === "design-review,second", `list shows the repository's reviews (${names})`);
+  check(
+    listed.reviews.find((r: { name: string }) => r.name === "design-review").prompt === "review the overall design",
+    "...with the request each answers",
+  );
+  const opened = JSON.parse(execFileSync("node", [cli, "open", "design-review", "--no-browser"], { cwd: tmp, encoding: "utf8" }));
+  const snapshot = (await (await fetch(new URL("/api/review", opened.url))).json()) as Record<string, any>;
+  check(snapshot.review === "design-review" && snapshot.approved === 1, "open serves a past review, read-only");
+  check(snapshot.about?.prompt === "review the overall design", "...with its review.json");
+
+  // 8. The terminal reading path: the whole review, printed.
   console.log("\n=== <reviews>/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {
     console.log(`\n--- ${relative(revision, f)} ---`);
     console.log(readFileSync(f, "utf8").trimEnd());
   }
+
+  // last, since the printing above reads the review it deletes
+  execFileSync("node", [cli, "rm", "design-review"], { cwd: tmp });
+  check(!existsSync(join(reviews, "design-review")), "rm deletes a review, read-only revisions and all");
 
   const groups = new Set(facts.filter((f) => f.includes("/")).map((f) => f.split("/")[0]));
   console.log(
@@ -245,5 +284,7 @@ try {
     }
   }
   rmSync(tmp, { recursive: true, force: true });
+  rmSync(worktree, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
   if (reviews) rmSync(reviews, { recursive: true, force: true });
 }

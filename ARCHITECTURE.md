@@ -26,7 +26,8 @@ it — agents follow it by instruction.
   writes to it.
 - **Meaning lives in structure.** Approval is a directory existing,
   resolution is a file being deleted, agreement is the absence of a
-  sidecar. No metadata files where structure can carry the semantics.
+  sidecar. No metadata files where structure can carry the semantics —
+  `review.json` holds only what it can't: where a review came from.
 - **Scope comes from the user's prompt**, not the tool. No built-in scope
   kinds or workflow gates.
 - **The viewer is for humans only**, and terminal-only review (reading the
@@ -34,24 +35,43 @@ it — agents follow it by instruction.
 
 ## File layout
 
-Reviews are working material, mostly never committed, so they live
-outside the repo: in the OS temp directory, one directory per repo.
-The CLI owns the location and `gloss dir` prints it (creating it), so
-every harness asks the same command rather than knowing a path; the
-skills run it before touching a review. The path is
-`<tmpdir>/gloss-<uid>/<repo-name>-<hash>/` — the repo is the nearest
-ancestor of the working directory holding `.git` (else the working
-directory itself), so any subdirectory resolves to the same reviews,
-and the hash of its real path keeps two checkouts of the same name
-apart. The per-user directory is created private, and the CLI refuses
-one it doesn't own or that others can reach, since `/tmp` is shared
-on Linux. Nothing is scaffolded in the working tree. The cost is the
-temp directory's lifetime: a reboot or the OS's cleaner may take a
-review, so one worth keeping is copied out on purpose.
+Reviews live outside every repo, in gloss's home: `~/.gloss`, the same
+path on every OS (`%USERPROFILE%\.gloss` on Windows), or `$GLOSS_HOME`.
+It is created private, and the CLI refuses a home another user owns.
+Reviews are kept until the user removes one; nothing is scaffolded in a
+working tree. The CLI owns the location and `gloss dir` prints a
+repository's reviews directory (creating it), so every harness asks the
+same command rather than knowing a path.
+
+```
+~/.gloss/
+  config.json                 # the user's preferences (below)
+  reviews/
+    myapp-1a2b3c4d/           # one repository: <name>-<hash of its identity>
+      checkout-flow/          # one review
+```
+
+A reviews directory belongs to a repository, not a checkout: gloss finds
+the nearest `.git`, follows a worktree's `.git` file to its git dir and
+that dir's `commondir` to the git dir every worktree shares, and keys on
+that — plain file reads, no git binary. So every worktree and
+subdirectory of a repository resolves to the same reviews; a folder
+outside git keys on itself. `groupReviewsBy` in the config changes the
+grouping: `"repo"` (the default), `"remote"` (every clone whose `origin`
+URL, normalized, is the same — for several clones, or a home synced
+across machines), or `"checkout"` (each worktree on its own).
+
+`config.json` is the user's file: gloss reads it tolerantly (missing or
+malformed means the defaults) and writes back only the viewer's own
+preferences — theme, diff layout, column widths — which the viewer
+reads and saves through whichever review server it is on, so every
+review looks the way the user last left any of them. Per-review browser
+state (seen marks, drafts) stays in the browser.
 
 ```
 <reviews>/                    # what `gloss dir` prints
   checkout-flow/              # one review
+    review.json               # where it came from, how each round went
     draft/                    # the live review: facts in progress, and every open note
     1/                        # round 1: its facts frozen when published, its notes when the round ended
     2/                        # ...and round 2
@@ -93,6 +113,22 @@ server's files, next to the revisions —
 | `.server.lock` | the running server's pid: one server per review |
 | `.events.jsonl` | the numbered event log; a restarted server rebuilds its state from it |
 | `.server.log` | the server's own output |
+
+`review.json` is the one record the folder structure can't carry: the
+human's request (`gloss session --prompt`), the repository and its
+remote, the worktree and branch the review started in, the agent, and
+for each revision the commit, branch, and uncommitted-changes flag it
+was published from, when its round finished, and how many notes it
+drew — plus the approval. Gloss writes it at each publish, finish, and
+approval; the CLI gathers the git context where it runs, since the
+server may have been started from another worktree. The viewer shows
+it under "About this review", and the compare bar names each side's
+commit.
+
+Past reviews are listed with `gloss list`, opened with
+`gloss open <review>` — the review's server without a round, so a
+finished review is read-only, every revision and note intact — and
+removed with `gloss rm <review>`.
 
 ## Review state: sidecars
 

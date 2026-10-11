@@ -15,9 +15,8 @@ running.
    or by listing `<reviews>` when there is only one.
 2. Require `approved/` to exist — the directory is the approval, and
    there is no other marker. Without it, stop and tell the human the
-   review isn't approved yet (or, if the review itself is gone, that
-   the temp directory was cleared), and offer to run or resume the
-   review. Never implement from a numbered revision.
+   review isn't approved yet, and offer to run or resume the review.
+   Never implement from a numbered revision.
 3. Implement every fact in `approved/`, `_index.md` group facts
    included, following the project's conventions. If the code you're
    writing would contradict a fact, stop and raise it with the human

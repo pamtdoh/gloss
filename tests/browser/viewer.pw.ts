@@ -26,6 +26,11 @@ import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+// gloss's home for this suite — never the real ~/.gloss; every CLI and
+// server process the suite starts inherits it
+const glossHome = mkdtempSync(join(tmpdir(), "gloss-home-"));
+process.env.GLOSS_HOME = glossHome;
 const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
@@ -234,6 +239,7 @@ test.afterAll(async () => {
   // the review server outlives the session process; stop it
   if (tmp) execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
   if (tmp) rmSync(tmp, { recursive: true, force: true });
+  rmSync(glossHome, { recursive: true, force: true });
   if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
 
@@ -916,17 +922,25 @@ test("pictures in notes: attach or paste, chips in the box, a file in the revisi
   await page.locator('#toast button[aria-label="Dismiss"]').click();
 });
 
-test("theme button toggles dark/light and persists", async () => {
-  const isDark = () => page.evaluate(() => document.documentElement.classList.contains("dark"));
-  expect(await isDark()).toBe(false); // test context is light-scheme
+test("theme button toggles dark/light, saved for every review in ~/.gloss", async ({ browser }) => {
+  const isDark = (p: Page) => p.evaluate(() => document.documentElement.classList.contains("dark"));
+  const config = () => JSON.parse(readFileSync(join(glossHome, "config.json"), "utf8"));
+  expect(await isDark(page)).toBe(false); // test context is light-scheme
   await page.locator("#btn-theme").click();
-  await expect.poll(isDark).toBe(true);
-  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("dark");
+  await expect.poll(() => isDark(page)).toBe(true);
+  await expect.poll(() => config().theme).toBe("dark");
   await page.reload();
-  await expect.poll(isDark).toBe(true); // survives reload before first paint
+  await expect.poll(() => isDark(page)).toBe(true); // survives reload before first paint
+  // a fresh browser has no copy of its own: the preference comes from the
+  // user's config, as it would on any other review's address
+  const fresh = await browser.newContext({ serviceWorkers: "block" });
+  const other = await fresh.newPage();
+  await other.goto(page.url());
+  await expect.poll(() => isDark(other)).toBe(true);
+  await fresh.close();
   await page.locator("#btn-theme").click();
-  await expect.poll(isDark).toBe(false);
-  expect(await page.evaluate(() => localStorage.getItem("rk-theme"))).toBe("light");
+  await expect.poll(() => isDark(page)).toBe(false);
+  await expect.poll(() => config().theme).toBe("light");
 });
 
 test("a revision not under review is read-only", async () => {

@@ -14,13 +14,13 @@ sidecar files (`*.review.json`) next to each fact.
 
 ## Where reviews live
 
-`gloss dir` prints `{"ok":true,"path":"…"}`: this repo's reviews
-directory, in the OS temp directory outside the repo. `<reviews>`
-below means that path. Run it from anywhere in the repo whenever you
-need the path, including after a compaction, rather than guessing.
-Reviews are working material, so never write them into the repo; if
-the human wants to keep one, copy it where they say, since temp
-directories don't survive every reboot.
+`gloss dir` prints `{"ok":true,"path":"…"}`: this repository's
+reviews directory, under `~/.gloss/reviews`, outside the repo and
+shared by all of its worktrees. `<reviews>` below means that path. Run
+it from anywhere in the repo whenever you need the path, including
+after a compaction, rather than guessing. Never write reviews into the
+repo. Reviews are kept until the human removes one (`gloss rm`), and
+`gloss open <review>` shows a past one in the browser.
 
 ## Scope and altitude come from the prompt
 
@@ -50,7 +50,8 @@ needs it.
    app's data outside both the repo and the review. Ask first only
    if running it needs setup you would have to build.
 3. Create `<reviews>/<review>/draft/`, naming the review in short
-   kebab-case from the prompt (`checkout-flow`). The draft is the only
+   kebab-case from the prompt (`checkout-flow`). Other worktrees share
+   `<reviews>`, so pick a name `gloss list` doesn't already show. The draft is the only
    place you ever write facts: each round, gloss freezes it into a
    numbered revision (`1/`, `2/`, …) that is read-only from then on.
 4. Read [references/writing-facts.md](references/writing-facts.md),
@@ -92,7 +93,8 @@ large, seems to need it, or you are running unattended.
 
 ## Run a round
 
-`gloss session <review>` freezes the draft as the next revision when its
+`gloss session <review> --prompt "<the human's request, verbatim>"`
+freezes the draft as the next revision when its
 facts changed since the last one (otherwise the latest is served again),
 publishes it to the review's server, starting the server if needed,
 and blocks until the human clicks **Finish review** or approves. Stdout is JSONL:
@@ -109,7 +111,9 @@ signals completion. A single blocking call would leave questions
 unanswered until the end, and a second watcher would split the
 questions between two of you.
 
-If you lose the stream or resume after a compaction, run
+The request is recorded with the review the first time, so it can be
+found and understood later; later rounds can leave `--prompt` out. If
+you lose the stream or resume after a compaction, run
 `gloss session <review>` again: it re-attaches to the open round and
 delivers every question still waiting on you.
 

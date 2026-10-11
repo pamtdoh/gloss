@@ -23,6 +23,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
+
+// gloss's home for this suite — never the real ~/.gloss; every CLI and
+// server process the suite starts inherits it
+const glossHome = mkdtempSync(join(tmpdir(), "gloss-home-"));
+process.env.GLOSS_HOME = glossHome;
 const cli = join(root, "dist/gloss.js");
 const PHONE = { width: 390, height: 844 };
 
@@ -80,6 +85,7 @@ test.afterAll(async () => {
   // the review server outlives the session process; stop it
   if (tmp) execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
   if (tmp) rmSync(tmp, { recursive: true, force: true });
+  rmSync(glossHome, { recursive: true, force: true });
   if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
 

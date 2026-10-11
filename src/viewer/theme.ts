@@ -1,38 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { getPrefs, setPref, subscribePrefs } from "./prefs.js";
 
-// light | dark | system -> the .dark class the utilities target. Applied
-// once at module load so the first paint is already right.
-export type ThemeMode = "light" | "dark" | "system";
-const THEME_KEY = "rk-theme";
+// light | dark | the OS's -> the .dark class the utilities target. Applied
+// at module load from the cached preferences, so the first paint is right.
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const isDark = (theme: "light" | "dark" | undefined, osDark: boolean) => theme === "dark" || (!theme && osDark);
+const applyTheme = (dark: boolean) => document.documentElement.classList.toggle("dark", dark);
+applyTheme(isDark(getPrefs().theme, darkQuery.matches));
 
-function storedTheme(): ThemeMode {
-  const v = localStorage.getItem(THEME_KEY);
-  return v === "light" || v === "dark" ? v : "system";
-}
-
-function applyTheme(dark: boolean): void {
-  document.documentElement.classList.toggle("dark", dark);
-}
-
-const initial = storedTheme();
-applyTheme(initial === "dark" || (initial === "system" && darkQuery.matches));
-
-/** The theme and its toggle; an OS scheme change re-renders so the icon
- * tracks the effective theme. */
+/** The theme and its toggle. The choice is the user's, saved for every
+ * review; until one is made the OS decides, and an OS change re-renders. */
 export function useTheme(): { dark: boolean; toggle: () => void } {
-  const [theme, setTheme] = useState<ThemeMode>(storedTheme);
-  const [sysDark, setSysDark] = useState(darkQuery.matches);
+  const prefs = useSyncExternalStore(subscribePrefs, getPrefs);
+  const [osDark, setOsDark] = useState(darkQuery.matches);
   useEffect(() => {
-    const onChange = (): void => setSysDark(darkQuery.matches);
+    const onChange = (): void => setOsDark(darkQuery.matches);
     darkQuery.addEventListener("change", onChange);
     return () => darkQuery.removeEventListener("change", onChange);
   }, []);
-  const dark = theme === "dark" || (theme === "system" && sysDark);
+  const dark = isDark(prefs.theme, osDark);
   useEffect(() => {
-    if (theme === "system") localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, theme);
     applyTheme(dark);
-  }, [theme, dark]);
-  return { dark, toggle: () => setTheme(dark ? "light" : "dark") };
+  }, [dark]);
+  return { dark, toggle: () => setPref("theme", dark ? "light" : "dark") };
 }
