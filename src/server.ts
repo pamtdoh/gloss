@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   DRAFT,
@@ -233,6 +234,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
     status,
     revisions: listRevisions(reviewDir),
     about: readMeta(reviewDir),
+    home: homedir(),
   });
 
   // ---------- lifecycle ----------
@@ -468,7 +470,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         res.end(body);
       };
       if (req.method === "GET") {
-        if (url.pathname === "/") return staticFile("text/html", viewerHtml(VERSION));
+        if (url.pathname === "/") return staticFile("text/html", viewerHtml(VERSION, viewerPrefs()));
         if (url.pathname === "/client.js") return staticFile("text/javascript", clientJs);
         if (url.pathname === "/client.css") return staticFile("text/css", clientCss);
         if (url.pathname === "/mermaid.js") return staticFile("text/javascript", mermaidJs);

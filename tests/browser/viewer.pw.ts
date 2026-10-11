@@ -929,6 +929,10 @@ test("theme button toggles dark/light, saved for every review in ~/.gloss", asyn
   await page.locator("#btn-theme").click();
   await expect.poll(() => isDark(page)).toBe(true);
   await expect.poll(() => config().theme).toBe("dark");
+  // the page arrives dark: no first frame in the OS theme on a review this
+  // browser has never opened (each review is its own address)
+  const served = await (await page.request.get(new URL("/", page.url()).href)).text();
+  expect(served).toContain('<html lang="en" class="dark">');
   await page.reload();
   await expect.poll(() => isDark(page)).toBe(true); // survives reload before first paint
   // a fresh browser has no copy of its own: the preference comes from the

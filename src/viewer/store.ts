@@ -24,6 +24,8 @@ export interface Meta {
   revisions: number[];
   /** the review's review.json: where it came from, how each round went */
   about: ReviewMeta | null;
+  /** the user's home directory, for showing paths as ~/… */
+  home?: string;
 }
 
 /** live: the event stream is open. connecting: it dropped and the
