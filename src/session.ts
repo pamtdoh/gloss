@@ -14,6 +14,7 @@ import {
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { emitLine, emitLines, failJson, toProtocolPath } from "./protocol.js";
+import { reviewsDir } from "./reviews.js";
 import { type Sidecar, isEmptySidecar, mergeSidecar, summarize } from "./summary.js";
 import { VIEWER_HTML } from "./viewer/html.js";
 // Bundled at build time; served as /client.js, /client.css, /mermaid.js.
@@ -60,7 +61,7 @@ export interface SessionOptions {
 // and address so `gloss reply` can find it. Written on listen, removed on
 // exit; a stale copy is detected by the pid check.
 function sessionFilePath(cwd: string, review: string): string {
-  return join(cwd, ".gloss", review, ".session");
+  return join(reviewsDir(cwd), review, ".session");
 }
 
 function listRevisions(reviewDir: string): number[] {
@@ -186,7 +187,7 @@ function pruneNoteImages(revisionDir: string): void {
 }
 
 export function runSession(cwd: string, opts: SessionOptions): void {
-  const reviewDir = join(cwd, ".gloss", opts.review);
+  const reviewDir = join(reviewsDir(cwd), opts.review);
   if (!existsSync(reviewDir)) failJson(`no such review: ${opts.review}`);
   const revisions = listRevisions(reviewDir);
   if (revisions.length === 0) failJson(`review ${opts.review} has no revisions`);
@@ -196,9 +197,9 @@ export function runSession(cwd: string, opts: SessionOptions): void {
   const revisionDir = (n: number) => join(reviewDir, String(n));
   // Auth guards the network path only: with --serve-host the viewer is
   // reachable beyond this machine, so a one-time token gates a session
-  // cookie. Plain loopback skips both — anything local can already edit
-  // .gloss/ directly, so a token adds ceremony, not protection. The host
-  // and origin checks below hold in both modes.
+  // cookie. Plain loopback skips both — anything local running as this user
+  // can already edit the review files, so a token adds ceremony, not
+  // protection. The host and origin checks below hold in both modes.
   const authRequired = opts.serveHost !== undefined;
   const token = randomBytes(32).toString("hex");
   const sessionCookie = randomBytes(32).toString("hex");

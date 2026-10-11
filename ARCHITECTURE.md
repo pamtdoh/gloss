@@ -9,8 +9,8 @@ it — agents follow it by instruction.
 ## Principles
 
 - **Files are the single source of truth.** Facts, comments, questions,
-  answers, approval — all plain files under `.gloss/` in the target repo.
-  Git history is the audit trail.
+  answers, approval — all plain files in the repo's reviews directory.
+  The revisions themselves are the audit trail.
 - **Agents read and write the files directly.** No hashing, no validation,
   no CLI mediation for state. The agent's judgment is the interface.
   The one exception is `gloss reply` (below): while a session is live,
@@ -32,8 +32,23 @@ it — agents follow it by instruction.
 
 ## File layout
 
+Reviews are working material, mostly never committed, so they live
+outside the repo: in the OS temp directory, one directory per repo.
+The CLI owns the location and `gloss dir` prints it (creating it), so
+every harness asks the same command rather than knowing a path; the
+skills run it before touching a review. The path is
+`<tmpdir>/gloss-<uid>/<repo-name>-<hash>/` — the repo is the nearest
+ancestor of the working directory holding `.git` (else the working
+directory itself), so any subdirectory resolves to the same reviews,
+and the hash of its real path keeps two checkouts of the same name
+apart. The per-user directory is created private, and the CLI refuses
+one it doesn't own or that others can reach, since `/tmp` is shared
+on Linux. Nothing is scaffolded in the working tree. The cost is the
+temp directory's lifetime: a reboot or the OS's cleaner may take a
+review, so one worth keeping is copied out on purpose.
+
 ```
-.gloss/
+<reviews>/                    # what `gloss dir` prints
   checkout-flow/              # one review
     1/                        # first revision: the fact tree
     2/                        # a copy of 1/, then iterated
@@ -123,11 +138,11 @@ exiting is the completion signal, so one stdout monitor covers live Q&A
 and completion. The agent runs the session under a supervisor that
 streams stdout (Claude Code's Monitor, or an equivalent); harnesses
 that cannot stream a background process are not supported. While the
-session runs, `.gloss/<review>/.session` holds the server's pid and
+session runs, `<reviews>/<review>/.session` holds the server's pid and
 address — how `gloss reply` finds it — and is removed on exit; a stale
 copy from a killed process is detected by its dead pid. Plain loopback
-sessions have no auth — anything local can already edit `.gloss/`
-directly — just host and origin checks. With `--serve-host` (a private
+sessions have no auth — anything local running as the user can already
+edit the review files directly — just host and origin checks. With `--serve-host` (a private
 proxy hostname, e.g. tailscale serve) the network boundary is real, so
 the URL carries a one-time token that gates a port-scoped session
 cookie. The agent-reply route works without the cookie and accepts only
@@ -166,7 +181,7 @@ nothing.
   the next revision whether it arrives in the viewer or in
   conversation, and code changes wait for approval.
 - **gloss-apply** implements from `approved/` and refuses to start
-  without it. It never modifies `.gloss/`.
+  without it. It never modifies the reviews directory.
 
 Both are plain instruction files installed by `gloss skill install` —
 into `.claude/skills/` by default, or `.agents/skills/` with `--agents`

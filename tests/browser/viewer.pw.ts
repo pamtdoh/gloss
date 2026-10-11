@@ -21,7 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { deflateSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
@@ -29,13 +29,14 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const cli = join(root, "dist/gloss.js");
 
 let tmp: string;
+let review: string; // <reviews>/design-review, from `gloss dir`
 let proc: ChildProcessWithoutNullStreams;
 let exited: Promise<number>;
 let context: BrowserContext;
 let page: Page;
 const stdoutLines: Record<string, unknown>[] = [];
 
-const snap2 = (...parts: string[]) => join(tmp, ".gloss/design-review/2", ...parts);
+const snap2 = (...parts: string[]) => join(review, "2", ...parts);
 const readSidecar = (relative: string) => JSON.parse(readFileSync(snap2(relative), "utf8"));
 
 // the agent's one live-session write, as the CLI call the skill makes;
@@ -148,22 +149,21 @@ test.beforeAll(async ({ browser }) => {
   execFileSync("bun", ["run", "build"], { cwd: root });
   tmp = mkdtempSync(join(tmpdir(), "gloss-pw-"));
   cpSync(join(root, "tests/fixture"), tmp, { recursive: true });
-  execFileSync("node", [cli, "init"], { cwd: tmp });
-  cpSync(
-    join(root, "tests/generated-review/design-review"),
-    join(tmp, ".gloss/design-review"),
-    { recursive: true },
+  review = join(
+    JSON.parse(execFileSync("node", [cli, "dir"], { cwd: tmp, encoding: "utf8" })).path,
+    "design-review",
   );
+  cpSync(join(root, "tests/generated-review/design-review"), review, { recursive: true });
   // revision 2 = iterated copy: one changed fact, one new rich fact.
   // The changed fact also carries a mermaid diagram edited between the
   // revisions — the rendered compare layout must diff it without crashing
   // and render it as a diagram (regression: a changed mermaid block threw
   // in the highlight effect and blanked the page).
-  cpSync(join(tmp, ".gloss/design-review/1"), snap2(), { recursive: true });
+  cpSync(join(review, "1"), snap2(), { recursive: true });
   const mermaidFence = (label: string) =>
     "\n```mermaid\nflowchart LR\n  W[writer] --> " + label + "\n```\n";
   appendFileSync(
-    join(tmp, ".gloss/design-review/1/storage/whole-file-writes.md"),
+    join(review, "1/storage/whole-file-writes.md"),
     mermaidFence("S[store]"),
   );
   appendFileSync(
@@ -189,7 +189,7 @@ test.beforeAll(async ({ browser }) => {
   writeFileSync(snap2("loop.png"), png(1600, 1000, [70, 82, 104]));
   // ...and one fact deleted between 1 and 2 (written to 1 only, after the copy)
   writeFileSync(
-    join(tmp, ".gloss/design-review/1/slugs/legacy-dedupe.md"),
+    join(review, "1/slugs/legacy-dedupe.md"),
     "# Slugs are deduplicated by a nightly job\n\nThe old approach, dropped in revision 2.\n",
   );
 
@@ -229,6 +229,7 @@ test.afterAll(async () => {
   await context?.close();
   if (proc && proc.exitCode === null) proc.kill();
   if (tmp) rmSync(tmp, { recursive: true, force: true });
+  if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
 
 test("initial render: nested tree, first fact shown", async () => {
@@ -948,7 +949,7 @@ test("a revision the session doesn't serve is read-only", async () => {
 test("compare mode: diff of changed facts, base notes read-only", async () => {
   // a note left on revision 1, so the compare panel has history to show
   writeFileSync(
-    join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"),
+    join(review, "1/storage/whole-file-writes.review.json"),
     JSON.stringify({
       items: [
         { id: "c1", type: "comment", text: "Tighten the failure story." },
@@ -1115,7 +1116,7 @@ test("compare mode: diff of changed facts, base notes read-only", async () => {
   await expect(page.locator("#compare-bar")).toBeVisible();
   await page.keyboard.press("d");
   await expect(page.locator("#compare-bar")).toHaveCount(0);
-  rmSync(join(tmp, ".gloss/design-review/1/storage/whole-file-writes.review.json"));
+  rmSync(join(review, "1/storage/whole-file-writes.review.json"));
 });
 
 test("finish flow: summary sheet, JSON summary, session exit 0", async () => {

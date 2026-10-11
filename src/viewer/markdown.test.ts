@@ -153,7 +153,7 @@ describe("renderMarkdown source offsets", () => {
         else if (entry.name.endsWith(".md")) files.push(full);
       }
     };
-    walk(join(root, ".gloss"));
+    walk(join(root, "tests/generated-review"));
     let checked = 0;
     for (const file of files) {
       const src = readFileSync(file, "utf8");

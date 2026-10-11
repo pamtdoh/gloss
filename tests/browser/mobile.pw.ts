@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -27,12 +27,13 @@ const cli = join(root, "dist/gloss.js");
 const PHONE = { width: 390, height: 844 };
 
 let tmp: string;
+let review: string; // <reviews>/design-review, from `gloss dir`
 let proc: ChildProcessWithoutNullStreams;
 let url: string;
 let context: BrowserContext;
 let page: Page;
 
-const sidecarPath = (relative: string) => join(tmp, ".gloss/design-review/2", relative);
+const sidecarPath = (relative: string) => join(review, "2", relative);
 const sidecar = (relative: string) => JSON.parse(readFileSync(sidecarPath(relative), "utf8"));
 
 test.describe.configure({ mode: "serial" });
@@ -41,19 +42,18 @@ test.beforeAll(async ({ browser }) => {
   execFileSync("bun", ["run", "build"], { cwd: root });
   tmp = mkdtempSync(join(tmpdir(), "gloss-pwm-"));
   cpSync(join(root, "tests/fixture"), tmp, { recursive: true });
-  execFileSync("node", [cli, "init"], { cwd: tmp });
-  cpSync(
-    join(root, "tests/generated-review/design-review"),
-    join(tmp, ".gloss/design-review"),
-    { recursive: true },
+  review = join(
+    JSON.parse(execFileSync("node", [cli, "dir"], { cwd: tmp, encoding: "utf8" })).path,
+    "design-review",
   );
+  cpSync(join(root, "tests/generated-review/design-review"), review, { recursive: true });
   // revision 2 = iterated copy with one changed fact, so the phone can
   // exercise compare mode too
-  cpSync(join(tmp, ".gloss/design-review/1"), join(tmp, ".gloss/design-review/2"), {
+  cpSync(join(review, "1"), join(review, "2"), {
     recursive: true,
   });
   appendFileSync(
-    join(tmp, ".gloss/design-review/2/storage/whole-file-writes.md"),
+    join(review, "2/storage/whole-file-writes.md"),
     "A write-through cache was considered and rejected for v1.\n",
   );
   proc = spawn("node", [cli, "session", "design-review", "--no-browser"], {
@@ -77,6 +77,7 @@ test.afterAll(async () => {
   await context?.close();
   if (proc && proc.exitCode === null) proc.kill();
   if (tmp) rmSync(tmp, { recursive: true, force: true });
+  if (review) rmSync(dirname(review), { recursive: true, force: true });
 });
 
 test("phone layout: no horizontal scroll, compact header, panel closed", async () => {

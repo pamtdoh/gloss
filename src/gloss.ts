@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
 import { emitLine, failJson as fail } from "./protocol.js";
+import { reviewsDir } from "./reviews.js";
 import { runSession, sendReply, type SessionOptions } from "./session.js";
 import { installSkills, type SkillDest } from "./skills.js";
 
 const USAGE = `gloss — files-first design review
 
 Usage:
-  gloss init          Scaffold .gloss/ in the current directory
+  gloss dir           Print (and create) this repo's reviews directory
   gloss session <review> [--rev <n>] [--no-browser]
                     [--serve-host <host>]
                           Serve the viewer, emit JSONL events on stdout,
@@ -33,26 +33,14 @@ Usage:
   gloss help          Show this help
 
 Command results are single-line JSON on stdout; errors are single-line
-JSON on stderr with exit code 1. State lives in plain files under
-.gloss/ — agents read and write them directly.
+JSON on stderr with exit code 1. State lives in plain files under the
+directory \`gloss dir\` prints — agents read and write them directly.
 `;
 
-function init(cwd: string): void {
-  const root = resolve(cwd, ".gloss");
-  const created = !existsSync(root);
-  mkdirSync(root, { recursive: true });
-  // .session is the per-review live-session dotfile (ARCHITECTURE.md);
-  // ephemeral state stays out of git. A gitignore from an older install
-  // (".local/") is migrated by appending, never rewritten.
-  const gitignore = join(root, ".gitignore");
-  if (!existsSync(gitignore)) writeFileSync(gitignore, ".session\n");
-  else {
-    const current = readFileSync(gitignore, "utf8");
-    if (!current.split(/\r?\n/).includes(".session")) {
-      writeFileSync(gitignore, current.replace(/\n?$/, "\n") + ".session\n");
-    }
-  }
-  emitLine({ ok: true, path: root, created });
+function dir(cwd: string): void {
+  const path = reviewsDir(cwd);
+  mkdirSync(path, { recursive: true });
+  emitLine({ ok: true, path });
 }
 
 function parseSessionArgs(args: string[]): SessionOptions {
@@ -78,9 +66,9 @@ function parseSessionArgs(args: string[]): SessionOptions {
 
 const [command, ...rest] = process.argv.slice(2);
 switch (command) {
-  case "init":
-    if (rest.length > 0) fail("init takes no arguments");
-    init(process.cwd());
+  case "dir":
+    if (rest.length > 0) fail("dir takes no arguments");
+    dir(process.cwd());
     break;
   case "session":
     runSession(process.cwd(), parseSessionArgs(rest));

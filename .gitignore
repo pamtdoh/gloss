@@ -4,4 +4,3 @@ dist/
 *.gen.*
 test-results/
 .aliastest/
-.gloss/

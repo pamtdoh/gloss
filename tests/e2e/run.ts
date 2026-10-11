@@ -1,10 +1,11 @@
-// M1 end-to-end check: on a disposable copy of the fixture repo, initialize
-// Gloss, plant the agent-generated revision-1 fact tree (agents write
-// files directly — planting IS the write path), then verify the review is
+// M1 end-to-end check: on a disposable copy of the fixture repo, resolve its
+// reviews directory, plant the agent-generated revision-1 fact tree (agents
+// write files directly — planting IS the write path), then verify the review is
 // structurally sound and readable entirely from the terminal.
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
+  existsSync,
   mkdtempSync,
   realpathSync,
   readFileSync,
@@ -38,35 +39,36 @@ function walk(dir: string): string[] {
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "gloss-e2e-")));
+let reviews = "";
 try {
   // 1. Disposable fixture repo.
   cpSync(join(repoRoot, "tests/fixture"), tmp, { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: tmp });
 
-  // 2. gloss init — fresh, then idempotent.
-  const first = JSON.parse(
-    execFileSync("node", [cli, "init"], { cwd: tmp, encoding: "utf8" }),
-  );
-  check(first.ok === true && first.created === true, "init scaffolds .gloss/");
-  check(first.path === join(tmp, ".gloss"), "init reports the scaffolded path");
-  const again = JSON.parse(
-    execFileSync("node", [cli, "init"], { cwd: tmp, encoding: "utf8" }),
-  );
-  check(again.ok === true && again.created === false, "init is idempotent");
-  check(
-    readFileSync(join(tmp, ".gloss/.gitignore"), "utf8").includes(".session"),
-    "the ephemeral .session file is git-ignored",
-  );
+  // 2. gloss dir — outside the repo, stable from any subdirectory, and
+  // nothing scaffolded in the working tree.
+  const dir = (cwd: string) =>
+    JSON.parse(execFileSync("node", [cli, "dir"], { cwd, encoding: "utf8" }));
+  const status = () =>
+    execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: tmp, encoding: "utf8" });
+  const before = status();
+  const first = dir(tmp);
+  reviews = first.path;
+  check(first.ok === true && existsSync(reviews), "dir creates the reviews directory");
+  check(relative(tmp, reviews).startsWith(".."), "reviews live outside the repo");
+  check(dir(join(tmp, "src")).path === reviews, "every subdirectory resolves to the same reviews");
+  check(dir(tmp).path === reviews, "dir is idempotent");
+  check(status() === before, "nothing is scaffolded in the repo");
 
   // 3. The agent writes revision 1 (plain file writes of the generated tree).
   cpSync(
     join(repoRoot, "tests/generated-review/design-review"),
-    join(tmp, ".gloss/design-review"),
+    join(reviews, "design-review"),
     { recursive: true },
   );
 
   // 4. Structural conventions from ARCHITECTURE.md.
-  const revision = join(tmp, ".gloss/design-review/1");
+  const revision = join(reviews, "design-review/1");
   const files = walk(revision);
   const facts = files.map((f) => relative(revision, f));
   check(facts.length >= 5, `revision 1 holds a real tree (${facts.length} files)`);
@@ -102,7 +104,7 @@ try {
   );
 
   // 6. The terminal reading path: the whole review, printed.
-  console.log("\n=== .gloss/design-review/1 ===");
+  console.log("\n=== <reviews>/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {
     console.log(`\n--- ${relative(revision, f)} ---`);
@@ -113,7 +115,8 @@ try {
   console.log(
     `\n${failures === 0 ? "E2E PASS" : "E2E FAIL"}: ${facts.length} facts across ${groups.size} groups`,
   );
-  process.exit(failures === 0 ? 0 : 1);
+  process.exitCode = failures === 0 ? 0 : 1;
 } finally {
   rmSync(tmp, { recursive: true, force: true });
+  if (reviews) rmSync(reviews, { recursive: true, force: true });
 }

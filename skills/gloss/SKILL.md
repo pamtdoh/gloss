@@ -1,16 +1,31 @@
 ---
 name: gloss
-description: Generate a files-first design review of a repository as small, decidable facts under .gloss/, for a human to review. Use when the user asks for a design review or architecture review of their codebase or any part of it.
+description: Generate a files-first design review of a repository as small, decidable facts, for a human to review. Use when the user asks for a design review or architecture review of their codebase or any part of it.
 ---
 
 # gloss
 
 Gloss condenses a codebase's design into small facts — one Markdown
-file each, reviewable without reading source — as plain files under
-`.gloss/` in the target repo. Read and write them with your normal
-tools. A revision holds two kinds of files: fact `.md` files are your
+file each, reviewable without reading source — as plain files in the
+repo's reviews directory. Read and write them with your normal tools.
+A revision holds two kinds of files: fact `.md` files are your
 output, and sidecars (`*.review.json`) are the human's review state,
 which the review session creates.
+
+## Where reviews live
+
+```
+gloss dir
+```
+
+prints `{"ok":true,"path":"…"}`: this repo's reviews directory, an
+absolute path in the OS temp directory, outside the repo. Run it
+before touching any review — from anywhere in the repo, any time you
+need the path again, such as after a compaction. `<reviews>` below
+means that path. Never guess it, and never write reviews inside the
+repo: a review is working material, not a commit. Temp directories do
+not survive every reboot, so if the human wants to keep a review,
+copy it wherever they say.
 
 ## The prompt sets the scope and the altitude
 
@@ -36,7 +51,7 @@ needs it.
 
 ## Generate revision 1
 
-1. **Run `gloss init`** at the repo root (idempotent).
+1. **Run `gloss dir`** to learn `<reviews>` (idempotent).
 
 2. **Read the code — and run it when facts will need evidence.**
    Organize by what the system *is*, not by its directory layout.
@@ -48,7 +63,7 @@ needs it.
    them). Ask the user first only when getting it running would
    need setup you'd have to build.
 
-3. **Create `.gloss/<review>/1/`**, naming the review in short
+3. **Create `<reviews>/<review>/1/`**, naming the review in short
    kebab-case from the prompt (e.g. `checkout-flow`).
 
 4. **Write the facts.** How to write each fact is the writing guide
@@ -76,7 +91,7 @@ needs it.
      design does, sharp edges included, in neutral terms. The
      verdict belongs to the human.
 
-5. **Hand it over.** Show the tree of `.gloss/<review>/1/` and serve
+5. **Hand it over.** Show the tree of `<reviews>/<review>/1/` and serve
    the session.
 
 ## A cold read, only when asked
@@ -170,7 +185,7 @@ When the session finishes with sidecars present:
    for everything below — together with whatever the human told you
    in conversation during the session. The notes are the
    instruction: do not propose, write.
-2. Copy `.gloss/<review>/<n>` to `.gloss/<review>/<n+1>`
+2. Copy `<reviews>/<review>/<n>` to `<reviews>/<review>/<n+1>`
    recursively. Revisions are standalone copies — no links, no
    shared state — and revision `n` stays exactly as reviewed.
 3. In the new revision, resolve what was raised: rewrite, amend,
@@ -193,7 +208,7 @@ write a new one, and never create `approved/` on your own.
 ## Approval
 
 Approval is one act, at the end: the accepted revision copied to
-`.gloss/<review>/approved/`. The viewer's Approve button does this
+`<reviews>/<review>/approved/`. The viewer's Approve button does this
 itself; if the human approves in conversation instead, copy the
 revision the same way, remaining sidecars included — approval
 accepts the revision with whatever notes are still open. The
