@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyAgentReply, applyOp, nextId, pendingQuestions } from "./notes.js";
+import { applyAgentReply, applyOp, nextId, parseOp, pendingQuestions } from "./notes.js";
 import type { Sidecar } from "./summary.js";
 
 const answered: Sidecar = {
@@ -95,8 +95,38 @@ describe("applyAgentReply", () => {
 });
 
 test("nextId and pendingQuestions", () => {
-  expect(nextId([{ id: "c3", type: "comment" }, { id: "q7", type: "question" }], "c")).toBe("c4");
+  expect(nextId(["c3", "q7"], "c")).toBe("c4");
   expect(pendingQuestions(answered)).toEqual([]);
   const r = applyOp(answered, { op: "reply", id: "q1", text: "more?" });
   expect(pendingQuestions(r.ok ? r.sidecar : undefined)).toEqual([{ id: "q1", text: "more?" }]);
+});
+
+test("a resolved note's id is never handed out again", () => {
+  // q3 was raised on an earlier revision and resolved in the draft since
+  const r = applyOp({ items: [] }, { op: "create", type: "question", text: "new?" }, ["q1", "q3", "c2"]);
+  expect(r.ok && r.id).toBe("q4");
+  // an undo still restores a note under its own id when it is free
+  const back = applyOp({ items: [] }, { op: "restore", item: { id: "q3", type: "question" } }, ["q3"]);
+  expect(back.ok && back.id).toBe("q3");
+});
+
+describe("parseOp", () => {
+  test("accepts each operation's shape", () => {
+    expect(parseOp({ op: "create", type: "comment", text: "x", anchor: { quote: "q" }, extra: 1 })).toEqual({
+      op: "create",
+      type: "comment",
+      text: "x",
+      anchor: { quote: "q" },
+    });
+    expect(parseOp({ op: "reply", id: "q1", text: "y" })).toEqual({ op: "reply", id: "q1", text: "y" });
+    expect(parseOp({ op: "delete", id: "c1" })).toEqual({ op: "delete", id: "c1" });
+  });
+
+  test("refuses unknown ops and wrong types instead of guessing", () => {
+    expect(parseOp({ op: "bogus", id: "q1" })).toBe("unknown op: bogus");
+    expect(parseOp({ op: "edit", id: "c1", text: 5 })).toBe("edit needs id and text");
+    expect(parseOp({ op: "create", type: "note", text: "x" })).toBe("create needs type comment or question");
+    expect(parseOp({ op: "anchor", id: "c1", anchor: { quote: 3 } })).toBe("anchor needs id and anchor");
+    expect(parseOp({ op: "restore", item: { id: "c1", type: "x" } })).toBe("restore needs a note");
+  });
 });

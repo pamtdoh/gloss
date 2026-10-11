@@ -135,7 +135,9 @@ All review state for a fact lives in a sidecar next to it —
   the draft directly (resolution is deletion).
 - The viewer never sends a whole sidecar. Every change is one operation
   — create, edit, delete, reply, re-anchor, restore — that the server
-  applies to the file as it is on disk, assigning new ids itself. A tab
+  applies to the file as it is on disk, assigning new ids itself — never
+  one the fact's earlier revisions recorded, so a resolved note's id is
+  not reused for a new one. Operations are validated on arrival. A tab
   that missed someone else's change can only touch the notes it names,
   so a stale tab erases nothing it never saw. Each operation carries an
   id, so a retry is answered, not applied twice.
@@ -183,8 +185,11 @@ Publishing a revision moves every open tab on the previous one to it,
 straight into a comparison with what it replaced. The agent can put a
 status line in the tabs while it works (`gloss status`). A finished
 round leaves the tabs open and readable, saying the agent is at work.
-`gloss approve` approves from the conversation, through the server when
-it runs, so the tabs see it.
+`gloss approve` approves from the conversation, always through the
+server (started for it if needed), so it is the same act as the
+viewer's button and the tabs see it. Approval ends the review: an open
+round ends with it and its notes are snapshotted, whichever revision is
+approved, and an approved review takes no more rounds.
 
 The server stops on approval, on `gloss stop`, or after half an hour
 with no tab and no agent connected. If it dies mid-round, the next
