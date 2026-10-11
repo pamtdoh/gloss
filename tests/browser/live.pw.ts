@@ -159,15 +159,20 @@ test("finishing ends the round, not the tab", async () => {
 let second: Session;
 
 test("a new revision opens in the same tab, showing what changed", async () => {
-  // the agent iterates: copy, resolve, change a fact, publish
-  cpSync(join(review, "1"), join(review, "2"), { recursive: true });
-  rmSync(join(review, "2/cli/add-and-list.review.json"));
-  rmSync(join(review, "2/slugs/collision-retry.review.json"));
+  // the round's notes came back to the draft, where the agent works in
+  // place: resolve the notes, change a fact, publish — no copying
+  expect(sidecar(1, "cli/add-and-list.review.json")).toEqual(
+    JSON.parse(readFileSync(join(review, "draft/cli/add-and-list.review.json"), "utf8")),
+  );
+  rmSync(join(review, "draft/cli/add-and-list.review.json"));
+  rmSync(join(review, "draft/slugs/collision-retry.review.json"));
   writeFileSync(
-    join(review, "2/cli/add-and-list.md"),
+    join(review, "draft/cli/add-and-list.md"),
     "# The CLI adds links\n\nThe list command was removed; nothing read it.\n",
   );
   second = await startSession();
+  expect(second.lines[0]).toMatchObject({ revision: 2, frozen: true });
+  expect(readFileSync(join(review, "2/cli/add-and-list.md"), "utf8")).toContain("list command was removed");
   // same address: the tab that was open all along follows
   expect(second.lines[0]).toMatchObject({ event: "session.started", revision: 2, url });
   for (const tab of [tabA, tabB]) {

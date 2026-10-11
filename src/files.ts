@@ -1,14 +1,19 @@
 import {
+  chmodSync,
+  copyFileSync,
+  cpSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   rmdirSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { toProtocolPath } from "./protocol.js";
 import type { Sidecar } from "./summary.js";
 
@@ -18,6 +23,88 @@ import type { Sidecar } from "./summary.js";
 // through here.
 
 export const NOTE_IMAGES = "images/notes";
+
+/** The one directory the agent writes: the next revision, in progress.
+ * Numbered revisions are frozen copies of it, made by the tool. */
+export const DRAFT = "draft";
+
+export const isSidecar = (path: string): boolean => path.endsWith(".review.json");
+
+/** Every file under a directory, as sorted relative protocol paths. */
+export function walkFiles(root: string, dir = root): string[] {
+  if (!existsSync(dir)) return [];
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkFiles(root, path));
+    else if (entry.isFile() && !entry.name.endsWith(".tmp")) files.push(toProtocolPath(relative(root, path)));
+  }
+  return files.sort();
+}
+
+/** A review exists once it has a draft or a revision. */
+export function reviewExists(reviewDir: string): boolean {
+  return existsSync(join(reviewDir, DRAFT)) || listRevisions(reviewDir).length > 0;
+}
+
+/** Whether the draft holds anything the latest revision doesn't: a
+ * changed fact, figure, or note. The first revision always differs. */
+export function draftDiffers(reviewDir: string): boolean {
+  const draft = join(reviewDir, DRAFT);
+  if (walkFiles(draft).filter((f) => f.endsWith(".md")).length === 0) return false;
+  const latest = listRevisions(reviewDir).at(-1);
+  if (latest === undefined) return true;
+  const frozen = join(reviewDir, String(latest));
+  const a = walkFiles(draft);
+  const b = walkFiles(frozen);
+  if (a.length !== b.length || a.some((f, i) => f !== b[i])) return true;
+  return a.some((f) => !readFileSync(join(draft, f)).equals(readFileSync(join(frozen, f))));
+}
+
+/** Freeze the draft as the next revision, and return its number. The
+ * copy is built aside and renamed into place, so a revision is never
+ * half there; its facts and figures are made read-only, since a
+ * published revision is never edited again. The draft's sidecars (notes
+ * carried forward) go with it and leave the draft: during the round,
+ * notes accrue in the revision. */
+export function freezeDraft(reviewDir: string): number {
+  const draft = join(reviewDir, DRAFT);
+  const next = (listRevisions(reviewDir).at(-1) ?? 0) + 1;
+  const target = join(reviewDir, String(next));
+  const building = `${target}.${process.pid}.tmp`;
+  rmSync(building, { recursive: true, force: true });
+  cpSync(draft, building, { recursive: true });
+  for (const file of walkFiles(building)) {
+    if (!isSidecar(file) && !file.startsWith(`${NOTE_IMAGES}/`)) chmodSync(join(building, file), 0o444);
+  }
+  renameSync(building, target);
+  for (const file of walkFiles(draft)) if (isSidecar(file)) unlinkSync(join(draft, file));
+  rmSync(join(draft, NOTE_IMAGES), { recursive: true, force: true });
+  return next;
+}
+
+/** After a round, its notes come back to the draft, where the agent
+ * resolves them in place: the revision's sidecars and the pictures they
+ * show replace the draft's. A review without a draft (planted as numbered
+ * revisions) gets one, copied from the revision. */
+export function notesToDraft(reviewDir: string, revision: number): void {
+  const draft = join(reviewDir, DRAFT);
+  const frozen = join(reviewDir, String(revision));
+  if (!existsSync(draft)) {
+    cpSync(frozen, draft, { recursive: true });
+    for (const file of walkFiles(draft)) chmodSync(join(draft, file), 0o644);
+    return;
+  }
+  for (const file of walkFiles(draft)) if (isSidecar(file)) unlinkSync(join(draft, file));
+  rmSync(join(draft, NOTE_IMAGES), { recursive: true, force: true });
+  for (const file of walkFiles(frozen)) {
+    if (!isSidecar(file) && !file.startsWith(`${NOTE_IMAGES}/`)) continue;
+    const to = join(draft, file);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(join(frozen, file), to);
+    chmodSync(to, 0o644);
+  }
+}
 
 export function listRevisions(reviewDir: string): number[] {
   if (!existsSync(reviewDir)) return [];

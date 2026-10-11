@@ -2,7 +2,7 @@
 // reviews directory, plant the agent-generated revision-1 fact tree (agents
 // write files directly — planting IS the write path), then verify the review is
 // structurally sound and readable entirely from the terminal.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   cpSync,
   existsSync,
@@ -60,12 +60,24 @@ try {
   check(dir(tmp).path === reviews, "dir is idempotent");
   check(status() === before, "nothing is scaffolded in the repo");
 
-  // 3. The agent writes revision 1 (plain file writes of the generated tree).
+  // 3. The agent writes the draft (plain file writes of the generated
+  // tree), and the first round freezes it as revision 1.
   cpSync(
-    join(repoRoot, "tests/generated-review/design-review"),
-    join(reviews, "design-review"),
+    join(repoRoot, "tests/generated-review/design-review/1"),
+    join(reviews, "design-review/draft"),
     { recursive: true },
   );
+  const session = spawn("node", [cli, "session", "design-review", "--no-browser"], { cwd: tmp });
+  const started = await new Promise<Record<string, unknown>>((resolve) =>
+    session.stdout.once("data", (chunk: Buffer) => resolve(JSON.parse(chunk.toString().split("\n")[0]!))),
+  );
+  check(started.event === "session.started" && started.revision === 1 && started.frozen === true, "the first round freezes the draft as revision 1");
+  execFileSync("node", [cli, "stop", "design-review"], { cwd: tmp });
+  check(
+    (statSync(join(reviews, "design-review/1/_index.md")).mode & 0o222) === 0,
+    "a frozen revision's facts are read-only",
+  );
+  check(existsSync(join(reviews, "design-review/draft/_index.md")), "the draft stays, for the next round");
 
   // 4. Structural conventions from ARCHITECTURE.md.
   const revision = join(reviews, "design-review/1");
