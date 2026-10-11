@@ -52,15 +52,20 @@ review, so one worth keeping is copied out on purpose.
 ```
 <reviews>/                    # what `gloss dir` prints
   checkout-flow/              # one review
-    draft/                    # the next revision, in progress: the agent's only workspace
-    1/                        # the draft as frozen for round 1, read-only
-    2/                        # ...and for round 2
+    draft/                    # the live review: facts in progress, and every open note
+    1/                        # round 1: its facts frozen when published, its notes when the round ended
+    2/                        # ...and round 2
     approved/                 # a copy of the accepted revision = the approval
 ```
 
 The agent writes facts only in `draft/`, at the same paths round after
-round, and never copies a revision: `gloss session` freezes the draft
-into the next numbered revision when it changed. A frozen revision is
+round, and never copies a revision: `gloss session` freezes the draft's
+facts and figures into the next numbered revision when they changed.
+Notes are state about a revision, not its content: the human's notes
+are written into the draft as they come, and a revision gets its copy
+of them when its round ends (Finish, or approval) — the record of what
+was raised on it. Numbered revisions are history; nothing is ever
+copied from them back to the draft. A frozen revision is
 built aside and renamed into place, and its facts and figures are made
 read-only, so "a published revision is never edited" holds by
 construction. Revisions are standalone copies — no shared data, no
@@ -135,11 +140,11 @@ All review state for a fact lives in a sidecar next to it —
   so a stale tab erases nothing it never saw. Each operation carries an
   id, so a retry is answered, not applied twice.
 - A picture pasted into a note is a file: the review server stores it
-  at `images/notes/<hash>.<ext>` in the served revision, and the note's
-  `text` references it as a Markdown image relative to the fact, exactly
-  like a figure — no field for it. The server deletes files there that
-  no note in the revision references, when it is published and when its
-  round ends; older revisions are never touched.
+  at `images/notes/<hash>.<ext>` in the draft, with the notes, and the
+  note's `text` references it as a Markdown image relative to the fact,
+  exactly like a figure — no field for it. The server deletes files
+  there that no note references, when a round starts and when it ends;
+  the revision's snapshot takes the ones that remain.
 - Resolving a note deletes it from `items`; delete the sidecar when
   nothing remains.
 
@@ -154,8 +159,8 @@ so the address the human opened first stays the address of the review.
 
 A **round** is one revision under review. `gloss session <review>`
 starts the server if none runs, freezes the draft as the next revision
-when it differs from the latest (otherwise the latest is served again;
-`--rev` names one), prints `session.started` with the viewer URL, and streams what
+when its facts differ from the latest (otherwise the latest is served
+again), prints `session.started` with the viewer URL, and streams what
 the agent must act on — `question.asked`, `question.replied` — until the
 human clicks Finish review or approves; then `session.finished` and a
 final JSON summary line, and the process exits. Exiting is the
@@ -167,9 +172,12 @@ agent are delivered again — the way back after a lost stream or a
 compaction.
 
 When the human finishes, the round's notes — its sidecars and the
-pictures they show — are copied back into the draft, where the agent
-resolves them in place; the frozen revision keeps them as reviewed.
-Notes the agent leaves in the draft are carried into the next revision.
+pictures they show — are copied into the revision as its record, and
+stay in the draft, where the agent resolves them in place. Notes the
+agent leaves there are the open notes of the next round. Only the
+latest revision can be under review, since the draft's notes are on
+it; resolving notes without changing a fact serves the same revision
+again.
 
 Publishing a revision moves every open tab on the previous one to it,
 straight into a comparison with what it replaced. The agent can put a

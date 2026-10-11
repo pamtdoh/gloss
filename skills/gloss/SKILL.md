@@ -92,8 +92,8 @@ large, seems to need it, or you are running unattended.
 
 ## Run a round
 
-`gloss session <review>` freezes the draft as the next revision when it
-changed since the last one (otherwise the latest is served again),
+`gloss session <review>` freezes the draft as the next revision when its
+facts changed since the last one (otherwise the latest is served again),
 publishes it to the review's server, starting the server if needed,
 and blocks until the human clicks **Finish review** or approves. Stdout is JSONL:
 `session.started` (with the viewer `url`, to share if no browser
@@ -115,10 +115,9 @@ delivers every question still waiting on you.
 
 ## During a round
 
-- **Leave the draft alone until the round ends.** The revision on
-  screen is frozen, and the round's notes are copied into the draft
-  when it finishes. Whatever a note asks for, even mid-round, goes in
-  the next revision.
+- **Leave the draft alone until the round ends.** The human's notes
+  are being written into it as they review. Whatever a note asks for,
+  even mid-round, goes in the next revision.
 - **The code under review holds still.** Reading, running, probing,
   and scratch scripts are fine; changes to the code the facts
   describe wait for approval and the gloss-apply skill.
@@ -140,8 +139,8 @@ delivers every question still waiting on you.
 
 When a round finishes with sidecars present:
 
-1. The round's notes are back in the draft, next to the facts they
-   are on. Read every `*.review.json` in `draft/` — the root
+1. The round's notes are in the draft, next to the facts they are on.
+   Read every `*.review.json` in `draft/` — the root
    `_index.review.json` first, since its notes set the direction —
    along with anything the human said in conversation. The notes are
    instructions: write the changes, don't propose them. The human's tab

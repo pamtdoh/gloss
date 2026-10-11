@@ -13,12 +13,13 @@ import {
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import {
+  DRAFT,
   NOTE_IMAGES,
   draftDiffers,
+  ensureDraft,
   escapesDir,
   freezeDraft,
   listRevisions,
-  notesToDraft,
   pruneNoteImages,
   readRevision,
   readSidecar,
@@ -26,6 +27,7 @@ import {
   reviewExists,
   walkFacts,
   writeAtomic,
+  snapshotNotes,
   writeSidecar,
 } from "./files.js";
 import { type NoteOp, applyAgentReply, applyOp, pendingQuestions } from "./notes.js";
@@ -189,6 +191,10 @@ export function runServer(cwd: string, opts: ServeOptions): void {
     version: VERSION,
   };
   const revisionDir = (n: number) => join(reviewDir, String(n));
+  const draftDir = join(reviewDir, DRAFT);
+  // Notes live in the draft while their revision's round is open, and
+  // each revision gets its copy when the round ends (ARCHITECTURE.md).
+  const notesDir = (n: number) => (n === served && roundOpen ? draftDir : revisionDir(n));
   const tokens = new Set<string>();
 
   // ---------- state, rebuilt from the event log ----------
@@ -241,11 +247,11 @@ export function runServer(cwd: string, opts: ServeOptions): void {
   };
 
   const summaryOf = (revision: number) => {
-    const dir = revisionDir(revision);
+    const notes = notesDir(revision);
     return summarize({
       review: opts.review,
       revision,
-      sidecars: walkFacts(dir).map((path) => readSidecar(dir, path) ?? undefined),
+      sidecars: walkFacts(revisionDir(revision)).map((path) => readSidecar(notes, path) ?? undefined),
       approved: existsSync(join(reviewDir, "approved")),
     });
   };
@@ -289,7 +295,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
   const publish = (revision: number) => {
     // re-attaching to the round that is already open changes nothing
     if (served === revision && roundOpen) return;
-    pruneNoteImages(revisionDir(revision));
+    pruneNoteImages(draftDir);
     served = revision;
     roundOpen = true;
     status = null;
@@ -299,9 +305,14 @@ export function runServer(cwd: string, opts: ServeOptions): void {
   const approve = (revision: number): { ok: boolean; status: number; error?: string } => {
     const approvedDir = join(reviewDir, "approved");
     if (existsSync(approvedDir)) return { ok: false, status: 409, error: "approved/ already exists" };
-    if (revision === served) pruneNoteImages(revisionDir(revision));
+    // an open round's notes are snapshotted first: approval accepts the
+    // revision with the notes as they stand
+    if (revision === served && roundOpen) {
+      pruneNoteImages(draftDir);
+      snapshotNotes(reviewDir, revision);
+      roundOpen = false;
+    }
     cpSync(revisionDir(revision), approvedDir, { recursive: true });
-    if (revision === served) roundOpen = false;
     emit("review.approved", { revision, summary: summaryOf(revision) });
     setTimeout(() => shutdown("approved"), APPROVAL_GRACE_MS).unref();
     return { ok: true, status: 200 };
@@ -355,16 +366,15 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (req.method !== "POST") return sendJson(405, { ok: false, error: "method not allowed" });
         const body = await readJson(req);
         if (route === "publish") {
-          // which revision this round is on: the one asked for; else the
-          // open round (a re-attach); else the draft, frozen, when it
-          // changed; else the latest again
+          // which revision this round is on: the open round's (a
+          // re-attach); else the draft, frozen, when its facts changed;
+          // else the latest again. Only the latest can be under review:
+          // the draft's notes are on it.
           const since = seq;
           let revision: number;
           let frozen = false;
-          if (body.revision !== undefined) {
-            revision = Number(body.revision);
-            if (!listRevisions(reviewDir).includes(revision)) return sendJson(404, { ok: false, error: `no such revision: ${revision}` });
-          } else if (roundOpen && served !== null) {
+          ensureDraft(reviewDir);
+          if (roundOpen && served !== null) {
             revision = served;
           } else if (draftDiffers(reviewDir)) {
             revision = freezeDraft(reviewDir);
@@ -375,9 +385,8 @@ export function runServer(cwd: string, opts: ServeOptions): void {
             return sendJson(409, { ok: false, error: `nothing to review yet — write the facts in ${opts.review}/draft/ first` });
           }
           publish(revision);
-          const dir = revisionDir(revision);
-          const pending = walkFacts(dir).flatMap((path) =>
-            pendingQuestions(readSidecar(dir, path) ?? undefined).map((q) => ({ path, ...q })),
+          const pending = walkFacts(revisionDir(revision)).flatMap((path) =>
+            pendingQuestions(readSidecar(draftDir, path) ?? undefined).map((q) => ({ path, ...q })),
           );
           return sendJson(200, { ok: true, revision, frozen, since, url: viewerUrl(), viewers: viewers.size, pending });
         }
@@ -385,15 +394,14 @@ export function runServer(cwd: string, opts: ServeOptions): void {
           if (served === null || !roundOpen) {
             return sendJson(409, { ok: false, error: "no round is open — the human finished; treat the question as iteration feedback" });
           }
-          const dir = revisionDir(served);
-          const factPath = resolveFact(dir, body.path);
+          const factPath = resolveFact(revisionDir(served), body.path);
           if (!factPath) return sendJson(404, { ok: false, error: "no such fact" });
-          const current = readSidecar(dir, factPath);
+          const current = readSidecar(draftDir, factPath);
           if (current === null) return sendJson(409, { ok: false, error: `${factPath}'s sidecar does not parse` });
           const result = applyAgentReply(current, String(body.id), String(body.text ?? ""));
           if (!result.ok) return sendJson(result.status, { ok: false, error: result.error });
           if (result.changed) {
-            writeSidecar(dir, factPath, result.sidecar);
+            writeSidecar(draftDir, factPath, result.sidecar);
             emit("note.changed", { revision: served, path: factPath, id: result.id, sidecar: result.sidecar, by: "agent" });
           }
           return sendJson(200, { ok: true });
@@ -496,7 +504,8 @@ export function runServer(cwd: string, opts: ServeOptions): void {
           const ext = ("." + (rest.at(-1) ?? "").split(".").pop()).toLowerCase();
           const type = IMAGE_TYPES[ext];
           if (!listRevisions(reviewDir).includes(revision) || !type) return sendJson(404, { ok: false, error: "not found" });
-          const dir = revisionDir(revision);
+          // a note's picture is where the note is; a figure is the revision's
+          const dir = rest[0] === "images" && rest[1] === "notes" ? notesDir(revision) : revisionDir(revision);
           const abs = resolve(dir, rest.map(decodeURIComponent).join("/"));
           if (escapesDir(dir, abs) || !existsSync(abs)) return sendJson(404, { ok: false, error: "not found" });
           res.writeHead(200, { "content-type": type, "cache-control": "no-cache" });
@@ -507,7 +516,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (revisionMatch) {
           const revision = Number(revisionMatch[1]);
           if (!listRevisions(reviewDir).includes(revision)) return sendJson(404, { ok: false, error: "no such revision" });
-          return sendJson(200, { revision, facts: readRevision(revisionDir(revision)) });
+          return sendJson(200, { revision, facts: readRevision(revisionDir(revision), notesDir(revision)) });
         }
         if (url.pathname === "/api/events") {
           // the browser resumes from the last event it saw; a first
@@ -548,14 +557,14 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         const revision = Number(body.revision);
         const closed = writable(revision);
         if (closed) return sendJson(409, { ok: false, error: closed });
-        const dir = revisionDir(revision);
-        const factPath = resolveFact(dir, body.path);
+        // the fact is the revision's; its notes are the draft's
+        const factPath = resolveFact(revisionDir(revision), body.path);
         if (!factPath) return sendJson(404, { ok: false, error: "no such fact" });
-        const current = readSidecar(dir, factPath);
+        const current = readSidecar(draftDir, factPath);
         if (current === null) return sendJson(409, { ok: false, error: `${factPath}'s sidecar does not parse — fix or remove the file` });
         const result = applyOp(current, body as NoteOp);
         if (!result.ok) return sendJson(result.status, { ok: false, error: result.error });
-        writeSidecar(dir, factPath, result.sidecar);
+        writeSidecar(draftDir, factPath, result.sidecar);
         const changed = emit("note.changed", { revision, path: factPath, id: result.id, sidecar: result.sidecar, opId, by: "human" });
         if (result.event) emit(result.event.type, { revision, path: factPath, id: result.event.id, text: result.event.text });
         // seq orders this answer against the event stream, so a tab never
@@ -565,7 +574,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         return sendJson(200, response);
       }
       if (req.method === "POST" && url.pathname === "/api/upload") {
-        // stored under the served revision, named by content so a retry
+        // stored with the notes, in the draft, named by content so a retry
         // or a repeat paste is the same file
         const revision = Number(url.searchParams.get("revision"));
         const closed = writable(revision);
@@ -577,7 +586,7 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (bytes === null) return sendJson(413, { ok: false, error: `image too large (${UPLOAD_LIMIT / 1024 / 1024} MB limit)` });
         if (bytes.length === 0) return sendJson(400, { ok: false, error: "empty image" });
         const name = createHash("sha1").update(bytes).digest("hex").slice(0, 16) + ext;
-        const dir = join(revisionDir(revision), NOTE_IMAGES);
+        const dir = join(draftDir, NOTE_IMAGES);
         mkdirSync(dir, { recursive: true });
         if (!existsSync(join(dir, name))) writeAtomic(join(dir, name), bytes);
         return sendJson(200, { ok: true, path: `${NOTE_IMAGES}/${name}` });
@@ -587,10 +596,11 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         const revision = Number(body.revision);
         const closed = writable(revision);
         if (closed) return sendJson(409, { ok: false, error: closed });
-        pruneNoteImages(revisionDir(revision));
+        // the round's notes, as they stand, become the revision's record;
+        // the draft keeps them for the agent to resolve
+        pruneNoteImages(draftDir);
+        snapshotNotes(reviewDir, revision);
         roundOpen = false;
-        // the notes go back to the draft, where the agent resolves them
-        notesToDraft(reviewDir, revision);
         emit("round.finished", { revision, summary: summaryOf(revision) });
         return sendJson(200, { ok: true });
       }

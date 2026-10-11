@@ -9,10 +9,10 @@ const USAGE = `gloss — files-first design review
 
 Usage:
   gloss dir           Print (and create) this repo's reviews directory
-  gloss session <review> [--rev <n>] [--no-browser] [--serve-host <host>]
+  gloss session <review> [--no-browser] [--serve-host <host>]
                           Freeze <review>/draft/ as the next revision when
-                          it changed (else serve the latest; --rev names
-                          one), publish it to the review's server,
+                          its facts changed (else serve the latest
+                          again), publish it to the review's server,
                           starting the server if needed, then stream
                           JSONL events until the human finishes or
                           approves, and print a JSON summary.
@@ -57,11 +57,7 @@ function parseSessionArgs(args: string[]): SessionOptions {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--no-browser") opts.noBrowser = true;
-    else if (arg === "--rev") {
-      const value = Number(args[++i]);
-      if (!Number.isInteger(value)) fail("--rev expects a number");
-      opts.revision = value;
-    } else if (arg === "--serve-host") {
+    else if (arg === "--serve-host") {
       const value = args[++i];
       if (!value) fail("--serve-host expects a hostname");
       opts.serveHost = value;
@@ -69,7 +65,7 @@ function parseSessionArgs(args: string[]): SessionOptions {
     else if (opts.review) fail("session takes one review name");
     else opts.review = arg;
   }
-  if (!opts.review) fail("usage: gloss session <review> [--rev <n>] [--no-browser]");
+  if (!opts.review) fail("usage: gloss session <review> [--no-browser] [--serve-host <host>]");
   return opts;
 }
 

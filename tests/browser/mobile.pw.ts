@@ -33,7 +33,8 @@ let url: string;
 let context: BrowserContext;
 let page: Page;
 
-const sidecarPath = (relative: string) => join(review, "2", relative);
+// notes live in the draft while a round is open
+const sidecarPath = (relative: string) => join(review, "draft", relative);
 const sidecar = (relative: string) => JSON.parse(readFileSync(sidecarPath(relative), "utf8"));
 
 test.describe.configure({ mode: "serial" });
