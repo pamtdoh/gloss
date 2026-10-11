@@ -6,6 +6,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  writeFileSync,
   mkdtempSync,
   realpathSync,
   readFileSync,
@@ -34,6 +35,109 @@ function walk(dir: string): string[] {
     else files.push(path);
   }
   return files;
+}
+
+interface Session {
+  lines: Record<string, any>[];
+  exited: Promise<number>;
+  err: () => string;
+}
+
+function startSession(cwd: string, review: string): Session {
+  const proc = spawn("node", [cli, "session", review, "--no-browser"], { cwd });
+  const lines: Record<string, any>[] = [];
+  let buffer = "";
+  let err = "";
+  proc.stdout.on("data", (chunk: Buffer) => {
+    buffer += chunk.toString();
+    let nl;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) lines.push(JSON.parse(line));
+    }
+  });
+  proc.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
+  const exited = new Promise<number>((resolve) => proc.on("exit", (code) => resolve(code ?? -1)));
+  return { lines, exited, err: () => err };
+}
+
+async function until<T>(probe: () => T | undefined, ms = 10_000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const value = probe();
+    if (value) return value;
+    if (Date.now() > end) throw new Error("timed out");
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The viewer's write route, as a tab calls it. */
+async function viewerPost(reviewDir: string, route: string, body: unknown): Promise<{ status: number; body: any }> {
+  const { port } = JSON.parse(readFileSync(join(reviewDir, ".server.json"), "utf8"));
+  const res = await fetch(`http://127.0.0.1:${port}/api/${route}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: `http://127.0.0.1:${port}` },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function lifecycle(repo: string, reviews: string): Promise<void> {
+  const reviewDir = join(reviews, "design-review");
+  const gloss = (...args: string[]) => execFileSync("node", [cli, ...args], { cwd: repo, encoding: "utf8" });
+
+  // a malformed operation is refused, not guessed at
+  const round1 = startSession(repo, "design-review");
+  await until(() => round1.lines[0]);
+  const bogus = await viewerPost(reviewDir, "op", { revision: 1, path: "_index.md", op: "bogus", id: "q1" });
+  check(bogus.status === 400 && bogus.body.error === "unknown op: bogus", "an unknown operation is refused with 400");
+  const typed = await viewerPost(reviewDir, "op", { revision: 1, path: "_index.md", op: "create", type: "comment", text: 5 });
+  check(typed.status === 400, "a non-text note is refused with 400");
+
+  // a resolved note's id stays retired in later revisions
+  const asked = await viewerPost(reviewDir, "op", { revision: 1, path: "_index.md", op: "create", type: "question", text: "Why?" });
+  check(asked.body.id === "q1", "the first question is q1");
+  await viewerPost(reviewDir, "finish", { revision: 1 });
+  check((await round1.exited) === 0, "finishing ends the round's session");
+  rmSync(join(reviewDir, "draft/_index.review.json")); // the agent resolved q1
+  writeFileSync(join(reviewDir, "draft/_index.md"), readFileSync(join(reviewDir, "draft/_index.md"), "utf8") + "\nRevised.\n");
+  const round2 = startSession(repo, "design-review");
+  await until(() => round2.lines[0]);
+  check(round2.lines[0]!.revision === 2, "a changed draft is frozen as revision 2");
+  const again = await viewerPost(reviewDir, "op", { revision: 2, path: "_index.md", op: "create", type: "question", text: "And now?" });
+  check(again.body.id === "q2", `a new question after q1 was resolved is q2, not q1 again (got ${again.body.id})`);
+
+  // approving another revision mid-round ends the round and the session
+  gloss("approve", "design-review", "--rev", "1");
+  check((await round2.exited) === 0, "approving revision 1 while 2 is under review ends the session");
+  check(round2.lines.some((l) => l.event === "session.finished"), "...with session.finished");
+  check(existsSync(join(reviewDir, "2/_index.review.json")), "...and revision 2's open notes snapshotted");
+  check(existsSync(join(reviewDir, "approved/_index.md")), "revision 1 is approved");
+
+  // an approved review takes no more rounds
+  await until(() => !existsSync(join(reviewDir, ".server.lock")) || undefined);
+  const after = startSession(repo, "design-review");
+  check((await after.exited) === 1 && after.err().includes("is approved"), "a session on an approved review is refused");
+  check(!existsSync(join(reviewDir, ".server.lock")), "...without starting a server for it");
+
+  // approval with no server running snapshots the open notes too
+  const second = join(reviews, "second");
+  cpSync(join(repoRoot, "tests/generated-review/design-review/1"), join(second, "draft"), { recursive: true });
+  const round = startSession(repo, "second");
+  await until(() => round.lines[0]);
+  await viewerPost(second, "op", { revision: 1, path: "_index.md", op: "create", type: "comment", text: "Open note." });
+  gloss("stop", "second");
+  await round.exited;
+  check(!existsSync(join(second, "1/_index.review.json")), "mid-round, the notes live in the draft only");
+  gloss("approve", "second");
+  check(
+    existsSync(join(second, "approved/_index.review.json")) && existsSync(join(second, "1/_index.review.json")),
+    "gloss approve with no server running carries the open notes",
+  );
+  await sleep(2000); // the server it started stops after approving
 }
 
 execFileSync("bun", ["run", "build"], { cwd: repoRoot, stdio: "inherit" });
@@ -115,7 +219,10 @@ try {
     "both destinations get identical skill content",
   );
 
-  // 6. The terminal reading path: the whole review, printed.
+  // 6. Rounds, ids, and approval at their edges, against real servers.
+  await lifecycle(tmp, reviews);
+
+  // 7. The terminal reading path: the whole review, printed.
   console.log("\n=== <reviews>/design-review/1 ===");
   for (const f of facts) console.log(`  ${f}`);
   for (const f of files) {
@@ -129,6 +236,14 @@ try {
   );
   process.exitCode = failures === 0 ? 0 : 1;
 } finally {
+  // servers outlive their sessions; a failed run must not leave them up
+  for (const review of ["design-review", "second"]) {
+    try {
+      execFileSync("node", [cli, "stop", review], { cwd: tmp, stdio: "ignore" });
+    } catch {
+      // never started, or already gone
+    }
+  }
   rmSync(tmp, { recursive: true, force: true });
   if (reviews) rmSync(reviews, { recursive: true, force: true });
 }

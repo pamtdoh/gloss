@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { existsSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { listRevisions, reviewExists } from "./files.js";
+import { reviewExists } from "./files.js";
 import { emitLine, emitLines, failJson } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
 import { type ServerInfo, pidAlive, readServerInfo } from "./server.js";
@@ -101,6 +101,10 @@ export interface SessionOptions {
 /** One round: publish the revision, then stream what the agent must act
  * on until the human finishes or approves. Exiting is the signal. */
 export async function runSession(cwd: string, opts: SessionOptions): Promise<void> {
+  // refused before a server is started for nothing (the server refuses too)
+  if (existsSync(join(reviewDirOf(cwd, opts.review), "approved"))) {
+    failJson(`${opts.review} is approved — start a new review to change it`);
+  }
   let info = await ensureServer(cwd, opts.review, opts.serveHost);
   const published = await call(info, "publish", {}).catch((e) => failJson(String(e.message)));
   const revision: number = published.revision;
@@ -142,14 +146,20 @@ export async function runSession(cwd: string, opts: SessionOptions): Promise<voi
             // round was superseded, not finished
             failJson(`revision ${event.revision} was published by another session`);
           }
-          if (event.type === "server.stopping" && event.reason !== "approved") {
-            // stopped on purpose (gloss stop, idle): not a crash to recover
+          // approval ends the review — whichever revision was approved
+          if (event.type === "review.approved") {
+            emitLines([{ event: "session.finished", summary: event.summary }, event.summary]);
+            process.exit(0);
+          }
+          if (event.type === "server.stopping") {
+            // stopped on purpose (gloss stop, idle, approval): not a crash
+            // to recover from by starting it again
             failJson(`the review server stopped (${event.reason}) before the round finished`);
           }
           if (event.revision !== undefined && event.revision !== revision) continue;
           if (event.type === "question.asked" || event.type === "question.replied") {
             emitLine({ event: event.type, path: event.path, id: event.id, text: event.text });
-          } else if (event.type === "round.finished" || event.type === "review.approved") {
+          } else if (event.type === "round.finished") {
             emitLines([{ event: "session.finished", summary: event.summary }, event.summary]);
             process.exit(0);
           }
@@ -201,20 +211,12 @@ export async function stopServer(cwd: string, review: string): Promise<void> {
   emitLine({ ok: true, wasRunning: live !== null });
 }
 
-/** Approval from the conversation: through the server when one runs, so
- * open tabs see it; otherwise the same copy, done directly. */
+/** Approval from the conversation always goes through the review server
+ * — started for it when none runs — so it is the same act as the
+ * viewer's button: an open round's notes are snapshotted first, the
+ * default is the revision under review, and any open tab sees it. */
 export async function approve(cwd: string, review: string, revision?: number): Promise<void> {
-  const reviewDir = reviewDirOf(cwd, review);
-  const live = await liveServer(reviewDir, review);
-  if (live) {
-    const result = await call(live, "approve", { revision }).catch((e) => failJson(e.message));
-    return emitLine({ ok: true, revision: result.revision });
-  }
-  const rev = revision ?? listRevisions(reviewDir).at(-1);
-  if (rev === undefined || !listRevisions(reviewDir).includes(rev)) failJson(`no such revision: ${rev ?? "none published yet"}`);
-  const approvedDir = join(reviewDir, "approved");
-  if (existsSync(approvedDir)) failJson("approved/ already exists");
-  mkdirSync(approvedDir, { recursive: true });
-  cpSync(join(reviewDir, String(rev)), approvedDir, { recursive: true });
-  emitLine({ ok: true, revision: rev });
+  const info = await ensureServer(cwd, review, readServerInfo(reviewDirOf(cwd, review))?.serveHost);
+  const result = await call(info, "approve", { revision }).catch((e) => failJson(e.message));
+  emitLine({ ok: true, revision: result.revision });
 }

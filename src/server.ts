@@ -1,11 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   appendFileSync,
-  closeSync,
   cpSync,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   unlinkSync,
   writeFileSync,
@@ -30,7 +28,8 @@ import {
   snapshotNotes,
   writeSidecar,
 } from "./files.js";
-import { type NoteOp, applyAgentReply, applyOp, pendingQuestions } from "./notes.js";
+import { applyAgentReply, applyOp, parseOp, pendingQuestions } from "./notes.js";
+import { acquireLock, pidAlive } from "./lock.js";
 import { failJson } from "./protocol.js";
 import { reviewsDir } from "./reviews.js";
 import { summarize } from "./summary.js";
@@ -87,6 +86,8 @@ export interface ReviewEvent {
   [key: string]: unknown;
 }
 
+export { pidAlive };
+
 export const serverFile = (reviewDir: string) => join(reviewDir, ".server.json");
 const lockFile = (reviewDir: string) => join(reviewDir, ".server.lock");
 const eventsFile = (reviewDir: string) => join(reviewDir, ".events.jsonl");
@@ -96,23 +97,6 @@ export function readServerInfo(reviewDir: string): ServerInfo | null {
     return JSON.parse(readFileSync(serverFile(reviewDir), "utf8"));
   } catch {
     return null;
-  }
-}
-
-export function pidAlive(pid: number | undefined): boolean {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-  // a killed process nobody has reaped yet (common in containers, where
-  // pid 1 may never reap) still answers signal 0: it is dead all the same
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return stat.slice(stat.lastIndexOf(")") + 2)[0] !== "Z";
-  } catch {
-    return true; // no /proc (macOS, Windows): signal 0 is the answer
   }
 }
 
@@ -128,25 +112,6 @@ function readEvents(reviewDir: string): ReviewEvent[] {
     }
   }
   return events;
-}
-
-/** One server per review: the lock file holds the owner's pid, and a lock
- * whose pid is dead is taken over. */
-function acquireLock(reviewDir: string): boolean {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(lockFile(reviewDir), "wx");
-      writeFileSync(fd, String(process.pid));
-      closeSync(fd);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const owner = Number(readFileSync(lockFile(reviewDir), "utf8"));
-      if (pidAlive(owner) && owner !== process.pid) return false;
-      unlinkSync(lockFile(reviewDir));
-    }
-  }
-  return false;
 }
 
 async function readBytes(req: IncomingMessage, limit: number): Promise<Buffer | null> {
@@ -179,7 +144,7 @@ export interface ServeOptions {
 export function runServer(cwd: string, opts: ServeOptions): void {
   const reviewDir = join(reviewsDir(cwd), opts.review);
   if (!reviewExists(reviewDir)) failJson(`no such review: ${opts.review}`);
-  if (!acquireLock(reviewDir)) failJson(`a server for ${opts.review} is already running`);
+  if (!acquireLock(lockFile(reviewDir))) failJson(`a server for ${opts.review} is already running`);
 
   const idleMs = Number(process.env.GLOSS_IDLE_MS) || DEFAULT_IDLE_MS;
   const previous = readServerInfo(reviewDir);
@@ -305,11 +270,11 @@ export function runServer(cwd: string, opts: ServeOptions): void {
   const approve = (revision: number): { ok: boolean; status: number; error?: string } => {
     const approvedDir = join(reviewDir, "approved");
     if (existsSync(approvedDir)) return { ok: false, status: 409, error: "approved/ already exists" };
-    // an open round's notes are snapshotted first: approval accepts the
-    // revision with the notes as they stand
-    if (revision === served && roundOpen) {
+    // approval ends the review, so an open round ends with it — whichever
+    // revision is approved — and its notes are snapshotted as they stand
+    if (roundOpen && served !== null) {
       pruneNoteImages(draftDir);
-      snapshotNotes(reviewDir, revision);
+      snapshotNotes(reviewDir, served);
       roundOpen = false;
     }
     cpSync(revisionDir(revision), approvedDir, { recursive: true });
@@ -371,6 +336,10 @@ export function runServer(cwd: string, opts: ServeOptions): void {
           // else the latest again. Only the latest can be under review:
           // the draft's notes are on it.
           const since = seq;
+          // an approved review is done: a round on it could never finish
+          if (existsSync(join(reviewDir, "approved"))) {
+            return sendJson(409, { ok: false, error: `${opts.review} is approved — start a new review to change it` });
+          }
           let revision: number;
           let frozen = false;
           ensureDraft(reviewDir);
@@ -562,7 +531,13 @@ export function runServer(cwd: string, opts: ServeOptions): void {
         if (!factPath) return sendJson(404, { ok: false, error: "no such fact" });
         const current = readSidecar(draftDir, factPath);
         if (current === null) return sendJson(409, { ok: false, error: `${factPath}'s sidecar does not parse — fix or remove the file` });
-        const result = applyOp(current, body as NoteOp);
+        const op = parseOp(body);
+        if (typeof op === "string") return sendJson(400, { ok: false, error: op });
+        // ids the fact's earlier revisions recorded stay retired
+        const usedIds = listRevisions(reviewDir).flatMap(
+          (r) => (readSidecar(revisionDir(r), factPath) ?? undefined)?.items?.map((i) => i.id) ?? [],
+        );
+        const result = applyOp(current, op, usedIds);
         if (!result.ok) return sendJson(result.status, { ok: false, error: result.error });
         writeSidecar(draftDir, factPath, result.sidecar);
         const changed = emit("note.changed", { revision, path: factPath, id: result.id, sidecar: result.sidecar, opId, by: "human" });

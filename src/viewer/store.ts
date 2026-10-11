@@ -74,7 +74,10 @@ export class ReviewStore {
   private factSeq = new Map<string, number>();
   private source: EventSource | null = null;
   private offlineTimer: ReturnType<typeof setTimeout> | null = null;
-  private flushing = false;
+  private flushRun: Promise<void> | null = null;
+  /** while a resync is reading, events wait here (see sync) */
+  private syncing = false;
+  private held: { seq: number; type: string; [key: string]: any }[] = [];
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmed = new Map<string, string>();
 
@@ -107,6 +110,18 @@ export class ReviewStore {
    * whenever the stream comes back after a gap: the files are the record,
    * and anything may have changed them while this tab wasn't listening. */
   private async sync(): Promise<void> {
+    this.syncing = true;
+    try {
+      await this.read();
+    } finally {
+      this.syncing = false;
+      const held = this.held;
+      this.held = [];
+      for (const event of held) this.apply(event);
+    }
+  }
+
+  private async read(): Promise<void> {
     const res = await fetch("/api/review");
     if (!res.ok) throw new Error(`the review didn't load (HTTP ${res.status})`);
     const meta = (await res.json()) as Meta;
@@ -202,6 +217,12 @@ export class ReviewStore {
   }
 
   private apply(event: { seq: number; type: string; [key: string]: any }): void {
+    // a resync's snapshot is older than events arriving while it reads;
+    // they wait, and apply on top of it
+    if (this.syncing) {
+      this.held.push(event);
+      return;
+    }
     const meta = this.state.meta;
     if (!meta) return;
     if (event.type === "reset") {
@@ -223,7 +244,9 @@ export class ReviewStore {
         nextMeta.status = null;
         nextMeta.revisions = event.revisions ?? [...new Set([...meta.revisions, event.revision])];
         this.set({ meta: nextMeta });
-        void this.loadRevision(event.revision).then(() =>
+        // re-read even when held: a revision served again carries the
+        // notes the agent resolved in the draft, which sent no events
+        void this.loadRevision(event.revision, true).then(() =>
           this.set({
             notice: {
               kind: "published",
@@ -326,7 +349,7 @@ export class ReviewStore {
   /** Take back an operation not sent yet. False once it is on its way. */
   cancel(opId: string): boolean {
     const index = this.state.outbox.findIndex((p) => p.opId === opId);
-    if (index === -1 || (index === 0 && this.flushing)) return false;
+    if (index === -1 || (index === 0 && this.flushRun !== null)) return false;
     this.saveOutbox(this.state.outbox.filter((p) => p.opId !== opId));
     return true;
   }
@@ -338,42 +361,45 @@ export class ReviewStore {
   }
 
   /** Send queued operations in order, one at a time: a note's creation
-   * must land before its edit. */
-  async flush(): Promise<void> {
-    if (this.flushing) return;
-    this.flushing = true;
-    try {
-      while (this.state.outbox.length > 0) {
-        const next = this.state.outbox[0]!;
-        let res: Response;
-        try {
-          res = await fetch("/api/op", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ opId: next.opId, revision: next.revision, path: next.path, ...next.op }),
-          });
-        } catch {
-          this.scheduleRetry();
-          return;
-        }
-        if (res.status >= 500 || res.headers.get("x-gloss-offline")) {
-          this.scheduleRetry();
-          return;
-        }
-        const body = (await res.json().catch(() => null)) as any;
-        const rest = this.state.outbox.filter((p) => p.opId !== next.opId);
-        if (res.ok && body?.ok) {
-          this.confirmed.set(next.opId, body.id);
-          this.setSidecar(next.revision, next.path, body.sidecar, body.seq ?? 0);
-        } else {
-          // the server's verdict (the note is gone, the round is over):
-          // no retry can land it
-          this.set({ notice: { kind: "error", text: `Not saved: ${body?.error ?? `HTTP ${res.status}`}` } });
-        }
-        this.saveOutbox(rest);
+   * must land before its edit. A call while a send is under way joins it
+   * — its promise settles when the outbox is drained or the server stops
+   * answering — so a caller awaiting it never sees an op still in flight. */
+  flush(): Promise<void> {
+    this.flushRun ??= this.drain().finally(() => {
+      this.flushRun = null;
+    });
+    return this.flushRun;
+  }
+
+  private async drain(): Promise<void> {
+    while (this.state.outbox.length > 0) {
+      const next = this.state.outbox[0]!;
+      let res: Response;
+      try {
+        res = await fetch("/api/op", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ opId: next.opId, revision: next.revision, path: next.path, ...next.op }),
+        });
+      } catch {
+        this.scheduleRetry();
+        return;
       }
-    } finally {
-      this.flushing = false;
+      if (res.status >= 500 || res.headers.get("x-gloss-offline")) {
+        this.scheduleRetry();
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as any;
+      const rest = this.state.outbox.filter((p) => p.opId !== next.opId);
+      if (res.ok && body?.ok) {
+        this.confirmed.set(next.opId, body.id);
+        this.setSidecar(next.revision, next.path, body.sidecar, body.seq ?? 0);
+      } else {
+        // the server's verdict (the note is gone, the round is over):
+        // no retry can land it
+        this.set({ notice: { kind: "error", text: `Not saved: ${body?.error ?? `HTTP ${res.status}`}` } });
+      }
+      this.saveOutbox(rest);
     }
   }
 
